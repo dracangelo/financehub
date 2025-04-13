@@ -18,6 +18,184 @@ import { Label } from "@/components/ui/label"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { ALL_CATEGORIES } from "@/lib/constants/categories"
 import { formatCurrency } from "@/lib/utils"
+import { getAddressFromCoordinates } from "@/lib/geocoding"
+
+const ExpenseItem = ({ expense, onDelete }: { expense: any; onDelete: (id: string) => void }) => {
+  // Debug the category value
+  console.log(`Expense ID: ${expense.id}, Category: ${expense.category}`);
+  
+  // The database stores the category as text, but our constants use UUIDs
+  // Get the category name and color using our helper function
+  const categoryId = expense.category;
+  
+  // Try to find the category by ID first (for UUID format)
+  let category = ALL_CATEGORIES.find(cat => cat.id === categoryId);
+  
+  // If not found by ID, try to find it by name (case insensitive)
+  if (!category && categoryId) {
+    category = ALL_CATEGORIES.find(
+      cat => cat.name.toLowerCase() === categoryId.toLowerCase()
+    );
+  }
+  
+  const categoryName = category?.name || categoryId || 'Uncategorized';
+  const categoryColor = category?.color || '#B5B5B5';
+  
+  // Format location data if available
+  const hasLocation = expense.location !== null && expense.location !== undefined;
+  const [locationName, setLocationName] = useState<string | null>(null);
+  const [locationCoords, setLocationCoords] = useState<{lat: number, lng: number} | null>(null);
+  
+  // Parse location data
+  useEffect(() => {
+    if (!hasLocation || !expense.location) return;
+    
+    try {
+      // Try to extract coordinates from the PostGIS point
+      // PostGIS POINT format is typically 'POINT(longitude latitude)'
+      if (typeof expense.location === 'string') {
+        const pointMatch = expense.location.match(/POINT\(([^ ]+) ([^)]+)\)/i);
+        
+        if (pointMatch && pointMatch.length >= 3) {
+          const longitude = parseFloat(pointMatch[1]);
+          const latitude = parseFloat(pointMatch[2]);
+          
+          if (!isNaN(latitude) && !isNaN(longitude)) {
+            setLocationCoords({ lat: latitude, lng: longitude });
+          }
+        }
+      } 
+      // Handle case where location might be an object with lat/lng properties
+      else if (typeof expense.location === 'object') {
+        if (expense.location.latitude && expense.location.longitude) {
+          setLocationCoords({
+            lat: parseFloat(expense.location.latitude),
+            lng: parseFloat(expense.location.longitude)
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error parsing location:", error);
+    }
+  }, [expense.id, expense.location, hasLocation]);
+  
+  // Get location name from coordinates
+  useEffect(() => {
+    if (!locationCoords) return;
+    
+    getAddressFromCoordinates(locationCoords.lat, locationCoords.lng)
+      .then(address => {
+        if (address) {
+          // Just use the first part of the address (usually the place name)
+          const placeName = address.split(',')[0];
+          setLocationName(placeName);
+        }
+      })
+      .catch(error => console.error("Error getting address:", error));
+  }, [locationCoords]);
+
+  return (
+    <Card className="relative overflow-hidden">
+      {/* Category color indicator */}
+      <div 
+        className="absolute top-0 left-0 w-1 h-full" 
+        style={{ backgroundColor: categoryColor }}
+      />
+      
+      <CardContent className="p-4 pl-6">
+        <div className="flex items-start justify-between">
+          <div className="space-y-1">
+            <h3 className="font-medium">{expense.description}</h3>
+            <div className="text-sm text-muted-foreground flex flex-wrap gap-2">
+              {expense.merchant_name && (
+                <span className="inline-flex items-center">
+                  <DollarSign className="w-3 h-3 mr-1" />
+                  {expense.merchant_name}
+                </span>
+              )}
+              {/* Make category more prominent with a colored badge */}
+              <Badge 
+                variant="outline" 
+                className="ml-1" 
+                style={{ 
+                  borderColor: categoryColor,
+                  color: categoryColor,
+                  fontWeight: 'normal'
+                }}
+              >
+                <Tag className="w-3 h-3 mr-1" />
+                {categoryName}
+              </Badge>
+              <span className="inline-flex items-center">
+                <Clock className="w-3 h-3 mr-1" />
+                {format(new Date(expense.spent_at), 'MMM d, yyyy')}
+              </span>
+              {/* Display location if available */}
+              {locationName && (
+                <Badge variant="outline" className="ml-1">
+                  <MapPin className="w-3 h-3 mr-1" />
+                  {locationName}
+                </Badge>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="text-right">
+              <div className="font-medium">{formatCurrency(expense.amount)}</div>
+              {expense.split_amount && (
+                <div className="text-sm text-muted-foreground">
+                  Your share: {formatCurrency(expense.split_amount)}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="icon" asChild>
+                <Link href={`/expenses/${expense.id}/edit`}>
+                  <Edit className="h-4 w-4" />
+                </Link>
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onDelete(expense.id)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+        
+        {/* Badges */}
+        <div className="mt-2 flex flex-wrap gap-1">
+          {expense.is_recurring && (
+            <Badge variant="outline" className="border-blue-500 text-blue-500">
+              <CalendarClock className="w-3 h-3 mr-1" />
+              Recurring
+            </Badge>
+          )}
+          {expense.is_impulse && (
+            <Badge variant="outline" className="border-red-500 text-red-500">
+              <AlertTriangle className="w-3 h-3 mr-1" />
+              Impulse
+            </Badge>
+          )}
+          {hasLocation && (
+            <Badge variant="secondary">
+              <MapPin className="w-3 h-3 mr-1" />
+              Location
+            </Badge>
+          )}
+          {expense.receipt_url && (
+            <Badge variant="secondary">
+              <Receipt className="w-3 h-3 mr-1" />
+              Receipt
+            </Badge>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
 
 export function ExpenseList() {
   const [expenses, setExpenses] = useState<any[]>([])
@@ -50,8 +228,21 @@ export function ExpenseList() {
   
   // Function to get category name from ID
   const getCategoryName = (categoryId: string) => {
+    if (!categoryId) return 'Uncategorized';
+    
+    // Try to find by ID first (for UUID format)
     const category = ALL_CATEGORIES.find(cat => cat.id === categoryId);
-    return category ? category.name : 'Uncategorized';
+    if (category) return category.name;
+    
+    // If not found by ID, check if the categoryId is actually a category name
+    const categoryByName = ALL_CATEGORIES.find(
+      cat => cat.name.toLowerCase() === categoryId.toLowerCase()
+    );
+    if (categoryByName) return categoryByName.name;
+    
+    // If all else fails, return the category string itself
+    // This handles the case where the category is stored as text in the database
+    return categoryId;
   };
   
   // Extract unique categories from expenses for the filter dropdown
@@ -72,7 +263,7 @@ export function ExpenseList() {
     return expenses.filter(expense => {
       // Category filter
       const categoryMatch = selectedCategory === 'all' || 
-        (expense.category === selectedCategory);
+        getCategoryName(expense.category) === getCategoryName(selectedCategory);
       
       // Search query filter
       const searchMatch = !searchQuery || 
@@ -126,37 +317,35 @@ export function ExpenseList() {
   }, [])
 
   const fetchExpenses = async () => {
-    // Don't show loading indicator for refreshes, only initial load
-    const isInitialLoad = expenses.length === 0
-    if (isInitialLoad) {
-      setLoading(true)
-    }
-    
+    setLoading(true);
     try {
-      let data;
+      let expensesData;
+      
       if (locationSearch) {
-        // If we have location search parameters, use the location search function
-        data = await searchExpensesByLocation(locationSearch);
-        toast({
-          title: "Location Filter Applied",
-          description: `Showing expenses near ${locationSearch.locationName || 'selected location'} (${locationSearch.radiusMeters}m radius)`,
-        });
+        // If location search is active, use that
+        expensesData = await searchExpensesByLocation(locationSearch);
       } else {
-        // Otherwise use the regular getExpenses function
-        data = await getExpenses();
+        // Otherwise get all expenses
+        expensesData = await getExpenses();
       }
-      setExpenses(data);
+      
+      // Debug: Log the first expense to see its structure
+      if (expensesData && expensesData.length > 0) {
+        console.log('First expense data:', JSON.stringify(expensesData[0], null, 2));
+      }
+      
+      setExpenses(expensesData || []);
     } catch (error) {
       console.error("Error fetching expenses:", error);
       toast({
         title: "Error",
-        description: "Failed to load expenses",
+        description: "Failed to load expenses. Please try again.",
         variant: "destructive",
       });
     } finally {
       setLoading(false);
     }
-  }
+  };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this expense?")) return
@@ -266,98 +455,6 @@ export function ExpenseList() {
     }
   };
 
-  const renderExpenseItem = (expense: any) => {
-    const category = ALL_CATEGORIES.find(cat => cat.id === expense.category_id);
-    const categoryColor = category?.color || '#B5B5B5';
-    const categoryName = category?.name || 'Uncategorized';
-
-    return (
-      <Card key={expense.id} className="relative overflow-hidden">
-        {/* Category color indicator */}
-        <div 
-          className="absolute top-0 left-0 w-1 h-full" 
-          style={{ backgroundColor: categoryColor }}
-        />
-        
-        <CardContent className="p-4 pl-6">
-          <div className="flex items-start justify-between">
-            <div className="space-y-1">
-              <h3 className="font-medium">{expense.description}</h3>
-              <div className="text-sm text-muted-foreground space-x-2">
-                {expense.merchant_name && (
-                  <span className="inline-flex items-center">
-                    <DollarSign className="w-3 h-3 mr-1" />
-                    {expense.merchant_name}
-                  </span>
-                )}
-                <span className="inline-flex items-center">
-                  <Tag className="w-3 h-3 mr-1" />
-                  {categoryName}
-                </span>
-                <span className="inline-flex items-center">
-                  <Clock className="w-3 h-3 mr-1" />
-                  {format(new Date(expense.spent_at), 'MMM d, yyyy')}
-                </span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="text-right">
-                <div className="font-medium">{formatCurrency(expense.amount)}</div>
-                {expense.split_amount && (
-                  <div className="text-sm text-muted-foreground">
-                    Your share: {formatCurrency(expense.split_amount)}
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-1">
-                <Button variant="ghost" size="icon" asChild>
-                  <Link href={`/expenses/${expense.id}/edit`}>
-                    <Edit className="h-4 w-4" />
-                  </Link>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => handleDelete(expense.id)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-          
-          {/* Badges */}
-          <div className="mt-2 flex flex-wrap gap-1">
-            {expense.is_recurring && (
-              <Badge variant="outline" className="border-blue-500 text-blue-500">
-                <CalendarClock className="w-3 h-3 mr-1" />
-                Recurring
-              </Badge>
-            )}
-            {expense.is_impulse && (
-              <Badge variant="outline" className="border-red-500 text-red-500">
-                <AlertTriangle className="w-3 h-3 mr-1" />
-                Impulse
-              </Badge>
-            )}
-            {expense.location && (
-              <Badge variant="secondary">
-                <MapPin className="w-3 h-3 mr-1" />
-                Location
-              </Badge>
-            )}
-            {expense.receipt_url && (
-              <Badge variant="secondary">
-                <Receipt className="w-3 h-3 mr-1" />
-                Receipt
-              </Badge>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-    );
-  };
-
   if (loading) {
     return (
       <Card>
@@ -457,7 +554,7 @@ export function ExpenseList() {
                     <div className="flex flex-col gap-2">
                       <div className="text-sm font-medium">Current Location Filter:</div>
                       <Badge className="self-start">
-                        <MapPin className="h-3 w-3 mr-1" />
+                        <MapPin className="h-3 h-3 mr-1" />
                         {locationSearch.locationName || 'Selected Location'}
                       </Badge>
                       <div className="text-sm">{locationSearch.radiusMeters}m radius</div>
@@ -544,7 +641,9 @@ export function ExpenseList() {
           </div>
         ) : (
           <div className="space-y-4">
-            {filteredExpenses.map((expense) => renderExpenseItem(expense))}
+            {filteredExpenses.map((expense) => (
+              <ExpenseItem key={expense.id} expense={expense} onDelete={handleDelete} />
+            ))}
           </div>
         )}
       </CardContent>

@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import { SpendingHeatmap } from "@/components/expenses/spending-heatmap"
 import { InteractiveTimeline } from "@/components/expenses/interactive-timeline"
 import { ExpenseList } from "@/components/expenses/expense-list"
 import { Button } from "@/components/ui/button"
@@ -10,9 +9,9 @@ import Link from "next/link"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 // Import visualization components
-import { LocationHeatmap } from "@/components/visualizations/location-heatmap"
-import { MerchantNetwork } from "@/components/visualizations/merchant-network"
-import { CategorySunburst } from "@/components/visualizations/category-sunburst"
+
+
+import { ExpenseCalendar } from "@/components/expenses/expense-calendar"
 
 export default function ExpensesPage() {
   const [activeTab, setActiveTab] = useState("list")
@@ -46,22 +45,15 @@ export default function ExpensesPage() {
         </TabsContent>
         
         <TabsContent value="analytics" className="mt-6 space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <SpendingHeatmap />
+          <div className="grid grid-cols-1 gap-6">
             <InteractiveTimeline />
           </div>
           
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <LocationHeatmap />
-            <MerchantNetwork />
-          </div>
-          
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <CategorySunburst className="lg:col-span-1" />
+          <div className="grid grid-cols-1 gap-6">
+            <ExpenseCalendar />
           </div>
         </TabsContent>
       </Tabs>
     </div>
   )
 }
-

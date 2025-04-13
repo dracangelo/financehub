@@ -4,7 +4,6 @@ import { BarChart3Icon } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { SpendingHeatmap } from "@/components/visualizations/spending-heatmap"
-import { MerchantNetwork } from "@/components/visualizations/merchant-network"
 import { supabase } from "@/lib/supabase"
 
 // Mock user ID since authentication is disabled
@@ -24,10 +23,6 @@ export default async function AnalyticsPage() {
         <Suspense fallback={<VisualizationSkeleton title="Spending Heatmap" />}>
           <SpendingHeatmapContent />
         </Suspense>
-
-        <Suspense fallback={<VisualizationSkeleton title="Merchant Network" />}>
-          <MerchantNetworkContent />
-        </Suspense>
       </div>
     </div>
   )
@@ -45,17 +40,7 @@ async function SpendingHeatmapContent() {
   return <SpendingHeatmap transactions={transactions || []} />
 }
 
-async function MerchantNetworkContent() {
-  // Fetch transactions with merchant data
-  const { data: transactions } = await supabase
-    .from("transactions")
-    .select("*")
-    .eq("user_id", MOCK_USER_ID)
-    .not("merchant_name", "is", null)
-    .order("date", { ascending: false })
 
-  return <MerchantNetwork transactions={transactions || []} />
-}
 
 function VisualizationSkeleton({ title }: { title: string }) {
   return (

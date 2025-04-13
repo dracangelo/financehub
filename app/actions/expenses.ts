@@ -29,7 +29,7 @@ export async function getExpenses(locationSearch?: LocationSearchParams) {
     // Build the query
     let query = supabase
       .from("expenses")
-      .select("*, time_of_day")
+      .select("*")
       .eq("user_id", user.id)
     
     // Add location filter if provided
@@ -56,31 +56,9 @@ export async function getExpenses(locationSearch?: LocationSearchParams) {
       return []
     }
 
-    // Fetch related data for accounts and categories
-    const expensesWithRelations = await Promise.all(
-      data.map(async (expense) => {
-        const [accountData, categoryData] = await Promise.all([
-          supabase
-            .from('accounts')
-            .select('id, name, type, institution')
-            .eq('id', expense.account_id)
-            .single(),
-          supabase
-            .from('categories')
-            .select('id, name, color, icon, is_income')
-            .eq('id', expense.category_id)
-            .single()
-        ])
-
-        return {
-          ...expense,
-          account: accountData.data,
-          category: categoryData.data
-        }
-      })
-    )
-
-    return expensesWithRelations
+    // Map the expenses to include the category information from our constants
+    // instead of trying to join with a non-existent categories table
+    return data;
   } catch (error) {
     console.error("Unexpected error in getExpenses:", error)
     return []
@@ -250,6 +228,24 @@ export async function createExpense(expenseData: {
       }
     }
 
+    // Update merchant intelligence data
+    if (expenseData.merchant_name) {
+      try {
+        await updateMerchantIntelligence(
+          user.id,
+          expenseData.merchant_name,
+          expenseData.amount,
+          expenseData.spent_at.toISOString(),
+          expenseData.category_id
+        )
+        // Also revalidate merchant intelligence pages
+        revalidatePath("/merchants")
+      } catch (error) {
+        console.error("Error updating merchant intelligence:", error)
+        // Continue even if merchant intelligence update fails
+      }
+    }
+
     // Revalidate all paths that display expense data
     revalidatePath("/expenses")
     revalidatePath("/dashboard")
@@ -280,7 +276,8 @@ export async function updateExpense(id: string, expenseData: any) {
     // Extract basic expense data directly from the input object
     const merchant_name = expenseData.merchant_name || null
     const amount = typeof expenseData.amount === 'number' ? expenseData.amount : parseFloat(expenseData.amount)
-    const category = expenseData.category_id || null  // Map category_id from form to category in database
+    // Store the actual category ID or name from the form
+    const category = expenseData.category_id || null  // Map category_id from form to category in database, note that this is the actual category ID or name used for the expense
     const description = expenseData.description
     const spent_at = expenseData.spent_at
     const latitude = expenseData.latitude || null
@@ -511,6 +508,24 @@ export async function updateExpense(id: string, expenseData: any) {
       } catch (splitError) {
         console.error("Error processing split expense:", splitError)
         // Continue even if split processing fails
+      }
+    }
+
+    // Update merchant intelligence if merchant name changed or amount changed
+    if (merchant_name && (merchant_name !== existingExpense.merchant_name || amount !== existingExpense.amount)) {
+      try {
+        await updateMerchantIntelligence(
+          user.id,
+          merchant_name,
+          amount,
+          spent_at,
+          category
+        )
+        // Also revalidate merchant intelligence pages
+        revalidatePath("/merchants")
+      } catch (error) {
+        console.error("Error updating merchant intelligence:", error)
+        // Continue even if merchant intelligence update fails
       }
     }
 

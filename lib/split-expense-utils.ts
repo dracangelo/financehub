@@ -61,6 +61,11 @@ export async function createSplitExpenseFromForm(data: {
       throw new Error("Authentication required")
     }
     
+    // Validate input data
+    if (!data.sharedWithName || !data.amount || !data.description) {
+      throw new Error("Missing required fields for split expense")
+    }
+    
     // Create an expense record with split information in the notes
     const splitNote = `Split with ${data.sharedWithName} for ${data.amount.toFixed(2)}`;
     const fullDescription = `${data.description} (${splitNote})`;
@@ -81,7 +86,7 @@ export async function createSplitExpenseFromForm(data: {
       user_id: user.id,
       amount: data.amount,
       description: fullDescription,
-      spent_at: new Date(data.date).toISOString(),
+      spent_at: new Date().toISOString(),
       category: 'Split'
     };
     

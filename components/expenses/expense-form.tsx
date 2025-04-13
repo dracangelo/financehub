@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/use-toast";
-import { Calendar, MapPin, Receipt, Split, AlertTriangle, CalendarDays, User, Upload, Loader2, X } from "lucide-react";
+import { Calendar, MapPin, Receipt, Split, AlertTriangle, CalendarDays, User, Upload, Loader2, X, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
@@ -35,6 +35,7 @@ import { uploadReceipt } from "@/lib/receipt-utils";
 import { createSplitExpenseFromForm, getUsersForSplitExpense } from "@/lib/split-expense-utils";
 import { Expense } from "@/types/expense";
 import { Category } from "@/lib/constants/categories";
+import { searchLocationByName, getAddressFromCoordinates } from "@/lib/geocoding";
 
 // Form schema
 const expenseFormSchema = z.object({
@@ -91,6 +92,15 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
   const [availableUsers, setAvailableUsers] = useState(users);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Location search state
+  const [locationSearchQuery, setLocationSearchQuery] = useState("");
+  const [isSearchingLocation, setIsSearchingLocation] = useState(false);
+  const [locationSearchResults, setLocationSearchResults] = useState<Array<{
+    name: string;
+    latitude: number;
+    longitude: number;
+  }>>([]);
+
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseFormSchema),
     defaultValues: {
@@ -106,7 +116,7 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
       receipt_image: undefined,
       warranty_expiry: expense?.warranty_expiry ? new Date(expense.warranty_expiry) : undefined,
       split_with_name: expense?.split_with_name || "",
-      split_amount: expense?.split_amount || "",
+      split_amount: expense?.split_amount || undefined,
     },
   });
 
@@ -166,6 +176,15 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
           form.setValue("latitude", position.coords.latitude);
           form.setValue("longitude", position.coords.longitude);
           setLocationEnabled(true);
+          
+          // Get address from coordinates for display
+          getAddressFromCoordinates(position.coords.latitude, position.coords.longitude)
+            .then(address => {
+              if (address) {
+                setLocationSearchQuery(address.split(',')[0] || 'Current Location');
+              }
+            })
+            .catch(error => console.error("Error getting address:", error));
         },
         (error) => {
           console.error("Error getting location:", error);
@@ -187,9 +206,56 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
 
   // Clear location
   const clearLocation = () => {
-    form.setValue("latitude", null);
-    form.setValue("longitude", null);
+    form.setValue("latitude", undefined);
+    form.setValue("longitude", undefined);
     setLocationEnabled(false);
+    setLocationSearchQuery("");
+    setLocationSearchResults([]);
+  };
+  
+  // Search for location by name
+  const searchLocation = async () => {
+    if (!locationSearchQuery || locationSearchQuery.trim().length < 2) {
+      toast({
+        title: "Search Error",
+        description: "Please enter at least 2 characters to search for a location.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setIsSearchingLocation(true);
+    
+    try {
+      const results = await searchLocationByName(locationSearchQuery);
+      setLocationSearchResults(results);
+      
+      if (results.length === 0) {
+        toast({
+          title: "No Results",
+          description: "No locations found matching your search.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error searching for location:", error);
+      toast({
+        title: "Search Error",
+        description: "Failed to search for location. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSearchingLocation(false);
+    }
+  };
+  
+  // Select a location from search results
+  const selectLocation = (location: { name: string; latitude: number; longitude: number }) => {
+    form.setValue("latitude", location.latitude);
+    form.setValue("longitude", location.longitude);
+    setLocationEnabled(true);
+    setLocationSearchQuery(location.name);
+    setLocationSearchResults([]);
   };
 
   // Handle receipt image selection
@@ -278,7 +344,15 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
       // Handle split expense
       if (data.split_with_name && data.split_amount) {
         try {
-          await createSplitExpenseFromForm(expenseData);
+          // Create a proper split expense object with the correct date format
+          const splitExpenseData = {
+            sharedWithName: data.split_with_name,
+            amount: Number(data.split_amount),
+            description: data.description,
+            date: data.spent_at.toISOString() // Ensure we pass a valid ISO string date
+          };
+          
+          await createSplitExpenseFromForm(splitExpenseData);
           toast({
             title: "Split Expense Created",
             description: `Successfully created split expense with ${data.split_with_name}`,
@@ -515,6 +589,41 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
                 )}
               </div>
             </div>
+            <div className="flex flex-col space-y-2">
+              <Input
+                type="text"
+                value={locationSearchQuery}
+                onChange={(e) => setLocationSearchQuery(e.target.value)}
+                placeholder="Search for a location"
+                className="w-full"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={searchLocation}
+                disabled={isSubmitting || isSearchingLocation}
+              >
+                <Search className="mr-2 h-4 w-4" />
+                Search
+              </Button>
+              {locationSearchResults.length > 0 && (
+                <div className="rounded-md border p-4 space-y-4">
+                  {locationSearchResults.map((location) => (
+                    <Button
+                      key={location.name}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => selectLocation(location)}
+                      disabled={isSubmitting}
+                    >
+                      {location.name}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </div>
             {locationEnabled && (
               <div className="rounded-md bg-muted p-3 text-sm">
                 <p>Location data will be saved with this expense.</p>
@@ -688,23 +797,16 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Split With</FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        defaultValue={field.value}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select a person" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {availableUsers.map((user) => (
-                            <SelectItem key={user.id} value={user.name}>
-                              {user.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <Input
+                          type="text"
+                          placeholder="Enter person's name"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Name of the person you're splitting with
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -726,6 +828,7 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
                             placeholder="0.00"
                             className="pl-8"
                             {...field}
+                            value={field.value === null || field.value === undefined ? "" : field.value}
                           />
                         </div>
                       </FormControl>
