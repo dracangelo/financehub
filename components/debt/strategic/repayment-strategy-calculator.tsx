@@ -24,6 +24,11 @@ interface Debt {
   balance: number
   interestRate: number
   minimumPayment: number
+  // Adding fields to track progress
+  initialBalance?: number
+  amountPaid?: number
+  interestPaid?: number
+  daysToPayoff?: number
 }
 
 interface PayoffResult {
@@ -32,10 +37,21 @@ interface PayoffResult {
   totalPayments: number
   monthsToPayoff: number
   debtFreeDate: Date
+  payoffOrder: string[] // List of debt names in order of payoff
   monthlyPayments: {
     month: number
     payment: number
     remainingBalance: number
+    interestPaid: number // Track interest paid each month
+    principalPaid: number // Track principal paid each month
+  }[]
+  debtProgress: { // Track individual debt progress
+    id: string
+    name: string
+    initialBalance: number
+    amountPaid: number
+    interestPaid: number
+    daysToPayoff: number
   }[]
 }
 
@@ -84,82 +100,177 @@ export function RepaymentStrategyCalculator() {
   }
 
   const calculateStrategy = (strategyType: "avalanche" | "snowball" | "hybrid"): PayoffResult => {
-    // Create a copy of debts to avoid modifying the original
-    let remainingDebts = [...debts]
-    let totalInterest = 0
-    let totalPayments = 0
-    let month = 1
-    const monthlyPayments: { month: number; payment: number; remainingBalance: number }[] = []
+    // Create a deep copy of debts to avoid modifying the original
+    let remainingDebts = debts.map(debt => ({
+      ...debt,
+      initialBalance: debt.balance,
+      amountPaid: 0,
+      interestPaid: 0
+    }));
+    
+    let totalInterest = 0;
+    let totalPayments = 0;
+    let month = 1;
+    let payoffOrder: string[] = [];
+    
+    const monthlyPayments: { 
+      month: number; 
+      payment: number; 
+      remainingBalance: number;
+      interestPaid: number;
+      principalPaid: number;
+    }[] = [];
     
     // Calculate total minimum payments
-    const totalMinimumPayments = remainingDebts.reduce((sum, debt) => sum + debt.minimumPayment, 0)
-    const totalMonthlyPayment = totalMinimumPayments + extraPayment
+    const totalMinimumPayments = remainingDebts.reduce((sum, debt) => sum + debt.minimumPayment, 0);
+    const totalMonthlyPayment = totalMinimumPayments + extraPayment;
+    
+    // Apply specific strategy sorting logic
+    const getStrategyPriority = () => {
+      switch (strategyType) {
+        case "avalanche":
+          // Highest interest rate first - most mathematically efficient
+          return [...remainingDebts].sort((a, b) => b.interestRate - a.interestRate);
+          
+        case "snowball":
+          // Lowest balance first - provides psychological wins
+          return [...remainingDebts].sort((a, b) => a.balance - b.balance);
+          
+        case "hybrid":
+          // Sophisticated hybrid approach that balances math and psychology
+          return [...remainingDebts].sort((a, b) => {
+            // Calculate debt ratio (balance to minimum payment)
+            const ratioA = a.balance / a.minimumPayment;
+            const ratioB = b.balance / b.minimumPayment;
+            
+            // Calculate interest burden (monthly interest cost)
+            const interestBurdenA = a.balance * (a.interestRate / 100 / 12);
+            const interestBurdenB = b.balance * (b.interestRate / 100 / 12);
+            
+            // Calculate efficiency score (how quickly debt generates interest relative to payment)
+            const efficiencyScoreA = a.interestRate / ratioA;
+            const efficiencyScoreB = b.interestRate / ratioB;
+            
+            // Calculate psychological factor (how quickly we can pay off)
+            const quickWinFactorA = 1 - (a.balance / 
+              (remainingDebts.reduce((max, d) => Math.max(max, d.balance), 0)));
+            const quickWinFactorB = 1 - (b.balance / 
+              (remainingDebts.reduce((max, d) => Math.max(max, d.balance), 0)));
+            
+            // Hybrid score: 60% mathematical efficiency, 40% psychological benefit
+            const hybridScoreA = (efficiencyScoreA * 0.6) + (quickWinFactorA * 0.4);
+            const hybridScoreB = (efficiencyScoreB * 0.6) + (quickWinFactorB * 0.4);
+            
+            return hybridScoreB - hybridScoreA;
+          });
+      }
+    };
     
     // Continue until all debts are paid off
     while (remainingDebts.length > 0 && month <= 360) { // Cap at 30 years
-      let remainingPayment = totalMonthlyPayment
+      let monthlyInterestPaid = 0;
+      let monthlyPrincipalPaid = 0;
+      let remainingPayment = totalMonthlyPayment;
       
       // First, make minimum payments on all debts
       remainingDebts = remainingDebts.map(debt => {
-        const interestPayment = debt.balance * (debt.interestRate / 100 / 12)
-        const principalPayment = Math.min(debt.minimumPayment, debt.balance + interestPayment)
-        const newBalance = debt.balance + interestPayment - principalPayment
+        const interestPayment = debt.balance * (debt.interestRate / 100 / 12);
+        const minPayment = Math.min(debt.minimumPayment, debt.balance + interestPayment);
+        const principalPayment = Math.min(minPayment - interestPayment, debt.balance);
+        const newBalance = Math.max(0, debt.balance - principalPayment);
         
-        totalInterest += interestPayment
-        totalPayments += principalPayment + interestPayment
-        remainingPayment -= (principalPayment + interestPayment)
+        // Track payments
+        debt.interestPaid = (debt.interestPaid || 0) + interestPayment;
+        debt.amountPaid = (debt.amountPaid || 0) + principalPayment + interestPayment;
+        
+        // Update totals
+        totalInterest += interestPayment;
+        totalPayments += principalPayment + interestPayment;
+        remainingPayment -= minPayment;
+        
+        // Track monthly totals
+        monthlyInterestPaid += interestPayment;
+        monthlyPrincipalPaid += principalPayment;
         
         return {
           ...debt,
           balance: newBalance
-        }
-      })
+        };
+      });
       
-      // Then, apply extra payment based on strategy
+      // Then, apply extra payment based on strategy priority
       if (remainingPayment > 0) {
-        if (strategyType === "avalanche") {
-          // Pay extra on highest interest rate debt
-          remainingDebts.sort((a, b) => b.interestRate - a.interestRate)
-        } else if (strategyType === "snowball") {
-          // Pay extra on smallest balance debt
-          remainingDebts.sort((a, b) => a.balance - b.balance)
-        } else if (strategyType === "hybrid") {
-          // Hybrid approach: prioritize high interest but also consider balance
-          remainingDebts.sort((a, b) => {
-            // Calculate a score based on both interest rate and balance
-            const scoreA = a.interestRate * (1 + a.balance / 10000)
-            const scoreB = b.interestRate * (1 + b.balance / 10000)
-            return scoreB - scoreA
-          })
-        }
+        const priorityOrder = getStrategyPriority();
         
-        // Apply remaining payment to the first debt (highest priority)
-        if (remainingDebts.length > 0) {
-          const debt = remainingDebts[0]
-          const payment = Math.min(remainingPayment, debt.balance)
-          debt.balance -= payment
-          totalPayments += payment
-          remainingPayment -= payment
+        // Apply remaining payment to debts in priority order
+        for (const debt of priorityOrder) {
+          // Find the actual debt object in our remaining debts array
+          const targetDebt = remainingDebts.find(d => d.id === debt.id);
+          
+          if (targetDebt && targetDebt.balance > 0 && remainingPayment > 0) {
+            const payment = Math.min(remainingPayment, targetDebt.balance);
+            targetDebt.balance -= payment;
+            targetDebt.amountPaid = (targetDebt.amountPaid || 0) + payment;
+            
+            totalPayments += payment;
+            remainingPayment -= payment;
+            monthlyPrincipalPaid += payment;
+            
+            // If this debt is now paid off, add it to the payoff order
+            if (targetDebt.balance === 0 && !payoffOrder.includes(targetDebt.name)) {
+              payoffOrder.push(targetDebt.name);
+              // Calculate days to payoff for this debt
+              targetDebt.daysToPayoff = month * 30; // Approximate days
+            }
+            
+            // If all extra payment has been allocated, break out of the loop
+            if (remainingPayment <= 0) break;
+          }
         }
       }
       
       // Record monthly payment and remaining balance
-      const totalRemainingBalance = remainingDebts.reduce((sum, debt) => sum + debt.balance, 0)
+      const totalRemainingBalance = remainingDebts.reduce((sum, debt) => sum + debt.balance, 0);
+      
       monthlyPayments.push({
         month,
-        payment: totalMonthlyPayment,
-        remainingBalance: totalRemainingBalance
-      })
+        payment: totalMonthlyPayment - remainingPayment, // Actual amount paid this month
+        remainingBalance: totalRemainingBalance,
+        interestPaid: monthlyInterestPaid,
+        principalPaid: monthlyPrincipalPaid
+      });
       
       // Remove paid off debts
-      remainingDebts = remainingDebts.filter(debt => debt.balance > 0)
+      const previousLength = remainingDebts.length;
+      remainingDebts = remainingDebts.filter(debt => debt.balance > 0);
       
-      month++
+      // If we paid off debts this month, recalculate payment allocation
+      if (previousLength !== remainingDebts.length) {
+        // Note: we don't need to adjust totalMonthlyPayment here as we want to keep 
+        // the same total payment amount, just reallocate to remaining debts
+      }
+      
+      month++;
     }
     
     // Calculate debt-free date
-    const debtFreeDate = new Date()
-    debtFreeDate.setMonth(debtFreeDate.getMonth() + month - 1)
+    const debtFreeDate = new Date();
+    debtFreeDate.setMonth(debtFreeDate.getMonth() + month - 1);
+    
+    // Prepare debt progress information
+    const debtProgress = debts.map(originalDebt => {
+      const debt = remainingDebts.find(d => d.id === originalDebt.id) || 
+                  { ...originalDebt, balance: 0, amountPaid: originalDebt.balance, interestPaid: 0, daysToPayoff: month * 30 };
+      
+      return {
+        id: originalDebt.id,
+        name: originalDebt.name,
+        initialBalance: originalDebt.balance,
+        amountPaid: debt.amountPaid || 0,
+        interestPaid: debt.interestPaid || 0,
+        daysToPayoff: debt.daysToPayoff || month * 30 // If debt wasn't paid off, use max time
+      };
+    });
     
     return {
       strategy: strategyType,
@@ -167,9 +278,11 @@ export function RepaymentStrategyCalculator() {
       totalPayments,
       monthsToPayoff: month - 1,
       debtFreeDate,
-      monthlyPayments
-    }
-  }
+      payoffOrder,
+      monthlyPayments,
+      debtProgress
+    };
+  };
 
   const addDebt = () => {
     if (!newDebt.name.trim()) {

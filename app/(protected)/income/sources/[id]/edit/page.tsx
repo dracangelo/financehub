@@ -1,17 +1,14 @@
-"use client"
-
-import { Suspense, useEffect, useState } from "react"
+import { Suspense } from "react"
 import { ArrowLeftIcon } from "lucide-react"
 import Link from "next/link"
-import { notFound, useRouter } from "next/navigation"
+import { notFound } from "next/navigation"
+import { headers } from "next/headers"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { IncomeSourceForm } from "@/components/income/income-source-form"
 import { getIncomeSourceById } from "@/app/actions/income-sources"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle, Loader2 } from "lucide-react"
 
 interface EditIncomeSourcePageProps {
   params: {
@@ -19,120 +16,22 @@ interface EditIncomeSourcePageProps {
   }
 }
 
-export default function EditIncomeSourcePage({ params }: EditIncomeSourcePageProps) {
-  const router = useRouter()
-  const [incomeSource, setIncomeSource] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
-  useEffect(() => {
-    const fetchIncomeSource = async () => {
-      try {
-        setLoading(true)
-        const { id } = params;
-        if (!id) {
-          router.push("/income")
-          return
-        }
-
-        const source = await getIncomeSourceById(id)
-        if (!source) {
-          router.push("/income?error=source-not-found")
-          return
-        }
-
-        setIncomeSource(source)
-      } catch (err) {
-        console.error("Error fetching income source:", err)
-        setError("Failed to load income source. Please try again.")
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchIncomeSource()
-  }, [params, router])
-
-  if (loading) {
-    return (
-      <div className="container py-6 space-y-6">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" asChild>
-            <Link href="/income">
-              <ArrowLeftIcon className="h-4 w-4" />
-            </Link>
-          </Button>
-          <h1 className="text-3xl font-bold tracking-tight">Edit Income Source</h1>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Loading...</CardTitle>
-            <CardDescription>
-              <div className="flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Loading income source details</span>
-              </div>
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <FormSkeleton />
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="container py-6 space-y-6">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" asChild>
-            <Link href="/income">
-              <ArrowLeftIcon className="h-4 w-4" />
-            </Link>
-          </Button>
-          <h1 className="text-3xl font-bold tracking-tight">Edit Income Source</h1>
-        </div>
-
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-
-        <div className="flex justify-center">
-          <Button onClick={() => window.location.reload()}>Try Again</Button>
-        </div>
-      </div>
-    )
-  }
+export default async function EditIncomeSourcePage({ params }: EditIncomeSourcePageProps) {
+  // Directly use the id from params without await or use() - Next.js 14 will handle this
+  const id = params.id;
+  
+  // Fetch the income source
+  const incomeSource = await getIncomeSourceById(id).catch(() => null)
 
   if (!incomeSource) {
-    return (
-      <div className="container py-6 space-y-6">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" asChild>
-            <Link href="/income">
-              <ArrowLeftIcon className="h-4 w-4" />
-            </Link>
-          </Button>
-          <h1 className="text-3xl font-bold tracking-tight">Income Source Not Found</h1>
-        </div>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center space-y-4">
-              <p>The income source you are looking for could not be found.</p>
-              <Button asChild>
-                <Link href="/income">Return to Income Sources</Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
+    notFound()
   }
+
+  // Generate a unique key for the form to force re-render
+  const timestamp = Date.now();
 
   return (
     <div className="container py-6 space-y-6">
@@ -152,7 +51,11 @@ export default function EditIncomeSourcePage({ params }: EditIncomeSourcePagePro
         </CardHeader>
         <CardContent>
           <Suspense fallback={<FormSkeleton />}>
-            <IncomeSourceForm incomeSource={incomeSource} isEditing />
+            <IncomeSourceForm 
+              key={`form-${incomeSource.id}-${timestamp}`}
+              incomeSource={incomeSource} 
+              isEditing 
+            />
           </Suspense>
         </CardContent>
       </Card>

@@ -266,7 +266,7 @@ export async function createExpense(expenseData: {
 }
 
 // Update an existing expense with enhanced features
-export async function updateExpense(id: string, formData: FormData) {
+export async function updateExpense(id: string, expenseData: any) {
   try {
     const supabase = await createServerSupabaseClient()
     const user = await getAuthenticatedUser()
@@ -275,25 +275,23 @@ export async function updateExpense(id: string, formData: FormData) {
       throw new Error("Authentication required")
     }
 
-    // Extract basic expense data
-    const merchant_name = formData.get("merchant_name") as string || null
-    const amount = parseFloat(formData.get("amount") as string)
-    const category = formData.get("category") as string || null
-    const description = formData.get("description") as string
-    const spent_at = formData.get("spent_at") as string
-    const latitude = formData.get("latitude") ? parseFloat(formData.get("latitude") as string) : null
-    const longitude = formData.get("longitude") ? parseFloat(formData.get("longitude") as string) : null
-    const is_recurring = formData.get("is_recurring") === "true"
-    const notes = formData.get("notes") as string || null
+    console.log("Updating expense with data:", expenseData)
 
-    // Extract advanced features data
-    const receipt_image = formData.get("receipt_image") as File || null
-    const warranty_expiry = formData.get("warranty_expiry") as string || null
-    const is_impulse = formData.get("is_impulse") === "true"
-    
-    // Split expense data
-    const split_with = formData.get("split_with") as string || null
-    const split_amount = formData.get("split_amount") ? parseFloat(formData.get("split_amount") as string) : null
+    // Extract basic expense data directly from the input object
+    const merchant_name = expenseData.merchant_name || null
+    const amount = typeof expenseData.amount === 'number' ? expenseData.amount : parseFloat(expenseData.amount)
+    const category = expenseData.category_id || null  // Map category_id from form to category in database
+    const description = expenseData.description
+    const spent_at = expenseData.spent_at
+    const latitude = expenseData.latitude || null
+    const longitude = expenseData.longitude || null
+    const is_recurring = !!expenseData.is_recurring
+    const notes = expenseData.notes || null
+    const is_impulse = !!expenseData.is_impulse
+    const warranty_expiry = expenseData.warranty_expiry || null
+    const receipt_url = expenseData.receipt_url || null
+    const split_with_name = expenseData.split_with_name || null
+    const split_amount = expenseData.split_amount || null
 
     // First, get the existing expense to compare changes
     const { data: existingExpense, error: fetchError } = await supabase
@@ -337,7 +335,7 @@ export async function updateExpense(id: string, formData: FormData) {
         .from("merchants")
         .upsert({
           name: merchant_name,
-          category
+          category: category
         }, {
           onConflict: 'name',
           ignoreDuplicates: false
@@ -360,7 +358,7 @@ export async function updateExpense(id: string, formData: FormData) {
             // Calculate new average monthly spend
             const oldAvg = merchantInsights.avg_monthly_spend || 0
             const oldInsights = merchantInsights.insights || {}
-            const transactionCount = oldInsights.transaction_count || 0
+            const transactionCount = oldInsights.transaction_count || 1 // Minimum 1 to avoid divide by zero
             const newAvg = (oldAvg * transactionCount + amount) / (transactionCount + 1)
             
             // Update merchant with new insights
@@ -416,7 +414,7 @@ export async function updateExpense(id: string, formData: FormData) {
     }
     
     // Process receipt if provided
-    if (receipt_image) {
+    if (data.receipt_url) {
       try {
         // Check if there's an existing receipt
         const { data: existingReceipt } = await supabase
@@ -429,7 +427,7 @@ export async function updateExpense(id: string, formData: FormData) {
         const filename = `${user.id}/${id}/${Date.now()}-receipt`
         const { data: uploadData, error: uploadError } = await supabase.storage
           .from('receipts')
-          .upload(filename, receipt_image)
+          .upload(filename, data.receipt_url)
           
         if (uploadError) throw uploadError
         
@@ -476,7 +474,7 @@ export async function updateExpense(id: string, formData: FormData) {
     }
     
     // Process split expense if applicable
-    if (split_with && split_amount) {
+    if (split_with_name && split_amount) {
       try {
         // Check if there's an existing split
         const { data: existingSplit } = await supabase
@@ -490,7 +488,7 @@ export async function updateExpense(id: string, formData: FormData) {
           const { error: splitError } = await supabase
             .from('expense_splits')
             .update({
-              shared_with: split_with,
+              shared_with_name: split_with_name,
               amount: split_amount,
               status: 'pending' // Reset status since details changed
             })
@@ -503,7 +501,7 @@ export async function updateExpense(id: string, formData: FormData) {
             .from('expense_splits')
             .insert({
               expense_id: id,
-              shared_with: split_with,
+              shared_with_name: split_with_name,
               amount: split_amount,
               status: 'pending'
             })

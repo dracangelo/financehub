@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { DemoModeAlert } from "@/components/ui/demo-mode-alert"
+
 import { Brain, BarChart3, RefreshCw, GitBranch, FileText, Users, Boxes, BarChart4 } from "lucide-react"
 
 export const metadata: Metadata = {
@@ -71,7 +71,7 @@ export default function BudgetingPage() {
 
   return (
     <div className="container mx-auto p-6">
-      <DemoModeAlert />
+      
 
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">Intelligent Budgeting</h1>

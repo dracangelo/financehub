@@ -3,7 +3,7 @@ import { notFound } from "next/navigation"
 import Link from "next/link"
 import { getTransactionById, getAccounts, getCategories } from "@/app/actions"
 import { TransactionEditForm } from "@/components/transactions/transaction-edit-form"
-import { DemoModeAlert } from "@/components/ui/demo-mode-alert"
+
 import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft } from "lucide-react"
@@ -38,7 +38,7 @@ async function TransactionEditContent({ id }: { id: string }) {
 export default function TransactionEditPage({ params }: TransactionEditPageProps) {
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-8">
-      <DemoModeAlert />
+      
 
       <div className="flex items-center gap-2">
         <Button variant="outline" size="sm" asChild>

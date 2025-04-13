@@ -71,6 +71,22 @@ create table tax_documents (
 
 create index on tax_documents(user_id);
 
+-- TAX TIMELINE EVENTS
+create table tax_timeline (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  title text not null,
+  description text,
+  due_date date not null,
+  type text not null,
+  status text check (status in ('pending', 'completed', 'overdue')) default 'pending',
+  is_recurring boolean default false,
+  recurrence_pattern text,
+  created_at timestamptz default current_timestamp
+);
+
+create index on tax_timeline(user_id);
+
 -- TAX IMPACT PREDICTIONS
 create table tax_impact_predictions (
   id uuid primary key default gen_random_uuid(),

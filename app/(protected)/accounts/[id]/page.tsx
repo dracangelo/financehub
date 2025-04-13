@@ -3,7 +3,7 @@ import { notFound } from "next/navigation"
 import Link from "next/link"
 import { getAccountById, getTransactionsByAccount } from "@/app/actions"
 import { AccountDetail } from "@/components/accounts/account-detail"
-import { DemoModeAlert } from "@/components/ui/demo-mode-alert"
+
 import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft } from "lucide-react"
@@ -34,7 +34,7 @@ async function AccountDetailContent({ id }: { id: string }) {
 export default function AccountDetailPage({ params }: AccountDetailPageProps) {
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-8">
-      <DemoModeAlert />
+      
 
       <div className="flex items-center gap-2">
         <Button variant="outline" size="sm" asChild>

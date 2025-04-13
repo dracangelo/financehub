@@ -2,7 +2,7 @@ import { Suspense } from "react"
 import { getBudgets } from "@/app/actions/budgets"
 import { getCategories } from "@/app/actions/categories"
 import { BudgetsManager } from "@/components/budgets/budgets-manager"
-import { DemoModeAlert } from "@/components/ui/demo-mode-alert"
+
 import { Skeleton } from "@/components/ui/skeleton"
 
 export const dynamic = "force-dynamic"
@@ -18,7 +18,7 @@ async function BudgetsContent() {
 export default function ManageBudgetsPage() {
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-8">
-      <DemoModeAlert />
+      
 
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Manage Budgets</h1>

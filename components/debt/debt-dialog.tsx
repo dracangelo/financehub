@@ -15,17 +15,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-
-interface Debt {
-  id: string
-  name: string
-  type: string
-  balance: number
-  interestRate: number
-  minimumPayment: number
-  actualPayment: number
-  dueDate: number
-}
+import type { Debt } from "@/app/actions/debts"  // Import the Debt type from server actions
 
 interface DebtDialogProps {
   open: boolean
@@ -35,30 +25,32 @@ interface DebtDialogProps {
 }
 
 export function DebtDialog({ open, onOpenChange, debt, onSave }: DebtDialogProps) {
-  const [formData, setFormData] = useState<Partial<Debt>>({
-    id: "",
+  const [formData, setFormData] = useState<Debt>({
+    id: crypto.randomUUID(),
     name: "",
-    type: "credit-card",
-    balance: 0,
-    interestRate: 0,
-    minimumPayment: 0,
-    actualPayment: 0,
-    dueDate: 1,
+    type: "credit_card",
+    principal: 0,
+    interest_rate: 0,
+    minimum_payment: 0,
+    due_date: "",
   })
 
   useEffect(() => {
     if (debt) {
-      setFormData(debt)
+      // Set the form data directly from the debt object
+      setFormData({
+        ...debt
+      })
     } else {
+      // Create a new debt with default values
       setFormData({
         id: crypto.randomUUID(),
         name: "",
-        type: "credit-card",
-        balance: 0,
-        interestRate: 0,
-        minimumPayment: 0,
-        actualPayment: 0,
-        dueDate: 1,
+        type: "credit_card",
+        principal: 0,
+        interest_rate: 0,
+        minimum_payment: 0,
+        due_date: "",
       })
     }
   }, [debt, open])
@@ -69,7 +61,7 @@ export function DebtDialog({ open, onOpenChange, debt, onSave }: DebtDialogProps
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    onSave(formData as Debt)
+    onSave(formData)
   }
 
   return (
@@ -106,89 +98,71 @@ export function DebtDialog({ open, onOpenChange, debt, onSave }: DebtDialogProps
                   <SelectValue placeholder="Select debt type" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="credit-card">Credit Card</SelectItem>
+                  <SelectItem value="credit_card">Credit Card</SelectItem>
                   <SelectItem value="mortgage">Mortgage</SelectItem>
-                  <SelectItem value="auto">Auto Loan</SelectItem>
-                  <SelectItem value="student">Student Loan</SelectItem>
-                  <SelectItem value="personal">Personal Loan</SelectItem>
+                  <SelectItem value="auto_loan">Auto Loan</SelectItem>
+                  <SelectItem value="student_loan">Student Loan</SelectItem>
+                  <SelectItem value="personal_loan">Personal Loan</SelectItem>
                   <SelectItem value="medical">Medical Debt</SelectItem>
                   <SelectItem value="other">Other</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="balance" className="text-right">
+              <Label htmlFor="principal" className="text-right">
                 Balance ($)
               </Label>
               <Input
-                id="balance"
+                id="principal"
                 type="number"
                 min="0"
                 step="0.01"
-                value={formData.balance}
-                onChange={(e) => handleChange("balance", Number.parseFloat(e.target.value) || 0)}
+                value={formData.principal}
+                onChange={(e) => handleChange("principal", Number.parseFloat(e.target.value) || 0)}
                 className="col-span-3"
                 required
               />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="interestRate" className="text-right">
+              <Label htmlFor="interest_rate" className="text-right">
                 Interest Rate (%)
               </Label>
               <Input
-                id="interestRate"
+                id="interest_rate"
                 type="number"
                 min="0"
                 step="0.01"
-                value={formData.interestRate}
-                onChange={(e) => handleChange("interestRate", Number.parseFloat(e.target.value) || 0)}
+                value={formData.interest_rate}
+                onChange={(e) => handleChange("interest_rate", Number.parseFloat(e.target.value) || 0)}
                 className="col-span-3"
                 required
               />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="minimumPayment" className="text-right">
+              <Label htmlFor="minimum_payment" className="text-right">
                 Min. Payment ($)
               </Label>
               <Input
-                id="minimumPayment"
+                id="minimum_payment"
                 type="number"
                 min="0"
                 step="0.01"
-                value={formData.minimumPayment}
-                onChange={(e) => handleChange("minimumPayment", Number.parseFloat(e.target.value) || 0)}
+                value={formData.minimum_payment}
+                onChange={(e) => handleChange("minimum_payment", Number.parseFloat(e.target.value) || 0)}
                 className="col-span-3"
                 required
               />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="actualPayment" className="text-right">
-                Actual Payment ($)
+              <Label htmlFor="due_date" className="text-right">
+                Due Date
               </Label>
               <Input
-                id="actualPayment"
-                type="number"
-                min="0"
-                step="0.01"
-                value={formData.actualPayment}
-                onChange={(e) => handleChange("actualPayment", Number.parseFloat(e.target.value) || 0)}
+                id="due_date"
+                type="date"
+                value={formData.due_date}
+                onChange={(e) => handleChange("due_date", e.target.value)}
                 className="col-span-3"
-                required
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="dueDate" className="text-right">
-                Due Date (day)
-              </Label>
-              <Input
-                id="dueDate"
-                type="number"
-                min="1"
-                max="31"
-                value={formData.dueDate}
-                onChange={(e) => handleChange("dueDate", Number.parseInt(e.target.value) || 1)}
-                className="col-span-3"
-                required
               />
             </div>
           </div>
@@ -200,4 +174,3 @@ export function DebtDialog({ open, onOpenChange, debt, onSave }: DebtDialogProps
     </Dialog>
   )
 }
-

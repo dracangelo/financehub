@@ -23,7 +23,7 @@ import { InvestmentList } from "@/components/investments/investment-list"
 import { AssetClassEditor } from "@/components/investments/asset-class-editor"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
-import { DemoModeAlert } from "@/components/ui/demo-mode-alert"
+
 import { calculateRebalancingActions } from "@/lib/investments/calculations"
 
 export default function AssetAllocationPage() {
@@ -88,7 +88,7 @@ export default function AssetAllocationPage() {
 
   return (
     <div className="space-y-6">
-      <DemoModeAlert />
+      
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Asset Allocation Optimizer</h1>

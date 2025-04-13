@@ -6,13 +6,15 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/use-toast";
-import { CalendarIcon, MapPinIcon, ReceiptIcon, SplitIcon, AlertTriangleIcon, CalendarDaysIcon, UserIcon } from "lucide-react";
+import { Calendar, MapPin, Receipt, Split, AlertTriangle, CalendarDays, User, Upload, Loader2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage, Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Popover,
   PopoverContent,
@@ -218,6 +220,28 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
   const onSubmit = async (data: ExpenseFormValues) => {
     setIsSubmitting(true);
     try {
+      // Validate amount
+      if (Number(data.amount) <= 0) {
+        toast({
+          title: "Invalid Amount",
+          description: "Amount must be greater than zero",
+          variant: "destructive",
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Validate category
+      if (!data.category_id) {
+        toast({
+          title: "Missing Category",
+          description: "Please select a category for this expense",
+          variant: "destructive",
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
       // Prepare form data
       const expenseData = {
         merchant_name: data.merchant_name,
@@ -272,18 +296,28 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
       
       // Submit the expense
       if (isEditing && expense) {
+        // Show confirmation dialog before updating
+        const confirmEdit = window.confirm(
+          `Are you sure you want to update "${data.description}"? This will change how this expense appears in your reports and analytics.`
+        );
+        
+        if (!confirmEdit) {
+          setIsSubmitting(false);
+          return;
+        }
+        
         await updateExpense(expense.id, expenseData);
         toast({
           title: "Expense Updated",
           description: `Successfully updated "${data.description}"`,
-          variant: "default",
+          variant: "success",
         });
       } else {
         await createExpense(expenseData);
         toast({
           title: "Expense Created",
           description: `Successfully created "${data.description}"`,
-          variant: "default",
+          variant: "success",
         });
       }
 
@@ -312,7 +346,7 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
             name="merchant_name"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Merchant Name</FormLabel>
+                <FormLabel>Merchant Name <span className="text-red-500">*</span></FormLabel>
                 <FormControl>
                   <Input type="text" placeholder="Where did you spend?" {...field} />
                 </FormControl>
@@ -327,28 +361,49 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
             name="amount"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Amount</FormLabel>
+                <FormLabel>Amount <span className="text-red-500">*</span></FormLabel>
                 <FormControl>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    placeholder="0.00"
-                    {...field}
-                  />
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
+                      $
+                    </span>
+                    <Input 
+                      type="number" 
+                      placeholder="0.00" 
+                      className="pl-8" 
+                      {...field} 
+                      onChange={(e) => {
+                        field.onChange(e);
+                        // If split options are shown, update split amount suggestion
+                        if (showSplitOptions) {
+                          const totalAmount = parseFloat(e.target.value);
+                          if (!isNaN(totalAmount)) {
+                            const suggestedSplitAmount = (totalAmount / 2).toFixed(2);
+                            form.setValue("split_amount", suggestedSplitAmount);
+                          }
+                        }
+                      }}
+                    />
+                  </div>
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
+        </div>
 
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Category */}
           <FormField
             control={form.control}
             name="category_id"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Category</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <FormLabel>Category <span className="text-red-500">*</span></FormLabel>
+                <Select 
+                  onValueChange={field.onChange} 
+                  defaultValue={field.value}
+                >
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Select a category" />
@@ -357,7 +412,13 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
                   <SelectContent>
                     {categories.map((category) => (
                       <SelectItem key={category.id} value={category.id}>
-                        {category.name}
+                        <div className="flex items-center">
+                          <div 
+                            className="w-3 h-3 rounded-full mr-2" 
+                            style={{ backgroundColor: category.color || '#888' }}
+                          />
+                          {category.name}
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -373,22 +434,24 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
             name="description"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Description</FormLabel>
+                <FormLabel>Description <span className="text-red-500">*</span></FormLabel>
                 <FormControl>
-                  <Input placeholder="What did you buy?" {...field} />
+                  <Input type="text" placeholder="What did you purchase?" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
+        </div>
 
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Date */}
           <FormField
             control={form.control}
             name="spent_at"
             render={({ field }) => (
               <FormItem className="flex flex-col">
-                <FormLabel>Date</FormLabel>
+                <FormLabel>Date <span className="text-red-500">*</span></FormLabel>
                 <Popover>
                   <PopoverTrigger asChild>
                     <FormControl>
@@ -404,18 +467,15 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
                         ) : (
                           <span>Pick a date</span>
                         )}
-                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                        <Calendar className="ml-auto h-4 w-4 opacity-50" />
                       </Button>
                     </FormControl>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
+                    <CalendarComponent
                       mode="single"
                       selected={field.value}
                       onSelect={field.onChange}
-                      disabled={(date) =>
-                        date > new Date() || date < new Date("1900-01-01")
-                      }
                       initialFocus
                     />
                   </PopoverContent>
@@ -426,173 +486,281 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
           />
 
           {/* Location */}
-          <FormField
-            control={form.control}
-            name="location"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Location</FormLabel>
-                <div className="flex space-x-2">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Location</Label>
+              <div className="flex space-x-2">
+                {!locationEnabled ? (
                   <Button
                     type="button"
                     variant="outline"
-                    className="w-full"
-                    onClick={locationEnabled ? clearLocation : getCurrentLocation}
+                    size="sm"
+                    onClick={getCurrentLocation}
+                    disabled={isSubmitting}
                   >
-                    <MapPinIcon className="mr-2 h-4 w-4" />
-                    {locationEnabled ? "Clear Location" : "Add Location"}
+                    <MapPin className="mr-2 h-4 w-4" />
+                    Add Location
                   </Button>
-                </div>
-                <FormMessage />
-              </FormItem>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={clearLocation}
+                    disabled={isSubmitting}
+                  >
+                    <X className="mr-2 h-4 w-4" />
+                    Clear Location
+                  </Button>
+                )}
+              </div>
+            </div>
+            {locationEnabled && (
+              <div className="rounded-md bg-muted p-3 text-sm">
+                <p>Location data will be saved with this expense.</p>
+                <input type="hidden" {...form.register("latitude")} />
+                <input type="hidden" {...form.register("longitude")} />
+              </div>
             )}
-          />
-
-          {/* Recurring */}
-          <FormField
-            control={form.control}
-            name="is_recurring"
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
-                <FormControl>
-                  <Checkbox
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                  />
-                </FormControl>
-                <div className="space-y-1 leading-none">
-                  <FormLabel>Recurring Expense</FormLabel>
-                  <FormDescription>
-                    This is a regular expense that occurs periodically
-                  </FormDescription>
-                </div>
-              </FormItem>
-            )}
-          />
-
-          {/* Impulse Purchase */}
-          <FormField
-            control={form.control}
-            name="is_impulse"
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
-                <FormControl>
-                  <Checkbox
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                  />
-                </FormControl>
-                <div className="space-y-1 leading-none">
-                  <FormLabel>Impulse Purchase</FormLabel>
-                  <FormDescription>
-                    This was an unplanned or spontaneous purchase
-                  </FormDescription>
-                </div>
-              </FormItem>
-            )}
-          />
+          </div>
         </div>
 
-        {/* Notes */}
-        <FormField
-          control={form.control}
-          name="notes"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Notes</FormLabel>
-              <FormControl>
-                <Textarea
-                  placeholder="Any additional notes about this expense"
-                  className="resize-none"
-                  {...field}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {/* Receipt Upload */}
-        <FormField
-          control={form.control}
-          name="receipt_image"
-          render={({ field: { value, onChange, ...field } }) => (
-            <FormItem>
-              <FormLabel>Receipt</FormLabel>
-              <FormControl>
+        {/* Additional Options */}
+        <div className="space-y-4">
+          <div className="flex flex-col space-y-2">
+            <Label className="text-base font-medium">Additional Options</Label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Receipt Upload */}
+              <div className="space-y-2">
+                <Label htmlFor="receipt_image">Receipt Image</Label>
                 <div className="flex items-center space-x-2">
                   <Input
+                    id="receipt_image"
                     type="file"
                     accept="image/*"
-                    ref={fileInputRef}
                     onChange={handleReceiptChange}
-                    {...field}
+                    ref={fileInputRef}
+                    className="hidden"
                   />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isSubmitting}
+                    className="w-full justify-start"
+                  >
+                    <Upload className="mr-2 h-4 w-4" />
+                    {receiptPreview ? "Change Receipt" : "Upload Receipt"}
+                  </Button>
                   {receiptPreview && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={() => {
+                        setReceiptPreview(null);
+                        form.setValue("receipt_image", null);
+                        if (fileInputRef.current) {
+                          fileInputRef.current.value = "";
+                        }
+                      }}
+                      disabled={isSubmitting}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+                {receiptPreview && (
+                  <div className="mt-2 relative aspect-video w-full max-w-sm overflow-hidden rounded-md border">
                     <img
                       src={receiptPreview}
                       alt="Receipt preview"
-                      className="h-20 w-20 object-cover"
+                      className="h-full w-full object-contain"
                     />
-                  )}
-                </div>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {/* Split Expense */}
-        <div className="space-y-4">
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            onClick={toggleSplitOptions}
-          >
-            <SplitIcon className="mr-2 h-4 w-4" />
-            {showSplitOptions ? "Remove Split" : "Split Expense"}
-          </Button>
-
-          {showSplitOptions && (
-            <div className="space-y-4">
-              <FormField
-                control={form.control}
-                name="split_with_name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Split with (enter name)</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Enter name" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
+                  </div>
                 )}
-              />
+              </div>
 
+              {/* Warranty Expiry */}
               <FormField
                 control={form.control}
-                name="split_amount"
+                name="warranty_expiry"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Split Amount</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        {...field}
-                      />
-                    </FormControl>
+                  <FormItem className="flex flex-col">
+                    <FormLabel>Warranty Expiry</FormLabel>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <FormControl>
+                          <Button
+                            variant={"outline"}
+                            className={cn(
+                              "w-full pl-3 text-left font-normal",
+                              !field.value && "text-muted-foreground"
+                            )}
+                          >
+                            {field.value ? (
+                              format(field.value, "PPP")
+                            ) : (
+                              <span>Set warranty date</span>
+                            )}
+                            <Calendar className="ml-auto h-4 w-4 opacity-50" />
+                          </Button>
+                        </FormControl>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <CalendarComponent
+                          mode="single"
+                          selected={field.value || undefined}
+                          onSelect={field.onChange}
+                          initialFocus
+                          disabled={(date) => date < new Date()}
+                        />
+                      </PopoverContent>
+                    </Popover>
                     <FormMessage />
                   </FormItem>
                 )}
               />
             </div>
-          )}
+          </div>
+
+          {/* Checkboxes */}
+          <div className="flex flex-wrap gap-6">
+            <FormField
+              control={form.control}
+              name="is_recurring"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                  <FormControl>
+                    <Checkbox
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                  <div className="space-y-1 leading-none">
+                    <FormLabel>Recurring Expense</FormLabel>
+                    <FormDescription>
+                      This expense occurs regularly
+                    </FormDescription>
+                  </div>
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="is_impulse"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                  <FormControl>
+                    <Checkbox
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                  <div className="space-y-1 leading-none">
+                    <FormLabel>Impulse Purchase</FormLabel>
+                    <FormDescription>
+                      This was an unplanned purchase
+                    </FormDescription>
+                  </div>
+                </FormItem>
+              )}
+            />
+          </div>
+
+          {/* Split Expense */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Split Expense</Label>
+              <Switch
+                checked={showSplitOptions}
+                onCheckedChange={toggleSplitOptions}
+                disabled={isSubmitting}
+              />
+            </div>
+
+            {showSplitOptions && (
+              <div className="rounded-md border p-4 space-y-4">
+                <FormField
+                  control={form.control}
+                  name="split_with_name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Split With</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a person" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {availableUsers.map((user) => (
+                            <SelectItem key={user.id} value={user.name}>
+                              {user.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="split_amount"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Their Share</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
+                            $
+                          </span>
+                          <Input
+                            type="number"
+                            placeholder="0.00"
+                            className="pl-8"
+                            {...field}
+                          />
+                        </div>
+                      </FormControl>
+                      <FormDescription>
+                        Amount the other person owes you
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Notes */}
+          <FormField
+            control={form.control}
+            name="notes"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Notes</FormLabel>
+                <FormControl>
+                  <Textarea
+                    placeholder="Any additional details about this expense..."
+                    className="min-h-[100px]"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         </div>
 
-        <div className="flex justify-end space-x-4">
+        <div className="flex items-center justify-end space-x-4 pt-4">
           <Button
             type="button"
             variant="outline"
@@ -604,7 +772,7 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? (
               <>
-                <AlertTriangleIcon className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 {isEditing ? "Updating..." : "Creating..."}
               </>
             ) : (

@@ -4,7 +4,7 @@ import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CreditCard, Calculator, TrendingUp, BarChart3, PieChart, Target } from "lucide-react"
-import { DemoModeAlert } from "@/components/ui/demo-mode-alert"
+
 import { RepaymentStrategyCalculator } from "@/components/debt/strategic/repayment-strategy-calculator"
 import { RefinancingAnalyzer } from "@/components/debt/strategic/refinancing-analyzer"
 import { CreditScoreSimulator } from "@/components/debt/strategic/credit-score-simulator"
@@ -23,7 +23,7 @@ export default function StrategicDebtManagementPage() {
         icon={<Calculator className="h-6 w-6" />}
       />
 
-      <DemoModeAlert />
+      
 
       <Tabs defaultValue="repayment-strategy" className="w-full">
         <TabsList className="grid w-full grid-cols-2 md:grid-cols-3 lg:grid-cols-6">

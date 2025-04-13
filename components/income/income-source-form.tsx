@@ -43,6 +43,7 @@ export function IncomeSourceForm({ incomeSource, isEditing = false }: IncomeSour
   // Form state for real-time calculations and previews
   const [amount, setAmount] = useState<number>(incomeSource?.amount || 0)
   const [frequency, setFrequency] = useState<string>(incomeSource?.frequency || "monthly")
+  const [type, setType] = useState<string>(incomeSource?.type || "salary")
   const [notes, setNotes] = useState<string>(incomeSource?.notes || "")
   const [isTaxable, setIsTaxable] = useState<boolean>(incomeSource?.is_taxable !== false)
   const [showMonthlyEquivalent, setShowMonthlyEquivalent] = useState<boolean>(true)
@@ -59,8 +60,6 @@ export function IncomeSourceForm({ incomeSource, isEditing = false }: IncomeSour
         return amt * 2.17; // Bi-weekly periods in a month
       case "monthly":
         return amt;
-      case "quarterly":
-        return amt / 3;
       case "annually":
         return amt / 12;
       case "one-time":
@@ -94,6 +93,7 @@ export function IncomeSourceForm({ incomeSource, isEditing = false }: IncomeSour
     if (incomeSource) {
       setAmount(incomeSource.amount || 0)
       setFrequency(incomeSource.frequency || "monthly")
+      setType(incomeSource.type || "salary")
       setNotes(incomeSource.notes || "")
       setIsTaxable(incomeSource.is_taxable !== false)
     }
@@ -138,21 +138,37 @@ export function IncomeSourceForm({ incomeSource, isEditing = false }: IncomeSour
       // Create a new FormData from the event
       const formData = new FormData(event.currentTarget)
       
+      // Ensure the type is one of the allowed values
+      const allowedTypes = ['salary', 'bonus', 'freelance', 'rental', 'investment', 'passive', 'other']
+      const currentType = type || formData.get("type") as string || "salary"
+      
+      if (!allowedTypes.includes(currentType)) {
+        setError(`Invalid income type. Allowed types are: ${allowedTypes.join(', ')}`)
+        setLoading(false)
+        return
+      }
+      
+      // Safely get form values, using fallbacks to prevent undefined errors
+      const nameInput = event.currentTarget.querySelector('[name="name"]') as HTMLInputElement
+      const currencyInput = event.currentTarget.querySelector('[name="currency"]') as HTMLInputElement
+      const startDateInput = event.currentTarget.querySelector('[name="start_date"]') as HTMLInputElement
+      const endDateInput = event.currentTarget.querySelector('[name="end_date"]') as HTMLInputElement
+      
       // Explicitly add all state-managed values to ensure they're included
-      formData.set("name", event.currentTarget.name.value)
-      formData.set("type", event.currentTarget.type.value)
+      formData.set("name", nameInput?.value || incomeSource?.name || "")
+      formData.set("type", currentType)
       formData.set("amount", amount.toString())
       formData.set("frequency", frequency)
-      formData.set("currency", event.currentTarget.currency.value)
+      formData.set("currency", currencyInput?.value || incomeSource?.currency || "USD")
       formData.set("is_taxable", isTaxable ? "true" : "false")
       
       // Add optional fields only if they have values
-      if (event.currentTarget.start_date.value) {
-        formData.set("start_date", event.currentTarget.start_date.value)
+      if (startDateInput?.value) {
+        formData.set("start_date", startDateInput.value)
       }
       
-      if (event.currentTarget.end_date.value) {
-        formData.set("end_date", event.currentTarget.end_date.value)
+      if (endDateInput?.value) {
+        formData.set("end_date", endDateInput.value)
       }
       
       if (notes) {
@@ -166,11 +182,10 @@ export function IncomeSourceForm({ incomeSource, isEditing = false }: IncomeSour
         setLoading(false)
         return
       }
-
+      
       // Validate amount
-      const amountValue = formData.get("amount") as string
-      if (isNaN(Number(amountValue)) || Number(amountValue) < 0) {
-        setError("Amount must be a valid positive number")
+      if (amount <= 0) {
+        setError("Amount must be greater than zero")
         setLoading(false)
         return
       }
@@ -178,6 +193,16 @@ export function IncomeSourceForm({ incomeSource, isEditing = false }: IncomeSour
       console.log("Submitting form data:", Object.fromEntries(formData.entries()))
 
       if (isEditing && incomeSource) {
+        // Show confirmation dialog for editing
+        const confirmEdit = window.confirm(
+          `Are you sure you want to update "${name}"? This will change how this income source appears in your reports and analytics.`
+        )
+        
+        if (!confirmEdit) {
+          setLoading(false)
+          return
+        }
+        
         const result = await updateIncomeSource(incomeSource.id, formData)
         console.log("Update result:", result)
         setSuccess(true)
@@ -191,9 +216,10 @@ export function IncomeSourceForm({ incomeSource, isEditing = false }: IncomeSour
         
         // Wait a moment to show success state before redirecting
         setTimeout(() => {
+          // Use router.push and router.refresh instead of hard refresh
           router.push("/income")
           router.refresh()
-        }, 1500)
+        }, 1000)
       } else {
         const result = await createIncomeSource(formData)
         console.log("Create result:", result)
@@ -202,6 +228,8 @@ export function IncomeSourceForm({ incomeSource, isEditing = false }: IncomeSour
           description: "Your new income source has been successfully added.",
           variant: "success",
         })
+        
+        // Use router.push and router.refresh instead of hard refresh
         router.push("/income")
         router.refresh()
       }
@@ -248,161 +276,150 @@ export function IncomeSourceForm({ incomeSource, isEditing = false }: IncomeSour
       )}
 
       {showMonthlyEquivalent && amount > 0 && (
-        <Card className="bg-gradient-to-r from-blue-50 to-indigo-50">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-blue-700">Monthly Equivalent</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center space-x-2">
-              <DollarSign className="h-6 w-6 text-blue-600" />
-              <span className="text-2xl font-bold text-blue-800">
-                {monthlyEquivalent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-              <span className="text-sm text-blue-600">per month</span>
-            </div>
-            <p className="mt-1 text-xs text-blue-600">
-              This is how much your {frequency} income of {amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} equals monthly.
-            </p>
-          </CardContent>
-        </Card>
+        <div className="bg-muted p-3 rounded-md">
+          <div className="flex justify-between items-center">
+            <span className="text-sm text-muted-foreground">Monthly equivalent:</span>
+            <span className="font-medium">
+              {new Intl.NumberFormat('en-US', { 
+                style: 'currency', 
+                currency: incomeSource?.currency || 'USD' 
+              }).format(monthlyEquivalent)}
+            </span>
+          </div>
+          <div className="flex justify-between items-center mt-1">
+            <span className="text-sm text-muted-foreground">Annual equivalent:</span>
+            <span className="font-medium">
+              {new Intl.NumberFormat('en-US', { 
+                style: 'currency', 
+                currency: incomeSource?.currency || 'USD' 
+              }).format(monthlyEquivalent * 12)}
+            </span>
+          </div>
+        </div>
       )}
 
-      <Tabs value={formTab} onValueChange={setFormTab} className="w-full">
+      <Tabs value={formTab} onValueChange={setFormTab}>
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="basic">Basic Info</TabsTrigger>
-          <TabsTrigger value="advanced">Advanced</TabsTrigger>
+          <TabsTrigger value="advanced">Advanced Options</TabsTrigger>
         </TabsList>
         
         <form onSubmit={handleSubmit} className="mt-4 space-y-6">
-          <TabsContent value="basic" className="space-y-6">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <TabsContent value="basic" className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="name">
-                  Name
-                  <span className="ml-1 text-red-500">*</span>
-                </Label>
+                <Label htmlFor="name">Income Source Name <span className="text-red-500">*</span></Label>
                 <Input
                   id="name"
                   name="name"
-                  placeholder="Primary Job, Freelancing, etc."
-                  defaultValue={incomeSource?.name}
+                  placeholder="e.g. Main Job, Side Gig, Rental Property"
+                  defaultValue={incomeSource?.name || ""}
                   required
-                  disabled={loading}
-                  className="focus-visible:ring-blue-500"
                 />
-                <p className="text-xs text-muted-foreground">A descriptive name for this income source</p>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="type">
-                  Type
-                  <span className="ml-1 text-red-500">*</span>
-                </Label>
-                <Select name="type" defaultValue={incomeSource?.type} required disabled={loading}>
-                  <SelectTrigger id="type" className="focus-visible:ring-blue-500">
+                <Label htmlFor="type">Type <span className="text-red-500">*</span></Label>
+                <Select name="type" value={type} onValueChange={setType}>
+                  <SelectTrigger>
                     <SelectValue placeholder="Select type" />
                   </SelectTrigger>
                   <SelectContent>
                     {[
-                      { value: "salary", label: "Salary", description: "Regular employment income" },
-                      { value: "bonus", label: "Bonus", description: "Performance or seasonal bonus" },
-                      { value: "freelance", label: "Freelance", description: "Contract or gig work" },
-                      { value: "rental", label: "Rental", description: "Income from property" },
-                      { value: "investment", label: "Investment", description: "Dividends, interest, capital gains" },
-                      { value: "passive", label: "Passive", description: "Royalties, digital products" },
-                      { value: "other", label: "Other", description: "Other income sources" }
+                      { value: "salary", label: "Salary" },
+                      { value: "bonus", label: "Bonus" },
+                      { value: "freelance", label: "Freelance" },
+                      { value: "rental", label: "Rental" },
+                      { value: "investment", label: "Investment" },
+                      { value: "passive", label: "Passive" },
+                      { value: "other", label: "Other" }
                     ].map((item) => (
-                      <SelectItem key={`type-${item.value}`} value={item.value}>
-                        <div className="flex flex-col">
-                          <span>{item.label}</span>
-                          <span className="text-xs text-muted-foreground">{item.description}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">Categorize your income source</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <div className="space-y-2">
-                <Label htmlFor="amount">
-                  Amount
-                  <span className="ml-1 text-red-500">*</span>
-                </Label>
-                <div className="relative">
-                  <DollarSign className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="amount"
-                    name="amount"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    value={amount}
-                    onChange={(e) => setAmount(Number(e.target.value))}
-                    required
-                    disabled={loading}
-                    className="pl-8 focus-visible:ring-blue-500"
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground">How much you earn from this source</p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="frequency">
-                  Frequency
-                  <span className="ml-1 text-red-500">*</span>
-                </Label>
-                <Select 
-                  name="frequency" 
-                  value={frequency}
-                  onValueChange={setFrequency}
-                  required 
-                  disabled={loading}
-                >
-                  <SelectTrigger id="frequency" className="focus-visible:ring-blue-500">
-                    <SelectValue placeholder="Select frequency" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {[
-                      { value: "daily", label: "Daily" },
-                      { value: "weekly", label: "Weekly" },
-                      { value: "bi-weekly", label: "Bi-weekly" },
-                      { value: "monthly", label: "Monthly" },
-                      { value: "quarterly", label: "Quarterly" },
-                      { value: "annually", label: "Annually" },
-                      { value: "one-time", label: "One-time" }
-                    ].map((item) => (
-                      <SelectItem key={`frequency-${item.value}`} value={item.value}>
+                      <SelectItem key={item.value} value={item.value}>
                         {item.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">How often you receive this income</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="amount">Amount <span className="text-red-500">*</span></Label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
+                    {incomeSource?.currency || "USD"}
+                  </span>
+                  <Input
+                    id="amount"
+                    name="amount"
+                    type="number"
+                    placeholder="0.00"
+                    className="pl-12"
+                    value={amount}
+                    onChange={(e) => setAmount(Number(e.target.value))}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="frequency">Frequency <span className="text-red-500">*</span></Label>
+                <Select name="frequency" value={frequency} onValueChange={setFrequency}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select frequency" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[
+                      { value: "weekly", label: "Weekly" },
+                      { value: "bi-weekly", label: "Bi-weekly" },
+                      { value: "monthly", label: "Monthly" },
+                      { value: "annually", label: "Annually" },
+                      { value: "one-time", label: "One-time" }
+                    ].map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="currency">Currency</Label>
-                <Select name="currency" defaultValue={incomeSource?.currency || "USD"} disabled={loading}>
-                  <SelectTrigger id="currency" className="focus-visible:ring-blue-500">
+                <Select name="currency" defaultValue={incomeSource?.currency || "USD"}>
+                  <SelectTrigger>
                     <SelectValue placeholder="Select currency" />
                   </SelectTrigger>
                   <SelectContent>
                     {availableCurrencies.map((currency) => (
-                      <SelectItem key={`currency-${currency}`} value={currency}>
+                      <SelectItem key={currency} value={currency}>
                         {currency}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">Currency of this income</p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <Switch 
+                  id="is_taxable"
+                  name="is_taxable"
+                  checked={isTaxable}
+                  onCheckedChange={setIsTaxable}
+                />
+                <Label htmlFor="is_taxable" className="cursor-pointer">This income is taxable</Label>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Check this if you need to pay taxes on this income. This affects tax calculations in the paycheck simulator.
+              </p>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="advanced" className="space-y-4">
+            <div className="space-y-4">
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="start_date">Start Date</Label>
@@ -424,8 +441,6 @@ export function IncomeSourceForm({ incomeSource, isEditing = false }: IncomeSour
                     name="start_date" 
                     type="date" 
                     defaultValue={incomeSource?.start_date?.split("T")[0]} 
-                    disabled={loading}
-                    className="pl-8 focus-visible:ring-blue-500"
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">When did this income source start?</p>
@@ -452,90 +467,53 @@ export function IncomeSourceForm({ incomeSource, isEditing = false }: IncomeSour
                     name="end_date" 
                     type="date" 
                     defaultValue={incomeSource?.end_date?.split("T")[0]} 
-                    disabled={loading}
-                    className="pl-8 focus-visible:ring-blue-500"
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">When will this income source end? (Optional)</p>
               </div>
             </div>
-          </TabsContent>
-          
-          <TabsContent value="advanced" className="space-y-6">
-            <div className="space-y-4">
-              <div className="flex items-center space-x-2">
-                <Switch 
-                  id="is_taxable" 
-                  checked={isTaxable}
-                  onCheckedChange={setIsTaxable}
-                />
-                <Label htmlFor="is_taxable">Taxable Income</Label>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p className="w-64">Is this income subject to taxation? This helps with tax planning.</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </div>
-              
-              <div className="flex items-center space-x-2">
-                <Switch 
-                  id="show_monthly_equivalent"
-                  checked={showMonthlyEquivalent}
-                  onCheckedChange={setShowMonthlyEquivalent}
-                />
-                <Label htmlFor="show_monthly_equivalent">Show Monthly Equivalent</Label>
-              </div>
-              
-              <input type="hidden" name="is_taxable" value={isTaxable ? "true" : "false"} />
-              
-              <div className="space-y-2 pt-4">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="notes">Notes</Label>
-                  <div className="flex items-center space-x-2">
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => setPreviewingNotes(!previewingNotes)}
-                    >
-                      {previewingNotes ? "Edit" : "Preview"}
-                    </Button>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p className="w-64">Supports basic Markdown: **bold**, *italic*, # headers, and * lists</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
+
+            <div className="space-y-2 pt-4">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="notes">Notes</Label>
+                <div className="flex items-center space-x-2">
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => setPreviewingNotes(!previewingNotes)}
+                  >
+                    {previewingNotes ? "Edit" : "Preview"}
+                  </Button>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="w-64">Supports basic Markdown: **bold**, *italic*, # headers, and * lists</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
-                
-                {!previewingNotes ? (
-                  <Textarea
-                    id="notes"
-                    name="notes"
-                    placeholder="Additional details about this income source..."
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    disabled={loading}
-                    className="min-h-32 focus-visible:ring-blue-500"
-                  />
-                ) : (
-                  <div 
-                    className="min-h-32 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    dangerouslySetInnerHTML={{ __html: renderMarkdown(notes) }}
-                  />
-                )}
-                <p className="text-xs text-muted-foreground">Any additional details or context about this income source</p>
               </div>
+                
+              {!previewingNotes ? (
+                <Textarea
+                  id="notes"
+                  name="notes"
+                  placeholder="Additional details about this income source..."
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  className="min-h-32 focus-visible:ring-blue-500"
+                />
+              ) : (
+                <div 
+                  className="min-h-32 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(notes) }}
+                />
+              )}
+              <p className="text-xs text-muted-foreground">Any additional details or context about this income source</p>
             </div>
           </TabsContent>
           
