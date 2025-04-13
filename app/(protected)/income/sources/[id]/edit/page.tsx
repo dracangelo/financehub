@@ -19,9 +19,10 @@ interface EditIncomeSourcePageProps {
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-export default async function EditIncomeSourcePage({ params }: EditIncomeSourcePageProps) {
-  // Directly use the id from params without await or use() - Next.js 14 will handle this
-  const id = params.id;
+export default async function EditIncomeSourcePage(props: EditIncomeSourcePageProps) {
+  // Use a different approach to avoid the Next.js warning
+  // This is a workaround for the Next.js 14+ issue with dynamic route params
+  const id = Array.isArray(props.params.id) ? props.params.id[0] : props.params.id;
   
   // Fetch the income source
   const incomeSource = await getIncomeSourceById(id).catch(() => null)

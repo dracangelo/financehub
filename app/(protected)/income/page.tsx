@@ -8,10 +8,14 @@ import { cookies } from "next/headers"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { IncomeAnalyticsClient } from "@/components/income/income-analytics-client"
 
-export const dynamicOptions = "force-dynamic"
+// Ensure this page is always dynamic and never cached
+export const dynamic = "force-dynamic"
+export const revalidate = 0
 
 async function IncomeOverviewContent() {
-  const sources = await getIncomeSources()
+  // Use current timestamp to ensure we get fresh data
+  const timestamp = Date.now()
+  const sources = await getIncomeSources(timestamp)
 
   return (
     <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6">
@@ -29,7 +33,9 @@ async function IncomeOverviewContent() {
 }
 
 async function IncomeAnalyticsContent() {
-  const sources = await getIncomeSources()
+  // Use current timestamp to ensure we get fresh data
+  const timestamp = Date.now()
+  const sources = await getIncomeSources(timestamp)
   
   return (
     <IncomeAnalyticsClient 

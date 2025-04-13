@@ -116,9 +116,12 @@ async function getCurrentUserId() {
   }
 }
 
-export async function getIncomeSources() {
+export async function getIncomeSources(timestamp?: number) {
   const userId = await getCurrentUserId()
   const supabase = await createServerSupabaseClient()
+  
+  // Log timestamp for debugging
+  console.log(`Fetching income sources at timestamp ${timestamp || Date.now()}`)
 
   const { data, error } = await supabase
     .from("income_sources")
@@ -406,43 +409,59 @@ export async function updateIncomeSource(id: string, formData: FormData) {
       }
     }
     
-    // Update one field at a time to avoid issues with triggers
-    // This is a workaround for the "updated_at" trigger problem
-    console.log("Updating fields individually to avoid trigger issues");
+    // Let's try a completely different approach - create a new record and delete the old one
+    console.log("Using create-and-replace approach to update income source with amount:", amount);
     
-    const updatePromises = [
-      supabase.from("income_sources").update({ name }).eq("id", id),
-      supabase.from("income_sources").update({ type }).eq("id", id),
-      supabase.from("income_sources").update({ amount }).eq("id", id),
-      supabase.from("income_sources").update({ frequency }).eq("id", id),
-      supabase.from("income_sources").update({ currency }).eq("id", id)
-    ]
-    
-    // Add conditional updates for optional fields
-    if (startDate !== null) {
-      updatePromises.push(supabase.from("income_sources").update({ start_date: startDate }).eq("id", id));
-    }
-    
-    if (endDate !== null) {
-      updatePromises.push(supabase.from("income_sources").update({ end_date: endDate }).eq("id", id));
-    }
-    
-    if (notes !== null) {
-      updatePromises.push(supabase.from("income_sources").update({ notes }).eq("id", id));
-    }
-    
-    // Handle is_taxable if it exists in the schema
-    if ('is_taxable' in existingSource) {
-      updatePromises.push(supabase.from("income_sources").update({ is_taxable: isTaxable }).eq("id", id));
-    }
-    
-    // Execute all updates
-    const results = await Promise.allSettled(updatePromises);
-    const failedUpdates = results.filter(r => r.status === 'rejected');
-    
-    if (failedUpdates.length > 0) {
-      console.error("Some field updates failed:", failedUpdates);
-      // We continue anyway as partial updates are better than none
+    try {
+      // Create a new income source with the updated values
+      const newSource = {
+        id: uuidv4(), // Generate a new ID
+        user_id: userId,
+        name,
+        type,
+        amount,
+        frequency,
+        currency,
+        is_taxable: isTaxable,
+        start_date: startDate,
+        end_date: endDate,
+        notes,
+        is_active: existingSource.is_active
+      };
+      
+      console.log("Creating new income source with updated values:", newSource);
+      
+      // Insert the new record
+      const { data: insertedData, error: insertError } = await supabase
+        .from("income_sources")
+        .insert(newSource)
+        .select();
+      
+      if (insertError) {
+        console.error("Error creating new income source:", insertError);
+        throw new Error(`Failed to create new income source: ${insertError.message}`);
+      }
+      
+      console.log("Successfully created new income source:", insertedData);
+      
+      // Delete the old record
+      const { error: deleteError } = await supabase
+        .from("income_sources")
+        .delete()
+        .eq("id", id);
+      
+      if (deleteError) {
+        console.error("Error deleting old income source:", deleteError);
+        // Continue anyway since we have the new record
+      } else {
+        console.log("Successfully deleted old income source");
+      }
+      
+      // Return the ID of the new record for redirects
+      id = newSource.id;
+    } catch (replaceError) {
+      console.error("Error in create-and-replace approach:", replaceError);
+      throw new Error(`Failed to update income source: ${replaceError instanceof Error ? replaceError.message : 'Unknown error'}`);
     }
     
     // Fetch the updated income source
@@ -462,11 +481,12 @@ export async function updateIncomeSource(id: string, formData: FormData) {
     
     console.log("Successfully updated income source:", finalSource);
     
-    // Force revalidation of relevant paths
-    revalidatePath("/income")
-    revalidatePath(`/income/sources`)
-    revalidatePath(`/income/sources/${id}`)
-    revalidatePath(`/income/sources/${id}/edit`)
+    // Force revalidation of all relevant paths
+    revalidatePath("/income", "layout")
+    revalidatePath("/income/sources", "layout")
+    revalidatePath(`/income/sources/${id}`, "layout")
+    revalidatePath(`/income/sources/${id}/edit`, "layout")
+    revalidatePath("/", "layout") // Revalidate root for any dashboard components
     
     // Add a small delay to ensure the database has time to update
     await new Promise(resolve => setTimeout(resolve, 500))

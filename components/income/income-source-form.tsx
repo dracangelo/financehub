@@ -216,9 +216,8 @@ export function IncomeSourceForm({ incomeSource, isEditing = false }: IncomeSour
         
         // Wait a moment to show success state before redirecting
         setTimeout(() => {
-          // Use router.push and router.refresh instead of hard refresh
-          router.push("/income")
-          router.refresh()
+          // Force a complete refresh to ensure we get the latest data
+          window.location.href = "/income"
         }, 1000)
       } else {
         const result = await createIncomeSource(formData)
