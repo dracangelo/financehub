@@ -27,7 +27,23 @@ interface EditMilestoneFormProps {
 
 export function EditMilestoneForm({ milestone, onComplete, onCancel }: EditMilestoneFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [date, setDate] = useState<Date>(new Date(milestone.target_date))
+
+  // Add validation for the date to prevent "Invalid time value" errors
+  const getValidDate = (dateString: string | null | undefined) => {
+    if (!dateString || dateString === "null" || dateString === "undefined") {
+      return new Date()
+    }
+    
+    try {
+      const date = new Date(dateString)
+      // Check if date is valid
+      return isNaN(date.getTime()) ? new Date() : date
+    } catch (e) {
+      return new Date()
+    }
+  }
+  
+  const [date, setDate] = useState<Date>(getValidDate(milestone.target_date))
   const [name, setName] = useState(milestone.name)
   const [description, setDescription] = useState(milestone.description || "")
   const [targetAmount, setTargetAmount] = useState(milestone.target_amount?.toString() || "")

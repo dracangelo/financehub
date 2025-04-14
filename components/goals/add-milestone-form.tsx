@@ -20,21 +20,42 @@ interface AddMilestoneFormProps {
 
 export function AddMilestoneForm({ goalId, onComplete }: AddMilestoneFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [date, setDate] = useState<Date>()
+  const [date, setDate] = useState<Date | undefined>(undefined)
+  const [error, setError] = useState<string | null>(null)
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setIsSubmitting(true)
+    setError(null)
 
     try {
       const formData = new FormData(event.currentTarget)
-      formData.set("target_date", date ? format(date, "yyyy-MM-dd") : "")
+      
+      // Validate that we have a date
+      if (!date) {
+        setError("Please select a target date")
+        setIsSubmitting(false)
+        return
+      }
+
+      // Format the date safely
+      try {
+        formData.set("target_date", format(date, "yyyy-MM-dd"))
+      } catch (e) {
+        setError("Invalid date format. Please select a valid date.")
+        setIsSubmitting(false)
+        return
+      }
 
       const result = await createMilestone(goalId, formData)
 
       if (result.success) {
         onComplete()
+      } else if (result.error) {
+        setError(result.error)
       }
+    } catch (e) {
+      setError("An error occurred. Please try again.")
     } finally {
       setIsSubmitting(false)
     }
@@ -70,6 +91,11 @@ export function AddMilestoneForm({ goalId, onComplete }: AddMilestoneFormProps) 
             </Popover>
           </div>
         </div>
+        {error && (
+          <div className="text-sm text-red-500">
+            {error}
+          </div>
+        )}
         <div className="flex justify-end">
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? "Adding..." : "Add Milestone"}
@@ -79,4 +105,3 @@ export function AddMilestoneForm({ goalId, onComplete }: AddMilestoneFormProps) 
     </form>
   )
 }
-

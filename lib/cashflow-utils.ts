@@ -11,6 +11,10 @@ export interface CashflowForecast {
     expenses: number
     net: number
   }[]
+  monthOverMonth?: {
+    income: number
+    expenses: number
+  }
 }
 
 export async function getCashflowForecast(userId: string): Promise<CashflowForecast> {

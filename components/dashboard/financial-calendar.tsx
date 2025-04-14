@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { addDays, format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday } from "date-fns"
 import { ChevronLeft, ChevronRight, DollarSign, ArrowUpRight, ArrowDownRight } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { WidgetLayout } from "@/components/dashboard/widget-layout"
+import { formatCurrency } from "@/lib/utils/formatting"
+import type { FinancialCalendarData } from "@/app/actions/transactions"
 
 // Types for financial day data
 interface FinancialDayData {
@@ -24,12 +26,25 @@ interface FinancialDayData {
 
 interface FinancialCalendarProps {
   className?: string
-  initialData?: FinancialDayData[]
+  initialData?: FinancialCalendarData[]
 }
 
 export function FinancialCalendar({ className, initialData = [] }: FinancialCalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date())
-  const [financialData, setFinancialData] = useState<FinancialDayData[]>(initialData)
+  const [financialData, setFinancialData] = useState<FinancialDayData[]>([])
+
+  // Convert initialData to the format expected by the component
+  useEffect(() => {
+    if (initialData.length > 0) {
+      const convertedData = initialData.map(item => ({
+        date: new Date(item.date),
+        income: item.income || 0,
+        expenses: item.expenses || 0,
+        events: item.events
+      }))
+      setFinancialData(convertedData)
+    }
+  }, [initialData])
 
   // Get the first day of the current month
   const firstDayCurrentMonth = startOfMonth(currentDate)
@@ -57,60 +72,8 @@ export function FinancialCalendar({ className, initialData = [] }: FinancialCale
     return financialData.find((data) => format(data.date, "yyyy-MM-dd") === format(day, "yyyy-MM-dd"))
   }
 
-  // Mock data generation for demo purposes
-  const generateMockData = () => {
-    const mockData: FinancialDayData[] = []
-
-    // Generate deterministic data for some days in the current month
-    days.forEach((day, index) => {
-      // Use the day of the month to determine if we should add data
-      // This ensures the same data is generated on both server and client
-      const dayOfMonth = day.getDate()
-      
-      // Add data for specific days of the month (e.g., 1st, 5th, 10th, 15th, 20th, 25th, 30th)
-      if (dayOfMonth % 5 === 0 || dayOfMonth === 1) {
-        // Use the day of month to determine income/expense values
-        const income = dayOfMonth % 3 === 0 ? dayOfMonth * 50 : 0
-        const expenses = dayOfMonth % 2 === 0 ? dayOfMonth * 25 : 0
-
-        const events = []
-        if (income > 0) {
-          events.push({
-            id: `income-${index}`,
-            title: "Salary deposit",
-            amount: income,
-            type: "income" as const,
-          })
-        }
-
-        if (expenses > 0) {
-          events.push({
-            id: `expense-${index}`,
-            title: "Daily expenses",
-            amount: expenses,
-            type: "expense" as const,
-          })
-        }
-
-        mockData.push({
-          date: day,
-          income,
-          expenses,
-          events,
-        })
-      }
-    })
-
-    setFinancialData(mockData)
-  }
-
-  // Generate mock data if no initial data is provided
-  if (financialData.length === 0) {
-    generateMockData()
-  }
-
   return (
-    <WidgetLayout className={className}>
+    <WidgetLayout className={className} title="Financial Calendar">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <div>
           <CardTitle>Financial Calendar</CardTitle>
@@ -120,27 +83,26 @@ export function FinancialCalendar({ className, initialData = [] }: FinancialCale
           <Button variant="outline" size="icon" onClick={previousMonth} aria-label="Previous month">
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <div className="font-medium">{format(currentDate, "MMMM yyyy")}</div>
+          <div className="text-sm font-medium">{format(currentDate, "MMMM yyyy")}</div>
           <Button variant="outline" size="icon" onClick={nextMonth} aria-label="Next month">
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-7 gap-1 text-center text-sm">
+        <div className="grid grid-cols-7 gap-1">
+          {/* Day headers */}
           {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-            <div key={day} className="py-2 font-medium">
+            <div key={day} className="text-center text-xs font-medium text-muted-foreground">
               {day}
             </div>
           ))}
-        </div>
-        <div className="mt-1 grid grid-cols-7 gap-1">
-          {days.map((day, dayIdx) => {
-            // Get financial data for this day
-            const dayData = getDayData(day)
 
+          {/* Calendar days */}
+          {days.map((day) => {
+            const dayData = getDayData(day)
             return (
-              <TooltipProvider key={dayIdx}>
+              <TooltipProvider key={day.toString()}>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <div
@@ -151,7 +113,12 @@ export function FinancialCalendar({ className, initialData = [] }: FinancialCale
                       )}
                     >
                       <div
-                        className={cn("flex h-full flex-col justify-between rounded-md p-1", dayData && "bg-muted/50")}
+                        className={cn(
+                          "flex h-full flex-col justify-between rounded-md p-1", 
+                          dayData && "bg-muted/50",
+                          dayData?.income && dayData.income > 0 && "border-l-2 border-green-500",
+                          dayData?.expenses && dayData.expenses > 0 && "border-r-2 border-red-500"
+                        )}
                       >
                         <div className="text-right text-xs">{format(day, "d")}</div>
                         <DayContent dayData={dayData} />
@@ -183,7 +150,7 @@ export function FinancialCalendar({ className, initialData = [] }: FinancialCale
                                       event.type === "income" ? "text-green-500" : "text-red-500",
                                     )}
                                   >
-                                    {event.type === "income" ? "+" : "-"}${event.amount.toFixed(2)}
+                                    {event.type === "income" ? "+" : "-"}{formatCurrency(event.amount)}
                                   </span>
                                 </div>
                               ))}
@@ -220,13 +187,13 @@ function DayContent({ dayData }: { dayData?: FinancialDayData }) {
       {hasIncome && (
         <div className="flex items-center justify-end gap-0.5 text-[10px] text-green-500">
           <DollarSign className="h-2.5 w-2.5" />
-          <span>{dayData.income}</span>
+          <span>{formatCurrency(dayData.income || 0)}</span>
         </div>
       )}
       {hasExpenses && (
         <div className="flex items-center justify-end gap-0.5 text-[10px] text-red-500">
           <DollarSign className="h-2.5 w-2.5" />
-          <span>{dayData.expenses}</span>
+          <span>{formatCurrency(dayData.expenses || 0)}</span>
         </div>
       )}
       {!hasIncome && !hasExpenses && (
@@ -237,4 +204,3 @@ function DayContent({ dayData }: { dayData?: FinancialDayData }) {
     </div>
   )
 }
-

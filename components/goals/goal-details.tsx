@@ -33,6 +33,7 @@ import { EditMilestoneForm } from "./edit-milestone-form"
 import { AddContributionForm } from "./add-contribution-form"
 import { updateMilestoneStatus, deleteGoal, deleteMilestone } from "@/app/actions/goals"
 import { toast } from "@/components/ui/use-toast"
+import { cn } from "@/lib/utils"
 
 interface Goal {
   id: string
@@ -79,9 +80,14 @@ export function GoalDetails({ goal }: GoalDetailsProps) {
     goal.target_amount && goal.target_amount > 0 ? 
       Math.min(100, ((goal.current_savings || 0) / goal.target_amount) * 100) : 0
 
-  // Format dates
-  const formattedStartDate = format(new Date(goal.start_date), "MMMM d, yyyy")
-  const formattedTargetDate = format(new Date(goal.target_date), "MMMM d, yyyy")
+  // Format dates with validation
+  const formattedStartDate = goal.start_date && goal.start_date !== "null" && goal.start_date !== "undefined"
+    ? format(new Date(goal.start_date), "MMMM d, yyyy")
+    : "Not set"
+    
+  const formattedTargetDate = goal.target_date && goal.target_date !== "null" && goal.target_date !== "undefined"
+    ? format(new Date(goal.target_date), "MMMM d, yyyy")
+    : "Not set"
 
   // Format amounts
   const formattedTargetAmount = new Intl.NumberFormat("en-US", {
@@ -310,7 +316,11 @@ export function GoalDetails({ goal }: GoalDetailsProps) {
                         <div className="flex items-center gap-2 mt-2">
                           <div className="flex items-center text-xs text-muted-foreground">
                             <Calendar className="h-3 w-3 mr-1" />
-                            <span>{format(new Date(milestone.target_date), "MMM d, yyyy")}</span>
+                            <span>
+                              {milestone.target_date && milestone.target_date !== "null" && milestone.target_date !== "undefined" 
+                                ? format(new Date(milestone.target_date), "MMM d, yyyy")
+                                : "No date set"}
+                            </span>
                             {milestone.target_amount > 0 && (
                               <>
                                 <DollarSign className="h-3 w-3 ml-2 mr-1" />
@@ -399,4 +409,3 @@ export function GoalDetails({ goal }: GoalDetailsProps) {
     </div>
   )
 }
-

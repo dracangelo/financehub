@@ -1,4 +1,4 @@
-import { getRecentTransactions, getMonthlyIncomeExpenseData, getTransactionStats } from "@/app/actions/transactions"
+import { getRecentTransactions, getMonthlyIncomeExpenseData, getTransactionStats, getFinancialCalendarData, getCombinedTransactions } from "@/app/actions/transactions"
 import { getAccountSummary } from "@/app/actions/accounts"
 import { getCategorySpending } from "@/app/actions/categories"
 import { getCashflowForecast } from "@/lib/cashflow-utils"
@@ -12,11 +12,12 @@ import { FinancialAssistant } from "@/components/dashboard/financial-assistant"
 import { TimeBasedFilters } from "@/components/dashboard/time-based-filters"
 import { FinancialCalendar } from "@/components/dashboard/financial-calendar"
 import { SankeyDiagram } from "@/components/dashboard/sankey-diagram"
-import { RadarChart } from "@/components/dashboard/radar-chart"
 import { NetWorthTimeline } from "@/components/dashboard/net-worth-timeline"
 import { CashFlowForecast } from "@/components/dashboard/cash-flow-forecast"
 import { WidgetLayout } from "@/components/dashboard/widget-layout"
-import { IncomeExpenseChart } from "@/components/charts/income-expense-chart" // Import IncomeExpenseChart
+import { IncomeExpenseChart } from "@/components/charts/income-expense-chart"
+import { FinancialInsights } from "@/components/dashboard/financial-insights"
+import { FinancialSummary } from "@/components/dashboard/financial-summary"
 
 // We'll use real data from the database instead of sample data
 
@@ -31,7 +32,16 @@ export default async function DashboardPage() {
     const user = await requireAuth()
 
     // Fetch data for the dashboard
-    const [recentTransactions, accountSummary, categorySpending, incomeExpenseData, transactionStats, cashflowForecast] = await Promise.all([
+    const [
+      recentTransactions, 
+      accountSummary, 
+      categorySpending, 
+      incomeExpenseData, 
+      transactionStats, 
+      cashflowForecast,
+      financialCalendarData,
+      combinedTransactions
+    ] = await Promise.all([
       getRecentTransactions(5).catch(() => []),
       getAccountSummary().catch(() => ({
         totalBalance: 0,
@@ -56,7 +66,25 @@ export default async function DashboardPage() {
         monthlyTrend: [],
         monthOverMonth: { income: 0, expenses: 0 }
       })),
+      getFinancialCalendarData().catch(() => []),
+      getCombinedTransactions().catch(() => [])
     ])
+
+    // Calculate total income and expenses from combined transactions
+    const totalIncome = combinedTransactions
+      .filter(transaction => transaction.is_income)
+      .reduce((sum, transaction) => sum + transaction.amount, 0)
+      
+    const totalExpenses = combinedTransactions
+      .filter(transaction => !transaction.is_income)
+      .reduce((sum, transaction) => sum + transaction.amount, 0)
+
+    // Format category spending data for the financial summary
+    const formattedCategorySpending = categorySpending.map(category => ({
+      name: category.name || 'Uncategorized',
+      amount: category.amount,
+      color: category.color
+    }))
 
     return (
       <div className="space-y-6">
@@ -67,24 +95,50 @@ export default async function DashboardPage() {
           </div>
           <TimeBasedFilters />
         </div>
-        <WidgetLayout title="Financial Overview">
+
+        {/* Financial Overview Cards */}
+        <div className="grid gap-6">
           <DashboardCards 
             accountSummary={accountSummary}
             cashflowSummary={cashflowForecast}
           />
-          <FinancialHealthScore />
-          <FinancialAssistant />
-          <FinancialCalendar />
-          <SankeyDiagram />
-          <RadarChart />
-          <NetWorthTimeline />
-          <CashFlowForecast data={cashflowForecast.monthlyTrend} />
-        </WidgetLayout>
+        </div>
+
+        {/* Financial Insights and Calendar */}
+        <div className="grid gap-6 md:grid-cols-2">
+          <FinancialInsights 
+            cashflowSummary={cashflowForecast}
+            transactionStats={transactionStats}
+          />
+          <FinancialCalendar initialData={financialCalendarData} />
+        </div>
+
+        {/* Financial Summary */}
+        <FinancialSummary 
+          accountSummary={accountSummary}
+          transactionStats={transactionStats}
+          monthlyData={incomeExpenseData}
+          categorySpending={formattedCategorySpending}
+        />
+
+        {/* Income vs Expense Chart */}
         <IncomeExpenseChart 
           data={incomeExpenseData} 
-          totalIncome={transactionStats.totalIncome} 
-          totalExpenses={transactionStats.totalExpenses} 
-        /> {/* Income vs Expense Chart with totals */}
+          totalIncome={totalIncome} 
+          totalExpenses={totalExpenses} 
+        />
+
+        {/* Additional Visualizations */}
+        <div className="grid gap-6 md:grid-cols-2">
+          <SankeyDiagram />
+          <NetWorthTimeline />
+        </div>
+
+        {/* Cash Flow Forecast */}
+        <CashFlowForecast data={cashflowForecast.monthlyTrend} />
+
+        {/* Financial Assistant */}
+        <FinancialAssistant />
       </div>
     )
   } catch (error) {
@@ -102,4 +156,3 @@ export default async function DashboardPage() {
     )
   }
 }
-

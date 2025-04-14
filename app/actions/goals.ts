@@ -636,13 +636,12 @@ export async function createMilestone(goalId: string, formData: FormData) {
     const name = formData.get("name") as string
     const description = formData.get("description") as string
     const targetAmount = Number.parseFloat(formData.get("target_amount") as string)
-    const targetDate = formData.get("target_date") as string
 
     const supabase = await createClient()
 
     // First check if the goal belongs to the user
     const { data: existingGoal, error: fetchError } = await supabase
-      .from("budget_goals")
+      .from("user_goals")
       .select("user_id")
       .eq("id", goalId)
       .single()
@@ -656,14 +655,13 @@ export async function createMilestone(goalId: string, formData: FormData) {
     }
 
     const { data: milestone, error } = await supabase
-      .from("budget_goal_milestones")
+      .from("goal_milestones")
       .insert({
         goal_id: goalId,
         name,
         description,
-        target_amount: targetAmount,
-        target_date: targetDate,
-        is_completed: false,
+        amount_target: targetAmount,
+        achieved: false,
       })
       .select()
       .single()
@@ -771,11 +769,10 @@ export async function updateMilestone(milestoneId: string, formData: FormData) {
 
     const name = formData.get("name") as string
     const description = formData.get("description") as string
-    const targetDate = formData.get("target_date") as string
     const targetAmount = formData.get("target_amount") ? 
       Number(formData.get("target_amount")) : undefined
 
-    if (!name || !targetDate) {
+    if (!name) {
       return { error: "Missing required fields", success: false }
     }
 
@@ -784,8 +781,7 @@ export async function updateMilestone(milestoneId: string, formData: FormData) {
       .update({
         name,
         description,
-        target_date: targetDate,
-        target_amount: targetAmount,
+        amount_target: targetAmount,
       })
       .eq("id", milestoneId)
       .select()
@@ -963,9 +959,7 @@ export async function addGoalContribution(goalId: string, formData: FormData) {
       .insert({
         goal_id: goalId,
         amount,
-        source,
-        notes: note,
-        user_id: user.id
+        source
       })
       .select()
       .single()

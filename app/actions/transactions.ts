@@ -634,3 +634,62 @@ export async function getMonthlyIncomeExpenseData(): Promise<MonthlyIncomeExpens
       return monthOrder.indexOf(a.month) - monthOrder.indexOf(b.month)
     })
 }
+
+// Interface for financial calendar data
+export interface FinancialCalendarData {
+  date: string
+  income?: number
+  expenses?: number
+  events?: Array<{
+    id: string
+    title: string
+    amount: number
+    type: "income" | "expense"
+  }>
+}
+
+export async function getFinancialCalendarData(): Promise<FinancialCalendarData[]> {
+  try {
+    // Get combined transactions from income sources and expenses
+    const combinedTransactions = await getCombinedTransactions()
+    
+    // Group transactions by date
+    const calendarData: Record<string, FinancialCalendarData> = {}
+    
+    combinedTransactions.forEach(transaction => {
+      // Format date as YYYY-MM-DD
+      const dateKey = new Date(transaction.date).toISOString().split('T')[0]
+      
+      // Initialize the date entry if it doesn't exist
+      if (!calendarData[dateKey]) {
+        calendarData[dateKey] = {
+          date: dateKey,
+          income: 0,
+          expenses: 0,
+          events: []
+        }
+      }
+      
+      // Add transaction to the appropriate category
+      if (transaction.is_income) {
+        calendarData[dateKey].income = (calendarData[dateKey].income || 0) + transaction.amount
+      } else {
+        calendarData[dateKey].expenses = (calendarData[dateKey].expenses || 0) + transaction.amount
+      }
+      
+      // Add event details
+      calendarData[dateKey].events?.push({
+        id: transaction.id,
+        title: transaction.description,
+        amount: transaction.amount,
+        type: transaction.is_income ? "income" : "expense"
+      })
+    })
+    
+    // Convert to array
+    return Object.values(calendarData)
+  } catch (error) {
+    console.error("Error fetching financial calendar data:", error)
+    return []
+  }
+}
