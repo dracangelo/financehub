@@ -110,9 +110,17 @@ export function DebtList() {
       formData.append("interest_rate", debt.interest_rate.toString())
       formData.append("minimum_payment", debt.minimum_payment.toString())
       
-      // For due date
+      // Add optional fields if they exist
       if (debt.due_date) {
         formData.append("due_date", debt.due_date)
+      }
+      
+      if (debt.start_date) {
+        formData.append("start_date", debt.start_date)
+      }
+      
+      if (debt.term_months) {
+        formData.append("term_months", debt.term_months.toString())
       }
       
       console.log("Saving debt with FormData:", Object.fromEntries(formData.entries()))

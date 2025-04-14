@@ -7,11 +7,10 @@ import { CreditCard, Calculator, TrendingUp, BarChart3, PieChart, Target } from 
 
 import { RepaymentStrategyCalculator } from "@/components/debt/strategic/repayment-strategy-calculator"
 import { RefinancingAnalyzer } from "@/components/debt/strategic/refinancing-analyzer"
-import { CreditScoreSimulator } from "@/components/debt/strategic/credit-score-simulator"
 import { DebtToIncomeTracker } from "@/components/debt/strategic/debt-to-income-tracker"
 import { DebtConsolidationAnalyzer } from "@/components/debt/strategic/debt-consolidation-analyzer"
 import { LoanComparisonCalculator } from "@/components/debt/strategic/loan-comparison-calculator"
-import { DebtTest } from "@/components/debt/debt-test"
+// import { DebtTest } from "@/components/debt/debt-test"
 import { DebtList } from "@/components/debt/debt-list"
 
 export const dynamic = "force-dynamic"
@@ -22,7 +21,6 @@ export default function DebtManagementPage() {
       <DashboardHeader
         heading="Debt Management"
         text="Take control of your debt with our comprehensive suite of debt management tools."
-        icon={<CreditCard className="h-6 w-6" />}
       />
 
       
@@ -33,9 +31,9 @@ export default function DebtManagementPage() {
           <DebtList />
         </div>
         
-        <DebtTest />
+        {/* <DebtTest /> */}
         <Tabs defaultValue="strategic" className="w-full mt-8">
-          <TabsList className="grid w-full grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+          <TabsList className="grid w-full grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
             <TabsTrigger value="strategic" className="flex items-center gap-2">
               <TrendingUp className="h-4 w-4" />
               <span className="hidden md:inline">Strategic</span>
@@ -43,10 +41,6 @@ export default function DebtManagementPage() {
             <TabsTrigger value="refinancing" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
               <span className="hidden md:inline">Refinancing</span>
-            </TabsTrigger>
-            <TabsTrigger value="credit-score" className="flex items-center gap-2">
-              <CreditCard className="h-4 w-4" />
-              <span className="hidden md:inline">Credit Score</span>
             </TabsTrigger>
             <TabsTrigger value="debt-to-income" className="flex items-center gap-2">
               <PieChart className="h-4 w-4" />
@@ -74,11 +68,7 @@ export default function DebtManagementPage() {
             </Suspense>
           </TabsContent>
           
-          <TabsContent value="credit-score" className="mt-4">
-            <Suspense fallback={<Skeleton className="h-[600px] w-full" />}>
-              <CreditScoreSimulator />
-            </Suspense>
-          </TabsContent>
+
           
           <TabsContent value="debt-to-income" className="mt-4">
             <Suspense fallback={<Skeleton className="h-[600px] w-full" />}>

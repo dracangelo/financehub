@@ -9,13 +9,14 @@ import { Slider } from "@/components/ui/slider"
 import { Button } from "@/components/ui/button"
 import { formatCurrency, formatPercentage } from "@/lib/utils"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from "recharts"
-import { Info } from "lucide-react"
+import { Info, RefreshCw, Loader2 } from "lucide-react"
 import {
   Tooltip as TooltipComponent,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { getDebts, type Debt as ApiDebt } from "@/app/actions/debts"
 
 interface Debt {
   id: string
@@ -56,38 +57,43 @@ export function DebtConsolidationAnalyzer() {
   const [selectedOption, setSelectedOption] = useState<string | null>(null)
   const [results, setResults] = useState<ConsolidationResult | null>(null)
   const [loading, setLoading] = useState(false)
+  const [fetchingDebts, setFetchingDebts] = useState(true)
+  const [currentDebts, setCurrentDebts] = useState<Debt[]>([])
+  const [fetchError, setFetchError] = useState<string | null>(null)
 
-  // In a real app, this would come from your database or API
-  const currentDebts: Debt[] = [
-    {
-      id: "1",
-      name: "Credit Card 1",
-      balance: 5000,
-      interestRate: 18.99,
-      minimumPayment: 150,
-    },
-    {
-      id: "2",
-      name: "Credit Card 2",
-      balance: 3500,
-      interestRate: 22.99,
-      minimumPayment: 105,
-    },
-    {
-      id: "3",
-      name: "Personal Loan",
-      balance: 10000,
-      interestRate: 12.5,
-      minimumPayment: 250,
-    },
-    {
-      id: "4",
-      name: "Auto Loan",
-      balance: 15000,
-      interestRate: 6.75,
-      minimumPayment: 300,
-    },
-  ]
+  // Fetch debts from the database when component mounts
+  useEffect(() => {
+    fetchExistingDebts()
+  }, [])
+
+  const fetchExistingDebts = async () => {
+    try {
+      setFetchingDebts(true)
+      setFetchError(null)
+      
+      const existingDebts = await getDebts()
+      
+      if (existingDebts && existingDebts.length > 0) {
+        // Map the database debt format to the component's format
+        const mappedDebts: Debt[] = existingDebts.map(debt => ({
+          id: debt.id,
+          name: debt.name,
+          balance: debt.principal,
+          interestRate: debt.interest_rate,
+          minimumPayment: debt.minimum_payment || 0
+        }))
+        
+        setCurrentDebts(mappedDebts)
+      } else {
+        setFetchError("No debts found. Please add debts in the Debt Management section first.")
+      }
+    } catch (error) {
+      console.error("Error fetching debts:", error)
+      setFetchError("Failed to load your debts. Please try again.")
+    } finally {
+      setFetchingDebts(false)
+    }
+  }
 
   const consolidationOptions: ConsolidationOption[] = [
     {
@@ -117,10 +123,10 @@ export function DebtConsolidationAnalyzer() {
   ]
 
   useEffect(() => {
-    if (selectedOption) {
+    if (selectedOption && currentDebts.length > 0) {
       calculateResults()
     }
-  }, [selectedOption])
+  }, [selectedOption, currentDebts])
 
   const calculateResults = () => {
     setLoading(true)
@@ -243,94 +249,138 @@ export function DebtConsolidationAnalyzer() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Debt Consolidation Analyzer</CardTitle>
-          <CardDescription>
-            Compare debt consolidation options to see if you can save money on your existing debts.
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Debt Consolidation Analyzer</CardTitle>
+              <CardDescription>
+                Compare debt consolidation options to see if you can save money on your existing debts.
+              </CardDescription>
+            </div>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={fetchExistingDebts} 
+              disabled={fetchingDebts}
+            >
+              {fetchingDebts ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Loading...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Refresh Debts
+                </>
+              )}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-6">
-            <div className="space-y-4">
-              <h3 className="text-sm font-medium">Your Current Debts</h3>
-              <div className="rounded-md border">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b bg-muted/50">
-                      <th className="px-4 py-2 text-left text-sm font-medium">Debt</th>
-                      <th className="px-4 py-2 text-right text-sm font-medium">Balance</th>
-                      <th className="px-4 py-2 text-right text-sm font-medium">Interest Rate</th>
-                      <th className="px-4 py-2 text-right text-sm font-medium">Monthly Payment</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {currentDebts.map((debt) => (
-                      <tr key={debt.id} className="border-b">
-                        <td className="px-4 py-2 text-sm">{debt.name}</td>
-                        <td className="px-4 py-2 text-right text-sm">{formatCurrency(debt.balance)}</td>
-                        <td className="px-4 py-2 text-right text-sm">{formatPercentage(debt.interestRate)}</td>
-                        <td className="px-4 py-2 text-right text-sm">{formatCurrency(debt.minimumPayment)}</td>
+          {fetchingDebts ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : fetchError ? (
+            <div className="rounded-md border border-destructive/50 bg-destructive/10 p-6 text-center">
+              <p className="text-destructive mb-4">{fetchError}</p>
+              <p className="text-sm text-muted-foreground">
+                Please add debts in the <a href="/debt-management" className="underline font-medium">Debt Management</a> section first.
+              </p>
+            </div>
+          ) : currentDebts.length === 0 ? (
+            <div className="rounded-md border border-muted p-6 text-center">
+              <p className="text-muted-foreground mb-4">No debts found.</p>
+              <p className="text-sm text-muted-foreground">
+                Please add debts in the <a href="/debt-management" className="underline font-medium">Debt Management</a> section first.
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-6">
+              <div className="space-y-4">
+                <h3 className="text-sm font-medium">Your Current Debts</h3>
+                <div className="rounded-md border">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="px-4 py-2 text-left text-sm font-medium">Debt</th>
+                        <th className="px-4 py-2 text-right text-sm font-medium">Balance</th>
+                        <th className="px-4 py-2 text-right text-sm font-medium">Interest Rate</th>
+                        <th className="px-4 py-2 text-right text-sm font-medium">Monthly Payment</th>
                       </tr>
-                    ))}
-                    <tr className="bg-muted/50 font-medium">
-                      <td className="px-4 py-2 text-sm">Total</td>
-                      <td className="px-4 py-2 text-right text-sm">
-                        {formatCurrency(currentDebts.reduce((sum, debt) => sum + debt.balance, 0))}
-                      </td>
-                      <td className="px-4 py-2 text-right text-sm">
-                        {formatPercentage(
-                          currentDebts.reduce((sum, debt) => {
-                            const debtRatio = debt.balance / currentDebts.reduce((sum, d) => sum + d.balance, 0)
-                            return sum + (debt.interestRate * debtRatio)
-                          }, 0)
-                        )}
-                      </td>
-                      <td className="px-4 py-2 text-right text-sm">
-                        {formatCurrency(currentDebts.reduce((sum, debt) => sum + debt.minimumPayment, 0))}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {currentDebts.map((debt) => (
+                        <tr key={debt.id} className="border-b">
+                          <td className="px-4 py-2 text-sm">{debt.name}</td>
+                          <td className="px-4 py-2 text-right text-sm">{formatCurrency(debt.balance)}</td>
+                          <td className="px-4 py-2 text-right text-sm">{formatPercentage(debt.interestRate)}</td>
+                          <td className="px-4 py-2 text-right text-sm">{formatCurrency(debt.minimumPayment)}</td>
+                        </tr>
+                      ))}
+                      {currentDebts.length > 0 && (
+                        <tr className="bg-muted/50 font-medium">
+                          <td className="px-4 py-2 text-sm">Total</td>
+                          <td className="px-4 py-2 text-right text-sm">
+                            {formatCurrency(currentDebts.reduce((sum, debt) => sum + debt.balance, 0))}
+                          </td>
+                          <td className="px-4 py-2 text-right text-sm">
+                            {formatPercentage(
+                              currentDebts.reduce((sum, debt) => {
+                                const debtRatio = debt.balance / currentDebts.reduce((sum, d) => sum + d.balance, 0)
+                                return sum + (debt.interestRate * debtRatio)
+                              }, 0)
+                            )}
+                          </td>
+                          <td className="px-4 py-2 text-right text-sm">
+                            {formatCurrency(currentDebts.reduce((sum, debt) => sum + debt.minimumPayment, 0))}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-            
-            <div className="space-y-4">
-              <h3 className="text-sm font-medium">Available Consolidation Options</h3>
-              <div className="grid gap-4 md:grid-cols-3">
-                {consolidationOptions.map((option) => (
-                  <Card
-                    key={option.id}
-                    className={`cursor-pointer transition-colors ${
-                      selectedOption === option.id ? "border-2 border-primary" : ""
-                    }`}
-                    onClick={() => handleOptionSelect(option.id)}
-                  >
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-lg">{option.name}</CardTitle>
-                      <CardDescription>
-                        Interest Rate: {formatPercentage(option.interestRate)}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2">
-                        <div className="flex justify-between">
-                          <span className="text-sm text-muted-foreground">Term:</span>
-                          <span className="font-medium">{option.term} months</span>
+              
+              <div className="space-y-4">
+                <h3 className="text-sm font-medium">Available Consolidation Options</h3>
+                <div className="grid gap-4 md:grid-cols-3">
+                  {consolidationOptions.map((option) => (
+                    <Card
+                      key={option.id}
+                      className={`cursor-pointer transition-colors ${
+                        selectedOption === option.id ? "border-2 border-primary" : ""
+                      }`}
+                      onClick={() => handleOptionSelect(option.id)}
+                    >
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-lg">{option.name}</CardTitle>
+                        <CardDescription>
+                          Interest Rate: {formatPercentage(option.interestRate)}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2">
+                          <div className="flex justify-between">
+                            <span className="text-sm text-muted-foreground">Term:</span>
+                            <span className="font-medium">{option.term} months</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm text-muted-foreground">Monthly Payment:</span>
+                            <span className="font-medium">{formatCurrency(option.monthlyPayment)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm text-muted-foreground">Origination Fee:</span>
+                            <span className="font-medium">{formatCurrency(option.originationFee)}</span>
+                          </div>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-sm text-muted-foreground">Monthly Payment:</span>
-                          <span className="font-medium">{formatCurrency(option.monthlyPayment)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-sm text-muted-foreground">Origination Fee:</span>
-                          <span className="font-medium">{formatCurrency(option.originationFee)}</span>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
               </div>
-            </div>
           </div>
+          )}
         </CardContent>
       </Card>
 

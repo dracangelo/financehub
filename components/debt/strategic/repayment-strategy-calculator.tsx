@@ -10,14 +10,16 @@ import { Slider } from "@/components/ui/slider"
 import { Button } from "@/components/ui/button"
 import { formatCurrency, formatPercentage } from "@/lib/utils"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from "recharts"
-import { Info, Plus, Trash2 } from "lucide-react"
+import { Info, Plus, Trash2, RefreshCw, Loader2 } from "lucide-react"
 import {
   Tooltip as TooltipComponent,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { getDebts, type Debt as DebtType } from "@/app/actions/debts"
 
+// Interface for internal debt representation in the calculator
 interface Debt {
   id: string
   name: string
@@ -59,18 +61,47 @@ export function RepaymentStrategyCalculator() {
   const [strategy, setStrategy] = useState<"avalanche" | "snowball" | "hybrid">("avalanche")
   const [extraPayment, setExtraPayment] = useState<number>(0)
   const [loading, setLoading] = useState(false)
+  const [fetchingDebts, setFetchingDebts] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [results, setResults] = useState<PayoffResult[]>([])
   const [debts, setDebts] = useState<Debt[]>([])
-  
-  // Form state for adding new debts
-  const [newDebt, setNewDebt] = useState({
-    name: "",
-    balance: 5000,
-    interestRate: 5,
-    minimumPayment: 100
-  })
+  const [fetchError, setFetchError] = useState<string | null>(null)
 
+  // Fetch debts from the database when component mounts
+  useEffect(() => {
+    const fetchExistingDebts = async () => {
+      try {
+        setFetchingDebts(true)
+        setFetchError(null)
+        
+        const existingDebts = await getDebts()
+        
+        if (existingDebts && existingDebts.length > 0) {
+          // Map the database debt format to the calculator's format
+          const mappedDebts: Debt[] = existingDebts.map(debt => ({
+            id: debt.id,
+            name: debt.name,
+            balance: debt.principal,
+            interestRate: debt.interest_rate,
+            minimumPayment: debt.minimum_payment || 0
+          }))
+          
+          setDebts(mappedDebts)
+        } else {
+          setFetchError("No debts found. Please add debts in the Debt Management section first.")
+        }
+      } catch (error) {
+        console.error("Error fetching debts:", error)
+        setFetchError("Failed to load your debts. Please try again.")
+      } finally {
+        setFetchingDebts(false)
+      }
+    }
+    
+    fetchExistingDebts()
+  }, [])
+  
+  // Calculate payoff results when strategy, extra payment, or debts change
   useEffect(() => {
     if (debts.length > 0) {
       calculatePayoffResults()
@@ -137,30 +168,102 @@ export function RepaymentStrategyCalculator() {
           return [...remainingDebts].sort((a, b) => a.balance - b.balance);
           
         case "hybrid":
-          // Sophisticated hybrid approach that balances math and psychology
+          // Truly hybrid approach that combines aspects of both avalanche and snowball methods
           return [...remainingDebts].sort((a, b) => {
-            // Calculate debt ratio (balance to minimum payment)
-            const ratioA = a.balance / a.minimumPayment;
-            const ratioB = b.balance / b.minimumPayment;
+            // Calculate a combined score that considers both interest rate and balance
+            // This creates a distinct third approach different from pure avalanche or snowball
             
-            // Calculate interest burden (monthly interest cost)
+            // Normalize interest rates (0-1 scale where 1 is highest interest)
+            const maxInterest = Math.max(...remainingDebts.map(d => d.interestRate));
+            const minInterest = Math.min(...remainingDebts.map(d => d.interestRate));
+            const interestRangeA = maxInterest - minInterest;
+            
+            const normalizedInterestA = interestRangeA === 0 ? 
+              0.5 : // If all debts have same interest rate, neutral value
+              (a.interestRate - minInterest) / interestRangeA;
+              
+            const normalizedInterestB = interestRangeA === 0 ? 
+              0.5 : 
+              (b.interestRate - minInterest) / interestRangeA;
+            
+            // Normalize balances (0-1 scale where 0 is lowest balance)
+            const maxBalance = Math.max(...remainingDebts.map(d => d.balance));
+            const minBalance = Math.min(...remainingDebts.map(d => d.balance));
+            const balanceRangeA = maxBalance - minBalance;
+            
+            const normalizedBalanceA = balanceRangeA === 0 ? 
+              0.5 : // If all debts have same balance, neutral value
+              1 - ((a.balance - minBalance) / balanceRangeA); // Invert so smaller balances get higher scores
+              
+            const normalizedBalanceB = balanceRangeA === 0 ? 
+              0.5 : 
+              1 - ((b.balance - minBalance) / balanceRangeA);
+            
+            // Calculate debt-to-payment ratio (efficiency metric)
+            const ratioA = a.minimumPayment > 0 ? a.balance / a.minimumPayment : a.balance;
+            const ratioB = b.minimumPayment > 0 ? b.balance / b.minimumPayment : b.balance;
+            
+            // Normalize ratio (0-1 scale where 0 is best ratio)
+            const maxRatio = Math.max(...remainingDebts.map(d => 
+              d.minimumPayment > 0 ? d.balance / d.minimumPayment : d.balance));
+            const minRatio = Math.min(...remainingDebts.map(d => 
+              d.minimumPayment > 0 ? d.balance / d.minimumPayment : d.balance));
+            const ratioRange = maxRatio - minRatio;
+            
+            const normalizedRatioA = ratioRange === 0 ? 
+              0.5 : 
+              1 - ((ratioA - minRatio) / ratioRange); // Invert so better ratios get higher scores
+              
+            const normalizedRatioB = ratioRange === 0 ? 
+              0.5 : 
+              1 - ((ratioB - minRatio) / ratioRange);
+            
+            // Calculate monthly interest burden
             const interestBurdenA = a.balance * (a.interestRate / 100 / 12);
             const interestBurdenB = b.balance * (b.interestRate / 100 / 12);
             
-            // Calculate efficiency score (how quickly debt generates interest relative to payment)
-            const efficiencyScoreA = a.interestRate / ratioA;
-            const efficiencyScoreB = b.interestRate / ratioB;
+            // Normalize interest burden (0-1 scale where 0 is lowest burden)
+            const maxBurden = Math.max(...remainingDebts.map(d => d.balance * (d.interestRate / 100 / 12)));
+            const minBurden = Math.min(...remainingDebts.map(d => d.balance * (d.interestRate / 100 / 12)));
+            const burdenRange = maxBurden - minBurden;
             
-            // Calculate psychological factor (how quickly we can pay off)
-            const quickWinFactorA = 1 - (a.balance / 
-              (remainingDebts.reduce((max, d) => Math.max(max, d.balance), 0)));
-            const quickWinFactorB = 1 - (b.balance / 
-              (remainingDebts.reduce((max, d) => Math.max(max, d.balance), 0)));
+            const normalizedBurdenA = burdenRange === 0 ? 
+              0.5 : 
+              1 - ((interestBurdenA - minBurden) / burdenRange); // Invert so lower burden gets higher score
+              
+            const normalizedBurdenB = burdenRange === 0 ? 
+              0.5 : 
+              1 - ((interestBurdenB - minBurden) / burdenRange);
             
-            // Hybrid score: 60% mathematical efficiency, 40% psychological benefit
-            const hybridScoreA = (efficiencyScoreA * 0.6) + (quickWinFactorA * 0.4);
-            const hybridScoreB = (efficiencyScoreB * 0.6) + (quickWinFactorB * 0.4);
+            // Dynamic weighting based on debt profile
+            // Analyze the overall debt situation to determine optimal strategy
+            const totalDebt = remainingDebts.reduce((sum, d) => sum + d.balance, 0);
+            const avgInterestRate = remainingDebts.reduce((sum, d) => sum + (d.balance / totalDebt) * d.interestRate, 0);
+            const smallDebtCount = remainingDebts.filter(d => d.balance < (totalDebt / remainingDebts.length) * 0.5).length;
+            const smallDebtRatio = remainingDebts.length > 0 ? smallDebtCount / remainingDebts.length : 0;
             
+            // Calculate weights that will make hybrid truly different from avalanche and snowball
+            // When interest rates are high, we care more about interest but still consider balance
+            // When many small debts exist, we care more about quick wins but still consider interest
+            const interestWeight = 0.4 + (avgInterestRate / 30) * 0.2; // 0.4-0.6 range based on avg interest
+            const balanceWeight = 0.3 + smallDebtRatio * 0.2; // 0.3-0.5 range based on small debt ratio
+            const ratioWeight = 0.15; // Fixed weight for payment efficiency
+            const burdenWeight = 0.15; // Fixed weight for monthly interest burden
+            
+            // Final hybrid scores - a balanced approach that's distinct from avalanche and snowball
+            const hybridScoreA = 
+              (normalizedInterestA * interestWeight) + 
+              (normalizedBalanceA * balanceWeight) + 
+              (normalizedRatioA * ratioWeight) + 
+              (normalizedBurdenA * burdenWeight);
+              
+            const hybridScoreB = 
+              (normalizedInterestB * interestWeight) + 
+              (normalizedBalanceB * balanceWeight) + 
+              (normalizedRatioB * ratioWeight) + 
+              (normalizedBurdenB * burdenWeight);
+            
+            // Higher score gets priority
             return hybridScoreB - hybridScoreA;
           });
       }
@@ -284,40 +387,33 @@ export function RepaymentStrategyCalculator() {
     };
   };
 
-  const addDebt = () => {
-    if (!newDebt.name.trim()) {
-      alert("Please enter a name for the debt")
-      return
+  const refreshDebts = async () => {
+    try {
+      setFetchingDebts(true)
+      setFetchError(null)
+      
+      const existingDebts = await getDebts()
+      
+      if (existingDebts && existingDebts.length > 0) {
+        // Map the database debt format to the calculator's format
+        const mappedDebts: Debt[] = existingDebts.map(debt => ({
+          id: debt.id,
+          name: debt.name,
+          balance: debt.principal,
+          interestRate: debt.interest_rate,
+          minimumPayment: debt.minimum_payment || 0
+        }))
+        
+        setDebts(mappedDebts)
+      } else {
+        setFetchError("No debts found. Please add debts in the Debt Management section first.")
+      }
+    } catch (error) {
+      console.error("Error fetching debts:", error)
+      setFetchError("Failed to load your debts. Please try again.")
+    } finally {
+      setFetchingDebts(false)
     }
-    
-    if (newDebt.balance <= 0) {
-      alert("Balance must be greater than 0")
-      return
-    }
-    
-    if (newDebt.minimumPayment <= 0) {
-      alert("Minimum payment must be greater than 0")
-      return
-    }
-    
-    const newDebtWithId = {
-      ...newDebt,
-      id: `debt-${Date.now()}`
-    }
-    
-    setDebts(prevDebts => [...prevDebts, newDebtWithId])
-    
-    // Reset form
-    setNewDebt({
-      name: "",
-      balance: 5000,
-      interestRate: 5,
-      minimumPayment: 100
-    })
-  }
-
-  const removeDebt = (id: string) => {
-    setDebts(prevDebts => prevDebts.filter(debt => debt.id !== id))
   }
 
   const getBestStrategy = () => {
@@ -336,265 +432,262 @@ export function RepaymentStrategyCalculator() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Repayment Strategy Calculator</CardTitle>
-          <CardDescription>
-            Add your debts and compare different repayment strategies to find the most efficient way to become debt-free.
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Repayment Strategy Calculator</CardTitle>
+              <CardDescription>
+                Compare different repayment strategies to find the most efficient way to become debt-free.
+              </CardDescription>
+            </div>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={refreshDebts} 
+              disabled={fetchingDebts}
+            >
+              {fetchingDebts ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Loading...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Refresh Debts
+                </>
+              )}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-6">
-            <div className="grid gap-4 md:grid-cols-4">
-              <div className="space-y-2">
-                <Label htmlFor="debt-name">Debt Name</Label>
-                <Input
-                  id="debt-name"
-                  placeholder="e.g., Credit Card, Car Loan"
-                  value={newDebt.name}
-                  onChange={(e) => setNewDebt(prev => ({ ...prev, name: e.target.value }))}
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="debt-balance">Balance</Label>
-                <div className="flex items-center gap-4">
-                  <Slider
-                    id="debt-balance"
-                    min={100}
-                    max={50000}
-                    step={100}
-                    value={[newDebt.balance]}
-                    onValueChange={(value) => setNewDebt(prev => ({ ...prev, balance: value[0] }))}
-                    className="flex-1"
-                  />
-                  <Input
-                    type="number"
-                    value={newDebt.balance}
-                    onChange={(e) => setNewDebt(prev => ({ ...prev, balance: Number(e.target.value) }))}
-                    className="w-24"
-                  />
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="interest-rate">Interest Rate (%)</Label>
-                <div className="flex items-center gap-4">
-                  <Slider
-                    id="interest-rate"
-                    min={1}
-                    max={30}
-                    step={0.25}
-                    value={[newDebt.interestRate]}
-                    onValueChange={(value) => setNewDebt(prev => ({ ...prev, interestRate: value[0] }))}
-                    className="flex-1"
-                  />
-                  <Input
-                    type="number"
-                    value={newDebt.interestRate}
-                    onChange={(e) => setNewDebt(prev => ({ ...prev, interestRate: Number(e.target.value) }))}
-                    className="w-20"
-                  />
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="minimum-payment">Minimum Payment</Label>
-                <div className="flex items-center gap-4">
-                  <Slider
-                    id="minimum-payment"
-                    min={10}
-                    max={1000}
-                    step={10}
-                    value={[newDebt.minimumPayment]}
-                    onValueChange={(value) => setNewDebt(prev => ({ ...prev, minimumPayment: value[0] }))}
-                    className="flex-1"
-                  />
-                  <Input
-                    type="number"
-                    value={newDebt.minimumPayment}
-                    onChange={(e) => setNewDebt(prev => ({ ...prev, minimumPayment: Number(e.target.value) }))}
-                    className="w-24"
-                  />
-                </div>
-              </div>
+          {fetchingDebts ? (
+            <div className="flex flex-col items-center justify-center py-12 bg-muted/20 rounded-lg border border-dashed">
+              <Loader2 className="h-12 w-12 animate-spin text-primary mb-6" />
+              <p className="text-lg font-medium text-muted-foreground">Loading your debts...</p>
             </div>
-            
-            <div className="flex justify-end">
-              <Button onClick={addDebt}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Debt
+          ) : fetchError ? (
+            <div className="rounded-lg border-2 border-destructive/50 bg-destructive/10 p-8 text-center shadow-sm">
+              <p className="text-destructive text-lg font-semibold mb-4">{fetchError}</p>
+              <p className="text-muted-foreground mb-4">
+                We need your debt information to calculate repayment strategies.
+              </p>
+              <Button variant="outline" asChild>
+                <a href="/debt-management">Add Debts</a>
               </Button>
             </div>
-          </div>
+          ) : debts.length === 0 ? (
+            <div className="rounded-lg border-2 border-muted p-8 text-center bg-muted/10 shadow-sm">
+              <p className="text-lg font-semibold mb-4">No debts found</p>
+              <p className="text-muted-foreground mb-6">
+                Add your debts to see personalized repayment strategies and save money on interest.
+              </p>
+              <Button asChild>
+                <a href="/debt-management">Add Your First Debt</a>
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-base font-medium flex items-center mb-3">
+                  <span className="inline-block w-2 h-2 rounded-full bg-primary mr-2"></span>
+                  Your Current Debts
+                </h3>
+                <div className="rounded-lg border overflow-hidden shadow-sm">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="px-4 py-3 text-left text-sm font-semibold">Debt Name</th>
+                        <th className="px-4 py-3 text-right text-sm font-semibold">Balance</th>
+                        <th className="px-4 py-3 text-right text-sm font-semibold">Interest Rate</th>
+                        <th className="px-4 py-3 text-right text-sm font-semibold">Min. Payment</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {debts.map((debt, index) => (
+                        <tr key={debt.id} className={`border-b ${index % 2 === 0 ? 'bg-muted/10' : ''}`}>
+                          <td className="px-4 py-3 text-sm font-medium">{debt.name}</td>
+                          <td className="px-4 py-3 text-right text-sm">{formatCurrency(debt.balance)}</td>
+                          <td className="px-4 py-3 text-right text-sm">
+                            <span className={`px-2 py-1 rounded-full text-xs ${debt.interestRate > 15 ? 'bg-destructive/10 text-destructive' : debt.interestRate > 8 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                              {formatPercentage(debt.interestRate)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right text-sm">{formatCurrency(debt.minimumPayment)}</td>
+                        </tr>
+                      ))}
+                      <tr className="bg-muted/20 font-medium">
+                        <td className="px-4 py-3 text-sm">Total</td>
+                        <td className="px-4 py-3 text-right text-sm font-semibold">
+                          {formatCurrency(debts.reduce((sum, debt) => sum + debt.balance, 0))}
+                        </td>
+                        <td className="px-4 py-3 text-right text-sm">
+                          {formatPercentage(
+                            debts.reduce((sum, debt) => sum + debt.balance * debt.interestRate, 0) / 
+                            debts.reduce((sum, debt) => sum + debt.balance, 0)
+                          )}
+                          <span className="text-xs text-muted-foreground ml-1">(avg)</span>
+                        </td>
+                        <td className="px-4 py-3 text-right text-sm font-semibold">
+                          {formatCurrency(debts.reduce((sum, debt) => sum + debt.minimumPayment, 0))}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {debts.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Your Debts</CardTitle>
-            <CardDescription>
-              Here are all the debts you've added. You can remove any debt by clicking the trash icon.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-md border">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="px-4 py-2 text-left text-sm font-medium">Debt Name</th>
-                    <th className="px-4 py-2 text-right text-sm font-medium">Balance</th>
-                    <th className="px-4 py-2 text-right text-sm font-medium">Interest Rate</th>
-                    <th className="px-4 py-2 text-right text-sm font-medium">Minimum Payment</th>
-                    <th className="px-4 py-2 text-right text-sm font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {debts.map((debt) => (
-                    <tr key={debt.id} className="border-b">
-                      <td className="px-4 py-2 text-sm">{debt.name}</td>
-                      <td className="px-4 py-2 text-right text-sm">{formatCurrency(debt.balance)}</td>
-                      <td className="px-4 py-2 text-right text-sm">{formatPercentage(debt.interestRate)}</td>
-                      <td className="px-4 py-2 text-right text-sm">{formatCurrency(debt.minimumPayment)}</td>
-                      <td className="px-4 py-2 text-right text-sm">
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          onClick={() => removeDebt(debt.id)}
-                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                  <tr className="bg-muted/50 font-medium">
-                    <td className="px-4 py-2 text-sm">Total</td>
-                    <td className="px-4 py-2 text-right text-sm">
-                      {formatCurrency(debts.reduce((sum, debt) => sum + debt.balance, 0))}
-                    </td>
-                    <td className="px-4 py-2 text-right text-sm">
-                      {formatPercentage(
-                        debts.reduce((sum, debt) => sum + debt.balance * debt.interestRate, 0) / 
-                        debts.reduce((sum, debt) => sum + debt.balance, 0)
-                      )}
-                    </td>
-                    <td className="px-4 py-2 text-right text-sm">
-                      {formatCurrency(debts.reduce((sum, debt) => sum + debt.minimumPayment, 0))}
-                    </td>
-                    <td className="px-4 py-2 text-right text-sm"></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+
 
       {debts.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Repayment Strategy</CardTitle>
-            <CardDescription>
-              Choose a repayment strategy and add extra payment to see how it affects your payoff timeline.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-6">
-              <div className="space-y-4">
-                <Label>Strategy</Label>
-                <RadioGroup
-                  value={strategy}
-                  onValueChange={(value) => setStrategy(value as "avalanche" | "snowball" | "hybrid")}
-                  className="grid grid-cols-3 gap-4"
-                >
-                  <div className="flex items-center space-x-2 rounded-lg border p-4">
-                    <RadioGroupItem value="avalanche" id="avalanche" />
-                    <Label htmlFor="avalanche" className="flex-1">
-                      <div className="font-medium">Avalanche</div>
-                      <div className="text-sm text-muted-foreground">
-                        Pay highest interest rate first
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Repayment Strategy</CardTitle>
+              <CardDescription>
+                Choose a repayment strategy and add extra payment to see how it affects your payoff timeline.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-6">
+                <div className="space-y-4">
+                  <Label>Strategy</Label>
+                  <RadioGroup
+                    value={strategy}
+                    onValueChange={(value) => setStrategy(value as "avalanche" | "snowball" | "hybrid")}
+                    className="grid gap-4 md:grid-cols-3"
+                  >
+                    <div className={`flex flex-col rounded-lg border p-5 transition-all ${strategy === "avalanche" ? "border-primary bg-primary/5 shadow-md" : "hover:border-primary/50 hover:shadow-sm"}`}>
+                      <div className="flex items-start space-x-2 mb-2">
+                        <RadioGroupItem value="avalanche" id="avalanche" className="mt-1" />
+                        <div className="flex-1">
+                          <Label htmlFor="avalanche" className="text-base font-semibold cursor-pointer">Avalanche Method</Label>
+                          <div className="text-sm text-muted-foreground mt-1">
+                            Pay highest interest rate first
+                          </div>
+                        </div>
+                        <TooltipProvider>
+                          <TooltipComponent>
+                            <TooltipTrigger asChild>
+                              <Info className="h-5 w-5 text-muted-foreground hover:text-primary transition-colors" />
+                            </TooltipTrigger>
+                            <TooltipContent className="p-4 max-w-xs">
+                              <p className="font-medium mb-2">The Avalanche Method</p>
+                              <p className="mb-2">Prioritizes debts with the highest interest rates first, regardless of balance.</p>
+                              <p className="text-sm text-muted-foreground">This mathematically optimal approach minimizes the total interest paid over time.</p>
+                            </TooltipContent>
+                          </TooltipComponent>
+                        </TooltipProvider>
                       </div>
-                    </Label>
-                    <TooltipProvider>
-                      <TooltipComponent>
-                        <TooltipTrigger asChild>
-                          <Info className="h-4 w-4 text-muted-foreground" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>The avalanche method prioritizes paying off debts with the highest interest rates first.</p>
-                          <p>This strategy minimizes the total interest paid over time.</p>
-                        </TooltipContent>
-                      </TooltipComponent>
-                    </TooltipProvider>
-                  </div>
-                  <div className="flex items-center space-x-2 rounded-lg border p-4">
-                    <RadioGroupItem value="snowball" id="snowball" />
-                    <Label htmlFor="snowball" className="flex-1">
-                      <div className="font-medium">Snowball</div>
-                      <div className="text-sm text-muted-foreground">
-                        Pay smallest balance first
+                      <div className="mt-2 text-xs text-muted-foreground bg-background/80 p-2 rounded">
+                        <span className="font-medium text-primary">Best for:</span> Minimizing total interest paid
                       </div>
-                    </Label>
-                    <TooltipProvider>
-                      <TooltipComponent>
-                        <TooltipTrigger asChild>
-                          <Info className="h-4 w-4 text-muted-foreground" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>The snowball method prioritizes paying off debts with the smallest balances first.</p>
-                          <p>This strategy provides psychological motivation by quickly eliminating debts.</p>
-                        </TooltipContent>
-                      </TooltipComponent>
-                    </TooltipProvider>
-                  </div>
-                  <div className="flex items-center space-x-2 rounded-lg border p-4">
-                    <RadioGroupItem value="hybrid" id="hybrid" />
-                    <Label htmlFor="hybrid" className="flex-1">
-                      <div className="font-medium">Hybrid</div>
-                      <div className="text-sm text-muted-foreground">
-                        Balance of both approaches
+                    </div>
+                    
+                    <div className={`flex flex-col rounded-lg border p-5 transition-all ${strategy === "snowball" ? "border-primary bg-primary/5 shadow-md" : "hover:border-primary/50 hover:shadow-sm"}`}>
+                      <div className="flex items-start space-x-2 mb-2">
+                        <RadioGroupItem value="snowball" id="snowball" className="mt-1" />
+                        <div className="flex-1">
+                          <Label htmlFor="snowball" className="text-base font-semibold cursor-pointer">Snowball Method</Label>
+                          <div className="text-sm text-muted-foreground mt-1">
+                            Pay smallest balance first
+                          </div>
+                        </div>
+                        <TooltipProvider>
+                          <TooltipComponent>
+                            <TooltipTrigger asChild>
+                              <Info className="h-5 w-5 text-muted-foreground hover:text-primary transition-colors" />
+                            </TooltipTrigger>
+                            <TooltipContent className="p-4 max-w-xs">
+                              <p className="font-medium mb-2">The Snowball Method</p>
+                              <p className="mb-2">Prioritizes debts with the smallest balances first, regardless of interest rate.</p>
+                              <p className="text-sm text-muted-foreground">This psychologically rewarding approach provides quick wins to build momentum.</p>
+                            </TooltipContent>
+                          </TooltipComponent>
+                        </TooltipProvider>
                       </div>
-                    </Label>
-                    <TooltipProvider>
-                      <TooltipComponent>
-                        <TooltipTrigger asChild>
-                          <Info className="h-4 w-4 text-muted-foreground" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>The hybrid method balances interest rates and debt balances.</p>
-                          <p>This strategy aims to optimize both financial and psychological benefits.</p>
-                        </TooltipContent>
-                      </TooltipComponent>
-                    </TooltipProvider>
-                  </div>
-                </RadioGroup>
-              </div>
-              
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="extra-payment">Extra Monthly Payment</Label>
-                  <span className="text-sm font-medium">{formatCurrency(extraPayment)}</span>
+                      <div className="mt-2 text-xs text-muted-foreground bg-background/80 p-2 rounded">
+                        <span className="font-medium text-primary">Best for:</span> Motivation through quick wins
+                      </div>
+                    </div>
+                    
+                    <div className={`flex flex-col rounded-lg border p-5 transition-all ${strategy === "hybrid" ? "border-primary bg-primary/5 shadow-md" : "hover:border-primary/50 hover:shadow-sm"}`}>
+                      <div className="flex items-start space-x-2 mb-2">
+                        <RadioGroupItem value="hybrid" id="hybrid" className="mt-1" />
+                        <div className="flex-1">
+                          <Label htmlFor="hybrid" className="text-base font-semibold cursor-pointer">Hybrid Method</Label>
+                          <div className="text-sm text-muted-foreground mt-1">
+                            Balanced approach for optimal results
+                          </div>
+                        </div>
+                        <TooltipProvider>
+                          <TooltipComponent>
+                            <TooltipTrigger asChild>
+                              <Info className="h-5 w-5 text-muted-foreground hover:text-primary transition-colors" />
+                            </TooltipTrigger>
+                            <TooltipContent className="p-4 max-w-xs">
+                              <p className="font-medium mb-2">The Hybrid Method</p>
+                              <p className="mb-2">Balances multiple factors including interest rates, balances, and payment efficiency.</p>
+                              <p className="text-sm text-muted-foreground">This intelligent approach adapts to your specific debt situation for optimal results.</p>
+                            </TooltipContent>
+                          </TooltipComponent>
+                        </TooltipProvider>
+                      </div>
+                      <div className="mt-2 text-xs text-muted-foreground bg-background/80 p-2 rounded">
+                        <span className="font-medium text-primary">Best for:</span> Balancing math and psychology
+                      </div>
+                    </div>
+                  </RadioGroup>
                 </div>
-                <Slider
-                  id="extra-payment"
-                  min={0}
-                  max={2000}
-                  step={50}
-                  value={[extraPayment]}
-                  onValueChange={(value) => setExtraPayment(value[0])}
-                />
-                <div className="flex justify-end">
-                  <Input
-                    type="number"
-                    value={extraPayment}
-                    onChange={(e) => setExtraPayment(Number(e.target.value))}
-                    className="w-32"
-                  />
+                
+                <div className="space-y-4 bg-muted/10 p-5 rounded-lg border mt-6">
+                  <h3 className="text-base font-medium flex items-center mb-3">
+                    <span className="inline-block w-2 h-2 rounded-full bg-primary mr-2"></span>
+                    Extra Monthly Payment
+                  </h3>
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="extra-payment" className="text-sm font-medium">How much extra can you pay each month?</Label>
+                      <span className="text-base font-semibold text-primary">{formatCurrency(extraPayment)}</span>
+                    </div>
+                    <Slider
+                      id="extra-payment"
+                      min={0}
+                      max={2000}
+                      step={50}
+                      value={[extraPayment]}
+                      onValueChange={(value) => setExtraPayment(value[0])}
+                      className="py-4"
+                    />
+                    <div className="flex justify-between items-center text-xs text-muted-foreground">
+                      <span>$0</span>
+                      <span>$500</span>
+                      <span>$1,000</span>
+                      <span>$1,500</span>
+                      <span>$2,000</span>
+                    </div>
+                    <div className="flex justify-end mt-2">
+                      <div className="relative">
+                        <span className="absolute inset-y-0 left-3 flex items-center text-muted-foreground">$</span>
+                        <Input
+                          type="number"
+                          value={extraPayment}
+                          onChange={(e) => setExtraPayment(Number(e.target.value))}
+                          className="w-32 pl-8"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+
+
+        </>
       )}
 
       {loading ? (
@@ -699,95 +792,247 @@ export function RepaymentStrategyCalculator() {
               </TabsContent>
               
               <TabsContent value="comparison" className="mt-4">
-                <div className="h-[400px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={[
-                        {
-                          name: "Total Interest Comparison",
-                          ...results.reduce((acc, result) => ({
-                            ...acc,
-                            [result.strategy]: result.totalInterest,
-                          }), {}),
-                        },
-                      ]}
-                      margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" />
-                      <YAxis label={{ value: "Total Interest", angle: -90, position: "insideLeft" }} />
-                      <Tooltip formatter={(value) => formatCurrency(value as number)} />
-                      <Legend />
-                      {results.map((result, index) => (
-                        <Bar 
-                          key={result.strategy} 
-                          dataKey={result.strategy} 
-                          fill={index === 0 ? "#3b82f6" : index === 1 ? "#10b981" : "#f59e0b"} 
-                        />
-                      ))}
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-                
-                <div className="mt-6">
-                  <h3 className="mb-4 text-lg font-medium">Months to Payoff Comparison</h3>
-                  <div className="h-[300px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={[
-                          {
-                            name: "Months to Payoff",
-                            ...results.reduce((acc, result) => ({
-                              ...acc,
-                              [result.strategy]: result.monthsToPayoff,
-                            }), {}),
-                          },
-                        ]}
-                        margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" />
-                        <YAxis label={{ value: "Months", angle: -90, position: "insideLeft" }} />
-                        <Tooltip />
-                        <Legend />
-                        {results.map((result, index) => (
-                          <Bar 
-                            key={result.strategy} 
-                            dataKey={result.strategy} 
-                            fill={index === 0 ? "#3b82f6" : index === 1 ? "#10b981" : "#f59e0b"} 
-                          />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-lg">Total Interest Paid</CardTitle>
+                      <CardDescription>
+                        Lower is better - this is the total cost of your debt beyond the principal
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="h-[300px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={[
+                              {
+                                name: "Total Interest",
+                                ...results.reduce((acc, result) => ({
+                                  ...acc,
+                                  [result.strategy]: result.totalInterest,
+                                }), {}),
+                              },
+                            ]}
+                            margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="name" />
+                            <YAxis label={{ value: "$", angle: -90, position: "insideLeft" }} />
+                            <Tooltip formatter={(value) => formatCurrency(value as number)} />
+                            <Legend />
+                            {results.map((result, index) => (
+                              <Bar 
+                                key={result.strategy} 
+                                dataKey={result.strategy} 
+                                fill={index === 0 ? "#3b82f6" : index === 1 ? "#10b981" : "#f59e0b"} 
+                                name={`${result.strategy.charAt(0).toUpperCase() + result.strategy.slice(1)} Strategy`}
+                              />
+                            ))}
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="mt-4 grid grid-cols-3 gap-2 text-center text-sm">
+                        {results.map((result) => (
+                          <div key={`interest-${result.strategy}`} className="rounded-md border p-2">
+                            <div className="font-medium capitalize">{result.strategy}</div>
+                            <div className="text-lg font-bold">{formatCurrency(result.totalInterest)}</div>
+                            {bestStrategy?.strategy === result.strategy && (
+                              <div className="mt-1 text-xs text-green-600 font-medium">Best Choice</div>
+                            )}
+                          </div>
                         ))}
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-lg">Time to Debt Freedom</CardTitle>
+                      <CardDescription>
+                        Months until you're completely debt-free with each strategy
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="h-[300px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={[
+                              {
+                                name: "Months to Payoff",
+                                ...results.reduce((acc, result) => ({
+                                  ...acc,
+                                  [result.strategy]: result.monthsToPayoff,
+                                }), {}),
+                              },
+                            ]}
+                            margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="name" />
+                            <YAxis label={{ value: "Months", angle: -90, position: "insideLeft" }} />
+                            <Tooltip />
+                            <Legend />
+                            {results.map((result, index) => (
+                              <Bar 
+                                key={result.strategy} 
+                                dataKey={result.strategy} 
+                                fill={index === 0 ? "#3b82f6" : index === 1 ? "#10b981" : "#f59e0b"} 
+                                name={`${result.strategy.charAt(0).toUpperCase() + result.strategy.slice(1)} Strategy`}
+                              />
+                            ))}
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="mt-4 grid grid-cols-3 gap-2 text-center text-sm">
+                        {results.map((result) => (
+                          <div key={`time-${result.strategy}`} className="rounded-md border p-2">
+                            <div className="font-medium capitalize">{result.strategy}</div>
+                            <div className="text-lg font-bold">{result.monthsToPayoff} months</div>
+                            <div className="text-xs text-muted-foreground">
+                              {result.debtFreeDate.toLocaleDateString(undefined, { year: 'numeric', month: 'short' })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
-                
-                <div className="mt-6">
-                  <h3 className="mb-4 text-lg font-medium">Debt Distribution</h3>
-                  <div className="h-[300px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={debts.map(debt => ({
-                            name: debt.name,
-                            value: debt.balance
-                          }))}
-                          cx="50%"
-                          cy="50%"
-                          labelLine={false}
-                          outerRadius={80}
-                          fill="#8884d8"
-                          dataKey="value"
-                          label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                        >
-                          {debts.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={`hsl(${index * 45}, 70%, 50%)`} />
-                          ))}
-                        </Pie>
-                        <Tooltip formatter={(value) => formatCurrency(value as number)} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
+
+                <Card className="mb-6">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-lg">Interest vs. Principal Over Time</CardTitle>
+                    <CardDescription>
+                      See how much of your payment goes to interest vs. principal with each strategy
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Tabs defaultValue="avalanche" className="w-full">
+                      <TabsList className="grid w-full grid-cols-3">
+                        {results.map((result) => (
+                          <TabsTrigger key={`tab-${result.strategy}`} value={result.strategy} className="capitalize">
+                            {result.strategy}
+                          </TabsTrigger>
+                        ))}
+                      </TabsList>
+                      
+                      {results.map((result) => (
+                        <TabsContent key={`content-${result.strategy}`} value={result.strategy} className="mt-4">
+                          <div className="h-[300px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <LineChart
+                                data={result.monthlyPayments.filter((_, i) => i % 3 === 0)} // Sample every 3rd month for clarity
+                                margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                              >
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="month" label={{ value: "Month", position: "bottom" }} />
+                                <YAxis label={{ value: "Amount ($)", angle: -90, position: "insideLeft" }} />
+                                <Tooltip formatter={(value) => formatCurrency(value as number)} />
+                                <Legend />
+                                <Line
+                                  type="monotone"
+                                  dataKey="interestPaid"
+                                  name="Interest"
+                                  stroke="#ef4444"
+                                  strokeWidth={2}
+                                  dot={false}
+                                />
+                                <Line
+                                  type="monotone"
+                                  dataKey="principalPaid"
+                                  name="Principal"
+                                  stroke="#22c55e"
+                                  strokeWidth={2}
+                                  dot={false}
+                                />
+                              </LineChart>
+                            </ResponsiveContainer>
+                          </div>
+                          <div className="mt-4 text-sm text-muted-foreground">
+                            <p>With the <span className="font-medium capitalize">{result.strategy}</span> strategy:</p>
+                            <ul className="list-disc pl-5 mt-2 space-y-1">
+                              <li>You'll pay <span className="font-medium">{formatCurrency(result.totalInterest)}</span> in interest</li>
+                              <li>You'll be debt-free in <span className="font-medium">{result.monthsToPayoff} months</span></li>
+                              <li>Your debts will be paid off in this order: <span className="font-medium">{result.payoffOrder.join(', ')}</span></li>
+                            </ul>
+                          </div>
+                        </TabsContent>
+                      ))}
+                    </Tabs>
+                  </CardContent>
+                </Card>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-lg">Debt Distribution</CardTitle>
+                      <CardDescription>
+                        How your current debt is distributed across accounts
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="h-[300px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={debts.map(debt => ({
+                                name: debt.name,
+                                value: debt.balance
+                              }))}
+                              cx="50%"
+                              cy="50%"
+                              labelLine={false}
+                              outerRadius={100}
+                              fill="#8884d8"
+                              dataKey="value"
+                              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                            >
+                              {debts.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={`hsl(${index * 45}, 70%, 50%)`} />
+                              ))}
+                            </Pie>
+                            <Tooltip formatter={(value) => formatCurrency(value as number)} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-lg">Interest Rate Comparison</CardTitle>
+                      <CardDescription>
+                        Higher interest rates cost you more over time
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="h-[300px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={debts.map(debt => ({
+                              name: debt.name,
+                              interestRate: debt.interestRate,
+                              monthlyInterest: debt.balance * (debt.interestRate / 100 / 12)
+                            }))}
+                            margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                            layout="vertical"
+                          >
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis type="number" />
+                            <YAxis dataKey="name" type="category" width={100} />
+                            <Tooltip 
+                              formatter={(value, name) => [
+                                name === "interestRate" ? `${value}%` : formatCurrency(value as number),
+                                name === "interestRate" ? "Interest Rate" : "Monthly Interest Cost"
+                              ]} 
+                            />
+                            <Legend />
+                            <Bar dataKey="interestRate" name="Interest Rate (%)" fill="#3b82f6" />
+                            <Bar dataKey="monthlyInterest" name="Monthly Interest ($)" fill="#ef4444" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
               </TabsContent>
               

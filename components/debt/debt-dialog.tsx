@@ -33,6 +33,8 @@ export function DebtDialog({ open, onOpenChange, debt, onSave }: DebtDialogProps
     interest_rate: 0,
     minimum_payment: 0,
     due_date: "",
+    start_date: "",
+    term_months: 0
   })
 
   useEffect(() => {
@@ -51,6 +53,8 @@ export function DebtDialog({ open, onOpenChange, debt, onSave }: DebtDialogProps
         interest_rate: 0,
         minimum_payment: 0,
         due_date: "",
+        start_date: "",
+        term_months: 0
       })
     }
   }, [debt, open])
@@ -162,6 +166,31 @@ export function DebtDialog({ open, onOpenChange, debt, onSave }: DebtDialogProps
                 type="date"
                 value={formData.due_date}
                 onChange={(e) => handleChange("due_date", e.target.value)}
+                className="col-span-3"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="start_date" className="text-right">
+                Start Date
+              </Label>
+              <Input
+                id="start_date"
+                type="date"
+                value={formData.start_date}
+                onChange={(e) => handleChange("start_date", e.target.value)}
+                className="col-span-3"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="term_months" className="text-right">
+                Term (Months)
+              </Label>
+              <Input
+                id="term_months"
+                type="number"
+                min="0"
+                value={formData.term_months}
+                onChange={(e) => handleChange("term_months", Number.parseInt(e.target.value) || 0)}
                 className="col-span-3"
               />
             </div>
