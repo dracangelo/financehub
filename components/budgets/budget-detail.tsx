@@ -44,20 +44,23 @@ interface BudgetCategory {
   id: string
   budget_id: string
   category_id: string
-  amount: number
-  categories: Category
+  amount_allocated: number
+  categories?: Category
+  percentage?: number
+  name?: string
 }
 
 interface Budget {
   id: string
   user_id: string
   name: string
-  amount: number
+  income: number
   start_date: string
-  end_date: string
+  end_date: string | null
   created_at: string
   updated_at: string | null
-  budget_categories: BudgetCategory[]
+  budget_categories: BudgetCategory[] | null
+  budget_category: BudgetCategory[] | null
 }
 
 interface BudgetDetailProps {
@@ -74,10 +77,10 @@ export function BudgetDetail({ budget, categories }: BudgetDetailProps) {
   const [selectedCategory, setSelectedCategory] = useState<BudgetCategory | null>(null)
   const [formData, setFormData] = useState<{
     category_id?: string
-    amount: number
+    amount_allocated: number
   }>({
     category_id: "",
-    amount: 0,
+    amount_allocated: 0,
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -88,14 +91,14 @@ export function BudgetDetail({ budget, categories }: BudgetDetailProps) {
       !budget.budget_categories?.some((budgetCategory) => budgetCategory.category_id === category.id),
   )
 
-  const totalAllocated = budget.budget_categories?.reduce((sum, category) => sum + category.amount, 0) || 0
+  const totalAllocated = budget.budget_categories?.reduce((sum, category) => sum + category.amount_allocated, 0) || 0
 
-  const remainingBudget = budget.amount - totalAllocated
-  const allocationPercentage = (totalAllocated / budget.amount) * 100
+  const remainingBudget = budget.income - totalAllocated
+  const allocationPercentage = (totalAllocated / budget.income) * 100
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
-    setFormData({ ...formData, [name]: name === "amount" ? Number.parseFloat(value) : value })
+    setFormData({ ...formData, [name]: name === "amount_allocated" ? Number.parseFloat(value) : value })
   }
 
   const handleSelectChange = (value: string) => {
@@ -109,13 +112,22 @@ export function BudgetDetail({ budget, categories }: BudgetDetailProps) {
     try {
       const formDataObj = new FormData()
       formDataObj.append("budget_id", budget.id)
+      
+      // Get the selected category
+      const selectedCategory = categories.find(cat => cat.id === formData.category_id)
+      if (!selectedCategory) {
+        throw new Error("Selected category not found")
+      }
+      
+      // Include both category_id and name in the form data
       formDataObj.append("category_id", formData.category_id || "")
-      formDataObj.append("amount", formData.amount.toString())
+      formDataObj.append("name", selectedCategory.name)
+      formDataObj.append("amount_allocated", formData.amount_allocated.toString())
 
       await createBudgetCategory(formDataObj)
 
       setIsAddCategoryDialogOpen(false)
-      setFormData({ category_id: "", amount: 0 })
+      setFormData({ category_id: "", amount_allocated: 0 })
 
       toast({
         title: "Category added",
@@ -142,14 +154,14 @@ export function BudgetDetail({ budget, categories }: BudgetDetailProps) {
     try {
       if (selectedCategory) {
         const formDataObj = new FormData()
-        formDataObj.append("amount", formData.amount.toString())
+        formDataObj.append("amount_allocated", formData.amount_allocated.toString())
         formDataObj.append("budget_id", budget.id)
 
         await updateBudgetCategory(selectedCategory.id, formDataObj)
 
         setIsEditCategoryDialogOpen(false)
         setSelectedCategory(null)
-        setFormData({ category_id: "", amount: 0 })
+        setFormData({ category_id: "", amount_allocated: 0 })
 
         toast({
           title: "Category updated",
@@ -175,7 +187,7 @@ export function BudgetDetail({ budget, categories }: BudgetDetailProps) {
 
     try {
       if (selectedCategory) {
-        await deleteBudgetCategory(selectedCategory.id, budget.id)
+        await deleteBudgetCategory(budget.id, selectedCategory.id)
 
         setIsDeleteCategoryDialogOpen(false)
         setSelectedCategory(null)
@@ -201,7 +213,11 @@ export function BudgetDetail({ budget, categories }: BudgetDetailProps) {
 
   const openEditDialog = (category: BudgetCategory) => {
     setSelectedCategory(category)
-    setFormData({ amount: category.amount })
+    // Ensure amount_allocated is a valid number, defaulting to 0 if it's NaN
+    const amount = typeof category.amount_allocated === 'number' && !isNaN(category.amount_allocated) 
+      ? category.amount_allocated 
+      : 0
+    setFormData({ amount_allocated: amount })
     setIsEditCategoryDialogOpen(true)
   }
 
@@ -222,7 +238,7 @@ export function BudgetDetail({ budget, categories }: BudgetDetailProps) {
       <Card>
         <CardHeader>
           <CardTitle>Budget Overview</CardTitle>
-          <CardDescription>Total budget: {formatCurrency(budget.amount)}</CardDescription>
+          <CardDescription>Total budget: {formatCurrency(budget.income)}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
@@ -269,13 +285,13 @@ export function BudgetDetail({ budget, categories }: BudgetDetailProps) {
                       <div className="flex items-center">
                         <div
                           className="h-4 w-4 rounded-full mr-2"
-                          style={{ backgroundColor: category.categories.color }}
+                          style={{ backgroundColor: category.categories?.color || "#6E56CF" }}
                         />
-                        {category.categories.name}
+                        {category.name || category.categories?.name || "Unnamed Category"}
                       </div>
                     </TableCell>
-                    <TableCell>{formatCurrency(category.amount)}</TableCell>
-                    <TableCell>{((category.amount / budget.amount) * 100).toFixed(1)}%</TableCell>
+                    <TableCell>{formatCurrency(category.amount_allocated)}</TableCell>
+                    <TableCell>{category.percentage?.toFixed(1)}%</TableCell>
                     <TableCell>
                       <div className="flex space-x-2">
                         <Button variant="ghost" size="sm" onClick={() => openEditDialog(category)}>
@@ -331,12 +347,12 @@ export function BudgetDetail({ budget, categories }: BudgetDetailProps) {
                 </label>
                 <Input
                   id="amount"
-                  name="amount"
+                  name="amount_allocated"
                   type="number"
                   step="0.01"
                   min="0"
-                  max={remainingBudget + (selectedCategory?.amount || 0)}
-                  value={formData.amount}
+                  max={remainingBudget + (selectedCategory?.amount_allocated || 0)}
+                  value={formData.amount_allocated}
                   onChange={handleInputChange}
                   required
                 />
@@ -376,9 +392,9 @@ export function BudgetDetail({ budget, categories }: BudgetDetailProps) {
                     <>
                       <div
                         className="h-4 w-4 rounded-full mr-2"
-                        style={{ backgroundColor: selectedCategory.categories.color }}
+                        style={{ backgroundColor: selectedCategory.categories?.color }}
                       />
-                      {selectedCategory.categories.name}
+                      {selectedCategory.name}
                     </>
                   )}
                 </div>
@@ -389,17 +405,17 @@ export function BudgetDetail({ budget, categories }: BudgetDetailProps) {
                 </label>
                 <Input
                   id="edit-amount"
-                  name="amount"
+                  name="amount_allocated"
                   type="number"
                   step="0.01"
                   min="0"
-                  max={remainingBudget + (selectedCategory?.amount || 0)}
-                  value={formData.amount}
+                  max={remainingBudget + (selectedCategory?.amount_allocated || 0)}
+                  value={formData.amount_allocated}
                   onChange={handleInputChange}
                   required
                 />
                 <p className="text-sm text-muted-foreground">
-                  Remaining budget: {formatCurrency(remainingBudget + (selectedCategory?.amount || 0))}
+                  Remaining budget: {formatCurrency(remainingBudget + (selectedCategory?.amount_allocated || 0))}
                 </p>
               </div>
             </div>
@@ -429,7 +445,7 @@ export function BudgetDetail({ budget, categories }: BudgetDetailProps) {
               Are you sure you want to remove this category from the budget?
               {selectedCategory && (
                 <div className="mt-2 font-medium">
-                  {selectedCategory.categories.name} - {formatCurrency(selectedCategory.amount)}
+                  {selectedCategory.name} - {formatCurrency(selectedCategory.amount_allocated)}
                 </div>
               )}
             </AlertDialogDescription>
@@ -449,4 +465,3 @@ export function BudgetDetail({ budget, categories }: BudgetDetailProps) {
     </div>
   )
 }
-

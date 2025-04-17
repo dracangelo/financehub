@@ -7,10 +7,10 @@ import { ResponsiveLayout } from "@/components/layout/responsive-layout"
 
 export const metadata: Metadata = {
   title: {
-    default: "Personal Finance Tracker",
-    template: "%s | Personal Finance Tracker",
+    default: "DripCheck",
+    template: "%s | DripCheck",
   },
-  description: "A comprehensive personal finance tracking application",
+  description: "Flaunting responsibly - A comprehensive personal finance tracking application",
 }
 
 export default async function ProtectedLayout({

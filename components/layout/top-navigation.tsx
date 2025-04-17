@@ -49,9 +49,10 @@ export function TopNavigation({ onMenuToggle, isSidebarOpen }: TopNavigationProp
             <Menu className="h-5 w-5" />
             <span className="sr-only">Toggle menu</span>
           </Button>
-          <Link href="/" className="flex items-center space-x-2">
-            <span className="hidden md:inline-block font-bold text-xl">Finance Tracker</span>
-            <span className="md:hidden inline-block font-bold text-xl">FinTrack</span>
+          <Link href="/" className="flex flex-col items-start">
+            <span className="hidden md:inline-block font-bold text-xl">DripCheck</span>
+            <span className="md:hidden inline-block font-bold text-xl">DripCheck</span>
+            <span className="text-xs text-muted-foreground">Flaunting responsibly</span>
           </Link>
         </div>
         

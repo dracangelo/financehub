@@ -42,7 +42,7 @@ export function SeedDatabase({ userId }: SeedDatabaseProps) {
           Seeding...
         </>
       ) : (
-        "Seed Database"
+        "Seed fghf"
       )}
     </Button>
   )

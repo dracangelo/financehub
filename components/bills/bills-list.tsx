@@ -21,21 +21,27 @@ import { BillDialog } from "@/components/bills/bill-dialog"
 import { getBills, deleteBill, markBillAsPaid } from "@/app/actions/bills"
 import { formatCurrency } from "@/lib/utils"
 import { Calendar, Clock, Plus, Edit, Trash2, CheckCircle, AlertCircle } from "lucide-react"
+import { format, isValid, parseISO } from "date-fns"
+import { BillsCalendar } from "./bills-calendar"
 
 interface Bill {
   id: string
   name: string
   amount: number
-  due_date: string
-  status: string
+  next_payment_date: string
   is_recurring: boolean
-  recurrence_pattern: string
+  billing_frequency: string
   auto_pay: boolean
-  categories?: { name: string; color: string }
-  payment_methods?: { name: string; type: string }
+  payment_schedule?: { status: string; scheduled_date: string }[]
+  billers?: { name: string; category: string }
+  is_paid?: boolean
 }
 
-export function BillsList() {
+interface BillsListProps {
+  showCalendarView?: boolean;
+}
+
+export function BillsList({ showCalendarView = false }: BillsListProps) {
   const router = useRouter()
   const [bills, setBills] = useState<Bill[]>([])
   const [loading, setLoading] = useState(true)
@@ -51,6 +57,7 @@ export function BillsList() {
     const fetchBills = async () => {
       try {
         const data = await getBills()
+        console.log("Fetched bills:", data)
         setBills(data)
       } catch (err) {
         setError("Error fetching bills")
@@ -122,103 +129,130 @@ export function BillsList() {
     }
   }
 
-  const getDaysUntilDue = (dueDate: string) => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const due = new Date(dueDate)
-    const diffTime = due.getTime() - today.getTime()
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-    return diffDays
-  }
+  const formatDate = (dateString: string) => {
+    try {
+      if (!dateString) return "N/A";
+      
+      // Try to parse the date
+      const date = new Date(dateString);
+      
+      // Check if the date is valid
+      if (isNaN(date.getTime())) {
+        return "Invalid Date";
+      }
+      
+      // Format the date
+      return format(date, "MMM d, yyyy");
+    } catch (e) {
+      console.error("Error formatting date:", e);
+      return "Invalid Date";
+    }
+  };
+
+  const getBillStatus = (bill: Bill) => {
+    // First check if the bill has been explicitly marked as paid
+    if (bill.is_paid) {
+      return "paid";
+    }
+    
+    // Then check payment_schedule if available
+    if (bill.payment_schedule && bill.payment_schedule.length > 0) {
+      const latestSchedule = bill.payment_schedule[0];
+      if (latestSchedule.status === "paid") {
+        return "paid";
+      }
+      if (latestSchedule.status === "overdue") {
+        return "overdue";
+      }
+    }
+    
+    // If no payment_schedule or status not determined, check due date
+    try {
+      const dueDate = new Date(bill.next_payment_date);
+      const today = new Date();
+      
+      // Set hours to 0 for proper comparison
+      today.setHours(0, 0, 0, 0);
+      dueDate.setHours(0, 0, 0, 0);
+      
+      if (isNaN(dueDate.getTime())) {
+        return "unpaid"; // Default to unpaid if date is invalid
+      }
+      
+      if (dueDate < today) {
+        return "overdue";
+      }
+    } catch (e) {
+      console.error("Error determining bill status:", e);
+    }
+    
+    return "unpaid";
+  };
 
   const getBillStatusBadge = (bill: Bill) => {
-    if (bill.status === "paid") {
+    const status = getBillStatus(bill);
+    
+    if (status === "paid") {
       return (
         <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+          <CheckCircle className="mr-1 h-3 w-3" />
           Paid
         </Badge>
       )
     }
-
-    const daysUntilDue = getDaysUntilDue(bill.due_date)
-
-    if (daysUntilDue < 0) {
-      return <Badge variant="destructive">Overdue</Badge>
-    } else if (daysUntilDue <= 3) {
+    
+    if (status === "overdue") {
       return (
-        <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
-          Due Soon
+        <Badge variant="destructive">
+          <AlertCircle className="mr-1 h-3 w-3" />
+          Overdue
         </Badge>
       )
-    } else {
-      return <Badge variant="outline">Upcoming</Badge>
     }
-  }
-
-  if (loading) {
+    
+    // Default unpaid
     return (
-      <div className="space-y-4">
-        <div className="flex justify-between items-center">
-          <h2 className="text-xl font-semibold tracking-tight">Bills</h2>
-          <Button disabled>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Bill
-          </Button>
-        </div>
-        <Skeleton className="h-[400px] w-full" />
-      </div>
+      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+        <Clock className="mr-1 h-3 w-3" />
+        Unpaid
+      </Badge>
     )
   }
 
-  if (error) {
-    return (
-      <div className="space-y-4">
-        <div className="flex justify-between items-center">
-          <h2 className="text-xl font-semibold tracking-tight">Bills</h2>
-          <Button onClick={handleAddBill}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Bill
-          </Button>
-        </div>
-        <Card>
-          <CardContent className="p-8 text-center">
-            <AlertCircle className="mx-auto h-8 w-8 text-destructive" />
-            <p className="mt-2 text-muted-foreground">{error}</p>
-            <Button variant="outline" className="mt-4" onClick={() => setLoading(true)}>
-              Try Again
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    )
+  if (showCalendarView) {
+    return <BillsCalendar bills={bills} loading={loading} error={error} />;
   }
 
   return (
-    <div className="space-y-4 animate-in">
+    <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold tracking-tight">Bills</h2>
+        <h2 className="text-3xl font-bold tracking-tight">Bills</h2>
         <Button onClick={handleAddBill}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Bill
+          <Plus className="mr-2 h-4 w-4" /> Add Bill
         </Button>
       </div>
 
-      {bills.length === 0 ? (
+      {loading ? (
+        <Skeleton className="h-[400px] w-full" />
+      ) : error ? (
+        <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md">{error}</div>
+      ) : bills.length === 0 ? (
         <Card>
-          <CardContent className="p-8 text-center">
-            <h3 className="font-medium">No bills yet</h3>
-            <p className="mt-1 text-sm text-muted-foreground">Add your first bill to start tracking your payments.</p>
-            <Button variant="outline" className="mt-4" onClick={handleAddBill}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Bill
-            </Button>
+          <CardContent className="p-6">
+            <div className="text-center">
+              <h3 className="text-lg font-medium">No bills found</h3>
+              <p className="text-muted-foreground">Add your first bill to get started</p>
+              <Button onClick={handleAddBill} className="mt-4">
+                <Plus className="mr-2 h-4 w-4" /> Add Bill
+              </Button>
+            </div>
           </CardContent>
         </Card>
       ) : (
         <Card>
           <CardHeader>
             <CardTitle>Upcoming Bills</CardTitle>
-            <CardDescription>Track and manage your bill payments</CardDescription>
+            <CardDescription>Manage your recurring and one-time bills</CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
@@ -237,13 +271,15 @@ export function BillsList() {
                   <TableRow key={bill.id}>
                     <TableCell>
                       <div className="font-medium">{bill.name}</div>
-                      <div className="text-xs text-muted-foreground">{bill.categories?.name || "Uncategorized"}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {bill.billers?.name || "Uncategorized"}
+                      </div>
                     </TableCell>
                     <TableCell>{formatCurrency(bill.amount)}</TableCell>
                     <TableCell>
                       <div className="flex items-center">
                         <Calendar className="mr-2 h-4 w-4 text-muted-foreground" />
-                        {new Date(bill.due_date).toLocaleDateString()}
+                        {formatDate(bill.next_payment_date)}
                       </div>
                     </TableCell>
                     <TableCell>{getBillStatusBadge(bill)}</TableCell>
@@ -251,14 +287,14 @@ export function BillsList() {
                       {bill.is_recurring ? (
                         <div className="flex items-center">
                           <Clock className="mr-2 h-4 w-4 text-muted-foreground" />
-                          <span className="capitalize">{bill.recurrence_pattern}</span>
+                          <span className="capitalize">{bill.billing_frequency}</span>
                         </div>
                       ) : (
                         <span className="text-muted-foreground">One-time</span>
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      {bill.status !== "paid" && (
+                      {getBillStatus(bill) !== "paid" && (
                         <Button variant="ghost" size="icon" onClick={() => handlePayBill(bill)} title="Mark as paid">
                           <CheckCircle className="h-4 w-4" />
                         </Button>
@@ -315,4 +351,3 @@ export function BillsList() {
     </div>
   )
 }
-

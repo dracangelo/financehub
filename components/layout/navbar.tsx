@@ -51,8 +51,9 @@ export function Navbar({ className }: NavbarProps) {
         className,
       )}
     >
-      <Link href="/" className="flex items-center space-x-2">
-        <span className="inline-block font-bold">Finance Tracker</span>
+      <Link href="/" className="flex flex-col items-start">
+        <span className="inline-block font-bold">DripCheck</span>
+        <span className="text-xs text-muted-foreground">Flaunting responsibly</span>
       </Link>
 
       <div className="flex items-center space-x-4">
@@ -120,4 +121,3 @@ export function Navbar({ className }: NavbarProps) {
     </div>
   )
 }
-

@@ -12,7 +12,7 @@ export async function getCategories() {
     const user = await getAuthenticatedUser()
 
     if (!user) {
-      return []
+      return { categories: [] }
     }
 
     const { data, error } = await supabase
@@ -23,13 +23,13 @@ export async function getCategories() {
 
     if (error) {
       console.error("Error fetching categories:", error)
-      return []
+      return { categories: [] }
     }
 
-    return data
+    return { categories: data }
   } catch (error) {
     console.error("Error in getCategories:", error)
-    return []
+    return { categories: [] }
   }
 }
 

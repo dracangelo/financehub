@@ -50,16 +50,28 @@ export default function AssetAllocationPage() {
 
     // Map risk profile allocations to asset classes
     updatedAssetClasses.forEach((assetClass) => {
-      if (assetClass.name.includes("Stocks") && assetClass.name.includes("US")) {
-        assetClass.targetAllocation = profile.recommendedAllocation.stocks * 0.7 // 70% of stocks in US
-      } else if (assetClass.name.includes("Stocks") && assetClass.name.includes("International")) {
-        assetClass.targetAllocation = profile.recommendedAllocation.stocks * 0.3 // 30% of stocks international
-      } else if (assetClass.name.includes("Bonds")) {
-        assetClass.targetAllocation = profile.recommendedAllocation.bonds
-      } else if (assetClass.name.includes("Cash")) {
-        assetClass.targetAllocation = profile.recommendedAllocation.cash
-      } else if (assetClass.name.includes("Alternatives")) {
-        assetClass.targetAllocation = profile.recommendedAllocation.alternatives
+      const name = assetClass.name.toLowerCase();
+      
+      // Handle traditional asset classes
+      if (name.includes("stocks") || name === "stocks") {
+        assetClass.targetAllocation = profile.recommendedAllocation.stocks * 0.7; // 70% of stocks allocation
+      } else if (name.includes("shares")) {
+        assetClass.targetAllocation = profile.recommendedAllocation.stocks * 0.3; // 30% of stocks allocation
+      } else if (name.includes("bonds") || name === "bonds") {
+        assetClass.targetAllocation = profile.recommendedAllocation.bonds * 0.7; // 70% of bonds allocation
+      } else if (name.includes("bills")) {
+        assetClass.targetAllocation = profile.recommendedAllocation.bonds * 0.3; // 30% of bonds allocation
+      } else if (name.includes("cash") || name === "cash") {
+        assetClass.targetAllocation = profile.recommendedAllocation.cash;
+      } else if (name.includes("crypto")) {
+        assetClass.targetAllocation = profile.recommendedAllocation.alternatives * 0.4; // 40% of alternatives
+      } else if (name.includes("real estate")) {
+        assetClass.targetAllocation = profile.recommendedAllocation.alternatives * 0.4; // 40% of alternatives
+      } else if (name.includes("alternative") || name === "alternative") {
+        assetClass.targetAllocation = profile.recommendedAllocation.alternatives * 0.2; // 20% of alternatives
+      } else {
+        // Default case for any other asset types
+        assetClass.targetAllocation = 0;
       }
     })
 
@@ -259,4 +271,3 @@ export default function AssetAllocationPage() {
     </div>
   )
 }
-

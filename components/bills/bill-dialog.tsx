@@ -18,19 +18,24 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { createBill, updateBill } from "@/app/actions/bills"
+import { format, parseISO } from "date-fns"
+import { cn } from "@/lib/utils"
+import { CalendarIcon, CheckCircle2, AlertCircle, Clock } from "lucide-react"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar } from "@/components/ui/calendar"
 
 interface Bill {
   id: string
   name: string
   amount: number
-  due_date: string
-  status: string
+  next_payment_date: string
   is_recurring: boolean
-  recurrence_pattern: string
+  billing_frequency: string
   auto_pay: boolean
-  category_id?: string
-  payment_method_id?: string
+  payment_schedule?: { status: string; scheduled_date: string }[]
+  billers?: { name: string; category: string }
   notes?: string
+  type?: string
 }
 
 interface BillDialogProps {
@@ -45,14 +50,56 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
   const [isAutoPay, setIsAutoPay] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [dueDate, setDueDate] = useState<Date | undefined>(undefined)
+  const [status, setStatus] = useState<string>("unpaid")
 
   useEffect(() => {
     if (bill) {
       setIsRecurring(bill.is_recurring)
       setIsAutoPay(bill.auto_pay)
+      
+      // Determine status from payment_schedule if available
+      if (bill.payment_schedule && bill.payment_schedule.length > 0) {
+        const latestSchedule = bill.payment_schedule[0];
+        setStatus(latestSchedule.status || "unpaid");
+      } else {
+        // If no payment_schedule, determine status based on due date
+        try {
+          const dueDate = new Date(bill.next_payment_date);
+          const today = new Date();
+          
+          if (isNaN(dueDate.getTime())) {
+            setStatus("unpaid");
+          } else if (dueDate < today) {
+            setStatus("overdue");
+          } else {
+            setStatus("unpaid");
+          }
+        } catch (e) {
+          setStatus("unpaid");
+        }
+      }
+      
+      // Format the date properly if it exists
+      if (bill.next_payment_date) {
+        try {
+          const date = new Date(bill.next_payment_date)
+          if (!isNaN(date.getTime())) {
+            setDueDate(date)
+          } else {
+            setDueDate(undefined)
+          }
+        } catch (e) {
+          setDueDate(undefined)
+        }
+      } else {
+        setDueDate(undefined)
+      }
     } else {
       setIsRecurring(false)
       setIsAutoPay(false)
+      setDueDate(undefined)
+      setStatus("unpaid")
     }
   }, [bill, open])
 
@@ -63,6 +110,29 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
 
     try {
       const formData = new FormData(e.currentTarget)
+      
+      // Add the date in the correct format
+      if (!dueDate) {
+        throw new Error("Due date is required")
+      }
+      
+      // Format date as YYYY-MM-DD
+      const formattedDate = format(dueDate, "yyyy-MM-dd")
+      formData.set("next_payment_date", formattedDate)
+      
+      // Add recurring and billing frequency
+      formData.set("is_recurring", isRecurring ? "true" : "false")
+      
+      // If it's a recurring bill, ensure we have a recurrence pattern
+      if (isRecurring) {
+        const recurrencePattern = formData.get("recurrence_pattern") as string || "monthly"
+        formData.set("billing_frequency", recurrencePattern)
+      } else {
+        formData.set("billing_frequency", "one-time")
+      }
+      
+      // Add auto-pay
+      formData.set("auto_pay", isAutoPay ? "true" : "false")
 
       if (bill) {
         await updateBill(bill.id, formData)
@@ -73,11 +143,18 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
       onSave()
     } catch (err) {
       console.error("Error saving bill:", err)
-      setError("Failed to save bill. Please try again.")
+      setError(err instanceof Error ? err.message : "Failed to save bill. Please try again.")
     } finally {
       setLoading(false)
     }
   }
+
+  // Status option renderer with icons and colors
+  const statusOptions = [
+    { value: "paid", label: "Paid", icon: CheckCircle2, color: "text-green-500" },
+    { value: "unpaid", label: "Unpaid", icon: Clock, color: "text-gray-500" },
+    { value: "overdue", label: "Overdue", icon: AlertCircle, color: "text-red-500" }
+  ]
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -117,59 +194,35 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
             </div>
 
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="due_date" className="text-right">
-                Due Date
+              <Label htmlFor="next_payment_date" className="text-right">
+                Next Payment Date
               </Label>
-              <Input
-                id="due_date"
-                name="due_date"
-                type="date"
-                defaultValue={bill?.due_date}
-                className="col-span-3"
-                required
-              />
+              <div className="col-span-3">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !dueDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {dueDate ? format(dueDate, "PPP") : "Select a date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={dueDate}
+                      onSelect={(date) => setDueDate(date || undefined)}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
             </div>
-
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="category_id" className="text-right">
-                Category
-              </Label>
-              <Select name="category_id" defaultValue={bill?.category_id || ""}>
-                <SelectTrigger id="category_id" className="col-span-3">
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="uncategorized">Uncategorized</SelectItem>
-                  <SelectItem value="utilities">Utilities</SelectItem>
-                  <SelectItem value="housing">Housing</SelectItem>
-                  <SelectItem value="transportation">Transportation</SelectItem>
-                  <SelectItem value="insurance">Insurance</SelectItem>
-                  <SelectItem value="debt">Debt</SelectItem>
-                  <SelectItem value="entertainment">Entertainment</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="payment_method_id" className="text-right">
-                Payment Method
-              </Label>
-              <Select name="payment_method_id" defaultValue={bill?.payment_method_id || ""}>
-                <SelectTrigger id="payment_method_id" className="col-span-3">
-                  <SelectValue placeholder="Select payment method" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="not_specified">Not specified</SelectItem>
-                  <SelectItem value="bank_account">Bank Account</SelectItem>
-                  <SelectItem value="credit_card">Credit Card</SelectItem>
-                  <SelectItem value="debit_card">Debit Card</SelectItem>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
+            
             <div className="grid grid-cols-4 items-center gap-4">
               <Label className="text-right">Recurring</Label>
               <div className="flex items-center space-x-2 col-span-3">
@@ -189,7 +242,7 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
                 <Label htmlFor="recurrence_pattern" className="text-right">
                   Frequency
                 </Label>
-                <Select name="recurrence_pattern" defaultValue={bill?.recurrence_pattern || "monthly"}>
+                <Select name="recurrence_pattern" defaultValue={bill?.billing_frequency || "monthly"}>
                   <SelectTrigger id="recurrence_pattern" className="col-span-3">
                     <SelectValue placeholder="Select frequency" />
                   </SelectTrigger>
@@ -231,4 +284,3 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
     </Dialog>
   )
 }
-

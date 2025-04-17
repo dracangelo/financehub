@@ -18,7 +18,8 @@ export default async function AuthLayout({
       <div className="min-h-screen flex flex-col">
         <header className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center space-x-2">
-            <span className="font-bold text-xl">Finance Tracker</span>
+            <span className="font-bold text-xl">DripCheck</span>
+            <span className="text-xs text-muted-foreground">Flaunting responsibly</span>
           </div>
           <ThemeToggle />
         </header>
@@ -26,7 +27,7 @@ export default async function AuthLayout({
           <div className="w-full max-w-md">{children}</div>
         </main>
         <footer className="py-4 text-center text-sm text-muted-foreground">
-          <p>&copy; {new Date().getFullYear()} Finance Tracker. All rights reserved.</p>
+          <p>&copy; {new Date().getFullYear()} DripCheck. All rights reserved.</p>
         </footer>
       </div>
     )
@@ -37,7 +38,8 @@ export default async function AuthLayout({
       <div className="min-h-screen flex flex-col">
         <header className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center space-x-2">
-            <span className="font-bold text-xl">Finance Tracker</span>
+            <span className="font-bold text-xl">DripCheck</span>
+            <span className="text-xs text-muted-foreground">Flaunting responsibly</span>
           </div>
           <ThemeToggle />
         </header>
@@ -45,10 +47,9 @@ export default async function AuthLayout({
           <div className="w-full max-w-md">{children}</div>
         </main>
         <footer className="py-4 text-center text-sm text-muted-foreground">
-          <p>&copy; {new Date().getFullYear()} Finance Tracker. All rights reserved.</p>
+          <p>&copy; {new Date().getFullYear()} DripCheck. All rights reserved.</p>
         </footer>
       </div>
     )
   }
 }
-

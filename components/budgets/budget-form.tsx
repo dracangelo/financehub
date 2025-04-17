@@ -21,17 +21,18 @@ interface BudgetFormProps {
     end_date?: string | null
     categories?: any[]
   }
+  categories?: any[]
   onSuccess?: () => void
 }
 
-export function BudgetForm({ budget, onSuccess }: BudgetFormProps) {
+export function BudgetForm({ budget, categories, onSuccess }: BudgetFormProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState(1)
   const [formData, setFormData] = useState({
     name: budget?.name || "",
     amount: budget?.amount || 0,
-    start_date: budget?.start_date || "",
+    start_date: budget?.start_date || new Date().toISOString().split("T")[0],
     end_date: budget?.end_date || "",
     categories: budget?.categories || []
   })
@@ -39,14 +40,22 @@ export function BudgetForm({ budget, onSuccess }: BudgetFormProps) {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (step === 1) {
-      const form = e.currentTarget
+      const form = e.currentTarget;
+      
+      // Safely get input values using type casting
+      const nameInput = form.querySelector('#name') as HTMLInputElement;
+      const amountInput = form.querySelector('#amount') as HTMLInputElement;
+      const startDateInput = form.querySelector('input[name="start_date"]') as HTMLInputElement;
+      const endDateInput = form.querySelector('input[name="end_date"]') as HTMLInputElement;
+      
       setFormData(prev => ({
         ...prev,
-        name: form.name.value,
-        amount: parseFloat(form.amount.value),
-        start_date: form.start_date.value,
-        end_date: form.end_date.value
-      }))
+        name: nameInput?.value || prev.name,
+        amount: parseFloat(amountInput?.value || prev.amount.toString()),
+        start_date: startDateInput?.value || prev.start_date,
+        end_date: endDateInput?.value || prev.end_date
+      }));
+      
       setStep(2)
       return
     }
@@ -75,6 +84,7 @@ export function BudgetForm({ budget, onSuccess }: BudgetFormProps) {
       }
 
       onSuccess?.()
+      router.push("/budgets")
       router.refresh()
     } catch (error: any) {
       toast.error(error.message || "Something went wrong")
@@ -85,7 +95,13 @@ export function BudgetForm({ budget, onSuccess }: BudgetFormProps) {
 
   const handleSaveCategories = (categories: any[]) => {
     setFormData(prev => ({ ...prev, categories }))
-    handleSubmit(new Event('submit') as any)
+    
+    // Create a synthetic event to simulate form submission
+    const event = {
+      preventDefault: () => {}
+    } as React.FormEvent<HTMLFormElement>;
+    
+    handleSubmit(event);
   }
 
   if (step === 2) {
@@ -110,6 +126,7 @@ export function BudgetForm({ budget, onSuccess }: BudgetFormProps) {
               id="name"
               name="name"
               defaultValue={formData.name}
+              placeholder="Monthly Budget"
               required
             />
           </div>
@@ -122,6 +139,7 @@ export function BudgetForm({ budget, onSuccess }: BudgetFormProps) {
               min="0"
               step="0.01"
               defaultValue={formData.amount}
+              placeholder="5000.00"
               required
             />
           </div>
@@ -143,7 +161,10 @@ export function BudgetForm({ budget, onSuccess }: BudgetFormProps) {
             />
           </div>
         </CardContent>
-        <CardFooter>
+        <CardFooter className="flex justify-between">
+          <Button type="button" variant="outline" onClick={() => router.push("/budgets")}>
+            Cancel
+          </Button>
           <Button type="submit" disabled={loading}>
             {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Next

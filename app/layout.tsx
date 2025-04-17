@@ -1,7 +1,6 @@
 import type React from "react"
 import { Inter } from "next/font/google"
 import { Toaster } from "@/components/ui/toaster"
-import { Navbar } from "@/components/layout/navbar"
 import { MainNavigation } from "@/components/layout/main-navigation"
 import { Providers } from "./providers"
 import {
@@ -87,6 +86,8 @@ const navItems = [
 import './globals.css'
 
 export const metadata = {
+  title: 'DripCheck - Flaunting responsibly',
+  description: 'Track your finances and flaunt responsibly with DripCheck',
   generator: 'v0.dev'
 };
 
@@ -100,14 +101,10 @@ export default function RootLayout({
       <body className={inter.className}>
         <Providers>
           <div className="flex flex-col h-screen">
-            {/* Top Navbar */}
-            <Navbar />
-            <div className="flex flex-1">
-              {/* Main Content */}
-              <main className="flex-1 overflow-auto">
-                <div className="container py-6 md:py-8">{children}</div>
-              </main>
-            </div>
+            {/* Main Content */}
+            <main className="flex-1 overflow-auto">
+              <div className="container py-6 md:py-8">{children}</div>
+            </main>
             <Toaster />
           </div>
         </Providers>

@@ -41,7 +41,8 @@ export function SiteHeader() {
       <div className="container flex h-16 items-center space-x-4 sm:justify-between sm:space-x-0">
         <div className="flex gap-6 md:gap-10">
           <Link href="/" className="flex items-center space-x-2">
-            <span className="inline-block font-bold">Finance Tracker</span>
+            <span className="inline-block font-bold">DripCheck</span>
+            <span className="text-xs text-muted-foreground hidden md:inline-block">Flaunting responsibly</span>
           </Link>
           <nav className="hidden gap-6 md:flex">
             {navItems.map((item) => (
@@ -98,4 +99,3 @@ export function SiteHeader() {
     </header>
   )
 }
-

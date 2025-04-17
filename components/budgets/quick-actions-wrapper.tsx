@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Brain, LineChart, Users, Sparkles } from "lucide-react"
+import { LineChart, Users, Sparkles, Plus } from "lucide-react"
 import { useRouter } from "next/navigation"
 
 export function QuickActionsWrapper() {
@@ -45,13 +45,12 @@ export function QuickActionsWrapper() {
     }
   }
 
-  const handleAIGenerate = async () => {
+  const handleCreateBudget = async () => {
     setIsLoading(true)
     try {
-      // TODO: Implement AI budget generation
-      router.push("/budgets/generate")
+      router.push("/budgets/manage/create")
     } catch (error) {
-      console.error("Error generating AI budget:", error)
+      console.error("Error navigating to create budget:", error)
     } finally {
       setIsLoading(false)
     }
@@ -60,13 +59,13 @@ export function QuickActionsWrapper() {
   return (
     <div className="grid grid-cols-2 gap-4 p-6">
       <Button
-        variant="outline"
+        variant="default"
         className="h-20 flex flex-col items-center justify-center gap-2"
-        onClick={handleAIGenerate}
+        onClick={handleCreateBudget}
         disabled={isLoading}
       >
-        <Brain className="h-6 w-6" />
-        AI Generate
+        <Plus className="h-6 w-6" />
+        Create Budget
       </Button>
       <Button
         variant="outline"

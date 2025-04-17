@@ -88,29 +88,59 @@ export async function createBill(formData: FormData) {
 
     const supabase = await createServerSupabaseClient()
 
+    // Extract and validate form data with proper type conversion
     const name = formData.get("name") as string
-    const amount = Number.parseFloat(formData.get("amount") as string)
-    const due_date = formData.get("due_date") as string
-    const category_id = (formData.get("category_id") as string) || null
-    const payment_method_id = (formData.get("payment_method_id") as string) || null
-    const is_recurring = formData.get("is_recurring") === "true"
-    const recurrence_pattern = (formData.get("recurrence_pattern") as string) || "monthly"
-    const auto_pay = formData.get("auto_pay") === "true"
-    const notes = (formData.get("notes") as string) || ""
+    if (!name) {
+      throw new Error("Bill name is required")
+    }
 
+    const amountStr = formData.get("amount") as string
+    if (!amountStr) {
+      throw new Error("Bill amount is required")
+    }
+    const amount = Number.parseFloat(amountStr)
+    if (isNaN(amount)) {
+      throw new Error("Invalid bill amount")
+    }
+
+    const due_date = formData.get("due_date") as string
+    if (!due_date) {
+      throw new Error("Due date is required")
+    }
+    
+    // Validate date format
+    let formattedDate;
+    try {
+      const dateObj = new Date(due_date);
+      if (isNaN(dateObj.getTime())) {
+        throw new Error("Invalid date");
+      }
+      formattedDate = dateObj.toISOString().split('T')[0];
+    } catch (e) {
+      console.error("Date parsing error:", e);
+      // Fallback to today's date if there's an error
+      formattedDate = new Date().toISOString().split('T')[0];
+    }
+
+    // Optional fields with proper defaults
+    const type = (formData.get("type") as string) || "other"
+    const billing_frequency = (formData.get("recurrence_pattern") as string) || "monthly"
+    const auto_pay = formData.get("auto_pay") === "true"
+    const is_recurring = formData.get("is_recurring") === "true"
+
+    // Create the bill with only essential fields that exist in the database
     const { data: bill, error } = await supabase
       .from("user_bills")
       .insert({
         user_id: user.id,
         name,
         amount,
-        next_payment_date: due_date,
-        biller_id: formData.get("biller_id") as string || null,
-        billing_frequency: formData.get("billing_frequency") as string || "monthly",
+        next_payment_date: formattedDate,
+        billing_frequency,
         auto_pay,
-        notes,
-        type: (formData.get("type") as string) || "other",
+        type,
         is_active: true,
+        is_recurring
       })
       .select()
       .single()
@@ -120,12 +150,17 @@ export async function createBill(formData: FormData) {
       throw new Error("Failed to create bill")
     }
 
-    // Create initial bill history entry
-    await supabase.from("payment_schedule").insert({
+    // Create initial payment schedule entry
+    const { error: scheduleError } = await supabase.from("payment_schedule").insert({
       user_bill_id: bill.id,
-      scheduled_date: due_date,
-      status: "pending",
+      scheduled_date: formattedDate,
+      status: "pending"
     })
+
+    if (scheduleError) {
+      console.error("Error creating payment schedule:", scheduleError)
+      // Don't throw here, we've already created the bill
+    }
 
     revalidatePath("/bills")
     return bill
@@ -144,41 +179,71 @@ export async function updateBill(id: string, formData: FormData) {
 
     const supabase = await createServerSupabaseClient()
 
+    // Extract and validate form data
     const name = formData.get("name") as string
-    const amount = Number.parseFloat(formData.get("amount") as string)
-    const due_date = formData.get("due_date") as string
-    const category_id = (formData.get("category_id") as string) || null
-    const payment_method_id = (formData.get("payment_method_id") as string) || null
-    const is_recurring = formData.get("is_recurring") === "true"
-    const recurrence_pattern = (formData.get("recurrence_pattern") as string) || "monthly"
-    const auto_pay = formData.get("auto_pay") === "true"
-    const notes = (formData.get("notes") as string) || ""
+    if (!name) {
+      throw new Error("Bill name is required")
+    }
 
-    // Get current bill to check for changes
-    const { data: currentBill, error: fetchError } = await supabase
+    const amountStr = formData.get("amount") as string
+    if (!amountStr) {
+      throw new Error("Bill amount is required")
+    }
+    const amount = Number.parseFloat(amountStr)
+    if (isNaN(amount)) {
+      throw new Error("Invalid bill amount")
+    }
+
+    const due_date = formData.get("due_date") as string
+    if (!due_date) {
+      throw new Error("Due date is required")
+    }
+    
+    // Validate date format
+    let formattedDate;
+    try {
+      const dateObj = new Date(due_date);
+      if (isNaN(dateObj.getTime())) {
+        throw new Error("Invalid date");
+      }
+      formattedDate = dateObj.toISOString().split('T')[0];
+    } catch (e) {
+      console.error("Date parsing error:", e);
+      // Fallback to today's date if there's an error
+      formattedDate = new Date().toISOString().split('T')[0];
+    }
+
+    // Get optional fields
+    const type = (formData.get("type") as string) || "other"
+    const billing_frequency = (formData.get("recurrence_pattern") as string) || "monthly"
+    const auto_pay = formData.get("auto_pay") === "true"
+    const is_recurring = formData.get("is_recurring") === "true"
+    const payment_status = formData.get("status") as string || "pending"
+
+    // First, check if the bill exists and belongs to the user
+    const { data: existingBill, error: fetchError } = await supabase
       .from("user_bills")
-      .select("amount, next_payment_date")
+      .select("id")
       .eq("id", id)
       .eq("user_id", user.id)
       .single()
 
     if (fetchError) {
-      console.error("Error fetching current bill:", fetchError)
-      throw new Error("Failed to update bill")
+      console.error("Error fetching bill:", fetchError)
+      throw new Error("Bill not found or you don't have permission to update it")
     }
 
+    // Update the bill with fields that exist in the database
     const { data: bill, error } = await supabase
       .from("user_bills")
       .update({
         name,
         amount,
-        next_payment_date: due_date,
-        biller_id: formData.get("biller_id") as string || null,
-        billing_frequency: formData.get("billing_frequency") as string || "monthly",
-        type: (formData.get("type") as string) || "other",
+        next_payment_date: formattedDate,
+        billing_frequency,
         auto_pay,
-        notes,
-        updated_at: new Date().toISOString(),
+        type,
+        is_recurring
       })
       .eq("id", id)
       .eq("user_id", user.id)
@@ -190,16 +255,24 @@ export async function updateBill(id: string, formData: FormData) {
       throw new Error("Failed to update bill")
     }
 
-    // Create bill history entry if amount or due date changed
-    if (currentBill.amount !== amount || currentBill.next_payment_date !== due_date) {
-      await supabase.from("bill_price_history").insert({
-        user_bill_id: id,
-        effective_date: new Date().toISOString(),
-        previous_amount: currentBill.amount,
-        new_amount: amount,
-        reason: "Bill details updated",
-        detected_by: "manual",
-      })
+    // Update the payment schedule if it exists
+    const { data: scheduleData, error: scheduleQueryError } = await supabase
+      .from("payment_schedule")
+      .select("id")
+      .eq("user_bill_id", id)
+      .order("scheduled_date", { ascending: false })
+      .limit(1)
+
+    if (!scheduleQueryError && scheduleData && scheduleData.length > 0) {
+      const scheduleId = scheduleData[0].id
+      
+      await supabase
+        .from("payment_schedule")
+        .update({
+          scheduled_date: formattedDate,
+          status: payment_status
+        })
+        .eq("id", scheduleId)
     }
 
     revalidatePath("/bills")
@@ -243,71 +316,100 @@ export async function markBillAsPaid(id: string, formData: FormData) {
 
     const supabase = await createServerSupabaseClient()
 
-    const payment_date = (formData.get("payment_date") as string) || new Date().toISOString().split("T")[0]
-    const payment_amount = Number.parseFloat(formData.get("payment_amount") as string)
-    const payment_method_id = (formData.get("payment_method_id") as string) || null
-    const notes = (formData.get("notes") as string) || ""
-
-    // Update bill status
-    const { data: bill, error } = await supabase
-      .from("bills")
-      .update({
-        status: "paid",
-        updated_at: new Date().toISOString(),
-      })
+    // Get the bill details
+    const { data: bill, error: billError } = await supabase
+      .from("user_bills")
+      .select("*")
       .eq("id", id)
       .eq("user_id", user.id)
-      .select()
       .single()
 
-    if (error) {
-      console.error("Error updating bill status:", error)
+    if (billError) {
+      console.error("Error fetching bill:", billError)
       throw new Error("Failed to mark bill as paid")
     }
 
-    // Create bill history entry
-    await supabase.from("bill_history").insert({
-      bill_id: id,
-      amount: bill.amount,
-      due_date: bill.due_date,
-      status: "paid",
-      payment_date,
-      payment_amount,
-      payment_method_id,
-      notes,
+    // Update payment schedule to mark as paid
+    const { data: scheduleData, error: scheduleQueryError } = await supabase
+      .from("payment_schedule")
+      .select("id")
+      .eq("user_bill_id", id)
+      .order("scheduled_date", { ascending: false })
+      .limit(1)
+
+    if (scheduleQueryError) {
+      console.error("Error fetching payment schedule:", scheduleQueryError)
+    } else if (scheduleData && scheduleData.length > 0) {
+      const scheduleId = scheduleData[0].id
+      
+      const { error: updateError } = await supabase
+        .from("payment_schedule")
+        .update({
+          status: "paid",
+          actual_payment_date: new Date().toISOString().split('T')[0]
+        })
+        .eq("id", scheduleId)
+
+      if (updateError) {
+        console.error("Error updating payment schedule:", updateError)
+      }
+    }
+
+    // Create bill payment record
+    const { error: paymentError } = await supabase.from("bill_payments").insert({
+      user_bill_id: id,
+      payment_schedule_id: scheduleData && scheduleData.length > 0 ? scheduleData[0].id : null,
+      amount_paid: bill.amount,
+      payment_date: new Date().toISOString(),
+      payment_method: "other",
+      payment_status: "completed",
+      notes: "Marked as paid manually"
     })
 
-    // If recurring, create next bill
+    if (paymentError) {
+      console.error("Error creating bill payment:", paymentError)
+    }
+
+    // If recurring, calculate next payment date and create new entry
     if (bill.is_recurring) {
-      const nextDueDate = calculateNextDueDate(bill.due_date, bill.recurrence_pattern)
-
-      const { data: nextBill, error: nextBillError } = await supabase
-        .from("bills")
-        .insert({
-          user_id: user.id,
-          name: bill.name,
-          amount: bill.amount,
-          due_date: nextDueDate,
-          category_id: bill.category_id,
-          payment_method_id: bill.payment_method_id,
-          is_recurring: bill.is_recurring,
-          recurrence_pattern: bill.recurrence_pattern,
-          auto_pay: bill.auto_pay,
-          notes: bill.notes,
+      const nextDueDate = calculateNextDueDate(bill.next_payment_date, bill.billing_frequency)
+      
+      // Update bill with next payment date
+      const { error: updateError } = await supabase
+        .from("user_bills")
+        .update({
+          next_payment_date: nextDueDate
         })
-        .select()
-        .single()
+        .eq("id", id)
+        .eq("user_id", user.id)
 
-      if (nextBillError) {
-        console.error("Error creating next recurring bill:", nextBillError)
-      } else {
-        // Create initial bill history entry for next bill
-        await supabase.from("bill_history").insert({
-          bill_id: nextBill.id,
-          amount: nextBill.amount,
-          due_date: nextBill.due_date,
-          status: "pending",
+      if (updateError) {
+        console.error("Error updating bill next payment date:", updateError)
+        throw new Error("Failed to update next payment date")
+      }
+
+      // Create new payment schedule entry for next payment
+      const { error: newScheduleError } = await supabase.from("payment_schedule").insert({
+        user_bill_id: id,
+        scheduled_date: nextDueDate,
+        status: "pending"
+      })
+
+      if (newScheduleError) {
+        console.error("Error creating new payment schedule:", newScheduleError)
+      }
+    } else {
+      // For non-recurring bills, mark the bill itself as paid by updating the payment_status field
+      const { error: updateBillError } = await supabase
+        .from("user_bills")
+        .update({
+          is_paid: true // Add a flag to indicate the bill is paid
         })
+        .eq("id", id)
+        .eq("user_id", user.id)
+
+      if (updateBillError) {
+        console.error("Error updating bill payment status:", updateBillError)
       }
     }
 
@@ -378,6 +480,44 @@ export async function getBillNegotiationOpportunities() {
   }
 }
 
+export async function getUpcomingBills() {
+  try {
+    const user = await getCurrentUser()
+    if (!user) {
+      redirect("/login")
+    }
+
+    const supabase = await createServerSupabaseClient()
+
+    // Get bills due in the next 30 days
+    const thirtyDaysFromNow = new Date()
+    thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30)
+
+    const { data: bills, error } = await supabase
+      .from("user_bills")
+      .select(`
+        *,
+        billers (name, category),
+        payment_schedule (status, scheduled_date)
+      `)
+      .eq("user_id", user.id)
+      .eq("is_active", true)
+      .gte("next_payment_date", new Date().toISOString().split('T')[0])
+      .lte("next_payment_date", thirtyDaysFromNow.toISOString().split('T')[0])
+      .order("next_payment_date", { ascending: true })
+
+    if (error) {
+      console.error("Error fetching upcoming bills:", error)
+      throw new Error("Failed to fetch upcoming bills")
+    }
+
+    return bills
+  } catch (error) {
+    console.error("Error in getUpcomingBills:", error)
+    throw new Error("Failed to fetch upcoming bills")
+  }
+}
+
 // Helper function to calculate next due date based on recurrence pattern
 function calculateNextDueDate(currentDueDate: string, recurrencePattern: string): string {
   const date = new Date(currentDueDate)
@@ -438,76 +578,3 @@ function generateNegotiationStrategy(bill: any): string {
   // Return a random strategy if no specific category match
   return strategies[Math.floor(Math.random() * strategies.length)]
 }
-
-export async function getUpcomingBills() {
-  try {
-    const user = await getCurrentUser()
-    if (!user) {
-      redirect("/login")
-    }
-
-    const supabase = await createServerSupabaseClient()
-
-    // Get bills due in the next 30 days
-    const thirtyDaysFromNow = new Date()
-    thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30)
-
-    const { data: bills, error } = await supabase
-      .from("user_bills")
-      .select(`
-        *,
-        billers (name, category),
-        payment_schedule (status, scheduled_date)
-      `)
-      .eq("user_id", user.id)
-      .eq("is_active", true)
-      .gte("next_payment_date", new Date().toISOString().split('T')[0])
-      .lte("next_payment_date", thirtyDaysFromNow.toISOString().split('T')[0])
-      .order("next_payment_date", { ascending: true })
-
-    if (error) {
-      console.error("Error fetching upcoming bills:", error)
-      throw new Error("Failed to fetch upcoming bills")
-    }
-
-    return bills
-  } catch (error) {
-    console.error("Error in getUpcomingBills:", error)
-    throw new Error("Failed to fetch upcoming bills")
-  }
-}
-
-export async function getBillsByDueDate(startDate: string, endDate: string) {
-  try {
-    const user = await getCurrentUser()
-    if (!user) {
-      redirect("/login")
-    }
-
-    const supabase = await createServerSupabaseClient()
-
-    const { data: bills, error } = await supabase
-      .from("user_bills")
-      .select(`
-        *,
-        billers (name, category),
-        payment_schedule (status, scheduled_date)
-      `)
-      .eq("user_id", user.id)
-      .eq("is_active", true)
-      .gte("next_payment_date", startDate)
-      .lte("next_payment_date", endDate)
-      .order("next_payment_date", { ascending: true })
-
-    if (error) {
-      console.error("Error fetching bills by due date:", error)
-      throw new Error("Failed to fetch bills by due date")
-    }
-
-    return bills
-  } catch (error) {
-    console.error("Error in getBillsByDueDate:", error)
-    throw new Error("Failed to fetch bills by due date")
-  }
-}
-

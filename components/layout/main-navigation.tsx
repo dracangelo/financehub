@@ -16,10 +16,9 @@ import {
   DropdownMenuGroup,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { LogOut, Settings, User, Search, X } from "lucide-react"
+import { LogOut, Settings, User, X } from "lucide-react"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { useRouter } from "next/navigation"
-import { Input } from "@/components/ui/input"
 import { useState, useEffect } from "react"
 import { NavItems } from "./nav-items"
 
@@ -39,7 +38,6 @@ export function MainNavigation({
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClientComponentClient()
-  const [searchQuery, setSearchQuery] = useState("")
 
   // Close sidebar when navigating on mobile
   useEffect(() => {
@@ -54,12 +52,6 @@ export function MainNavigation({
     router.refresh()
   }
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault()
-    // Implement search logic here
-    console.log("Search query:", searchQuery)
-  }
-
   return (
     <aside 
       className={cn(
@@ -71,8 +63,9 @@ export function MainNavigation({
       )}
     >
       <div className="flex items-center justify-between mb-6 md:hidden">
-        <Link href="/" className="flex items-center space-x-2">
-          <span className="inline-block font-bold text-xl">Finance Tracker</span>
+        <Link href="/" className="flex flex-col items-start">
+          <span className="inline-block font-bold text-xl">DripCheck</span>
+          <span className="text-xs text-muted-foreground">Flaunting responsibly</span>
         </Link>
         {onClose && (
           <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8 hover:bg-muted">
@@ -81,19 +74,7 @@ export function MainNavigation({
         )}
       </div>
 
-      <div className="mb-4">
-        <form onSubmit={handleSearch} className="relative">
-          <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="Search..."
-            className="pl-8 pr-2 rounded-md bg-muted/50 border-muted focus-visible:ring-primary/30"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            aria-label="Search navigation"
-          />
-        </form>
-      </div>
+      <div className="mb-4"></div>
 
       <div className="overflow-y-auto flex-grow">
         {navItems ? (
@@ -117,37 +98,39 @@ export function MainNavigation({
         )}
       </div>
 
-      <div className="mt-auto pt-4 border-t md:block hidden">
-        <ThemeToggle />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-              <Avatar className="h-8 w-8">
-                <AvatarImage src="/placeholder.svg?height=40&width=40" alt="User avatar" />
-                <AvatarFallback>GU</AvatarFallback>
-              </Avatar>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-56" align="end" forceMount>
-            <DropdownMenuLabel>My Account</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem onClick={() => router.push("/profile")}>
-                <User className="mr-2 h-4 w-4" />
-                <span>Profile</span>
+      <div className="mt-auto pt-4 border-t">
+        <div className="flex items-center justify-between">
+          <ThemeToggle />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+                <Avatar className="h-8 w-8">
+                  <AvatarImage src="/placeholder.svg?height=40&width=40" alt="User avatar" />
+                  <AvatarFallback>GU</AvatarFallback>
+                </Avatar>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56" align="end" forceMount>
+              <DropdownMenuLabel>My Account</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuItem onClick={() => router.push("/profile")}>
+                  <User className="mr-2 h-4 w-4" />
+                  <span>Profile</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push("/settings")}>
+                  <Settings className="mr-2 h-4 w-4" />
+                  <span>Settings</span>
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleSignOut}>
+                <LogOut className="mr-2 h-4 w-4" />
+                <span>Log out</span>
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push("/settings")}>
-                <Settings className="mr-2 h-4 w-4" />
-                <span>Settings</span>
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleSignOut}>
-              <LogOut className="mr-2 h-4 w-4" />
-              <span>Log out</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
     </aside>
   )

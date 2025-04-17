@@ -59,11 +59,12 @@ export function ResponsiveLayout({
       />
       
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar Navigation */}
-        <div id="sidebar">
+        {/* Sidebar Navigation - fixed on mobile, visible on desktop */}
+        <div id="sidebar" className="md:w-64 flex-shrink-0">
           <MainNavigation 
             isOpen={isSidebarOpen} 
-            onClose={() => setIsSidebarOpen(false)} 
+            onClose={() => setIsSidebarOpen(false)}
+            className="md:h-[calc(100vh-3.5rem)]" 
           />
         </div>
         
@@ -77,7 +78,7 @@ export function ResponsiveLayout({
         )}
         
         {/* Main Content */}
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto w-full">
           <main className="p-4 md:p-6 lg:p-8">{children}</main>
         </div>
       </div>

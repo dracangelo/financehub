@@ -18,6 +18,7 @@ import { WidgetLayout } from "@/components/dashboard/widget-layout"
 import { IncomeExpenseChart } from "@/components/charts/income-expense-chart"
 import { FinancialInsights } from "@/components/dashboard/financial-insights"
 import { FinancialSummary } from "@/components/dashboard/financial-summary"
+import { InvestmentAnalyticsWidget } from "@/components/dashboard/investment-analytics-widget"
 
 // We'll use real data from the database instead of sample data
 
@@ -133,6 +134,9 @@ export default async function DashboardPage() {
           <SankeyDiagram />
           <NetWorthTimeline />
         </div>
+
+        {/* Investment Portfolio Analytics */}
+        <InvestmentAnalyticsWidget />
 
         {/* Cash Flow Forecast */}
         <CashFlowForecast data={cashflowForecast.monthlyTrend} />

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertCircle } from "lucide-react"
-import { getAssetClasses, updateAssetClass } from "@/app/actions/investments"
+import { getAssetClasses, saveTargetAllocation } from "@/app/actions/investments"
 
 export interface AssetClass {
   id: string
@@ -25,21 +25,33 @@ export function AssetClassEditor({ initialAssetClasses }: AssetClassEditorProps)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(!initialAssetClasses)
   const [isSaving, setIsSaving] = useState(false)
+  const [saveSuccess, setSaveSuccess] = useState(false)
 
   useEffect(() => {
     if (!initialAssetClasses) {
       const fetchAssetClasses = async () => {
         try {
-          const data = await getAssetClasses()
-          // Map the data to match the AssetClass interface
-          const formattedAssetClasses = data.map((ac) => ({
-            id: ac.id,
-            name: ac.name,
-            targetAllocation: ac.target_allocation,
-            currentAllocation: ac.current_allocation,
+          const assetClassNames = await getAssetClasses()
+          
+          // Create asset class objects from the string array
+          const formattedAssetClasses = assetClassNames.map((name, index) => ({
+            id: `asset-class-${index}`,
+            name,
+            targetAllocation: 25, // Default equal distribution
+            currentAllocation: 0,
           }))
-          setAssetClasses(formattedAssetClasses)
-          setEditedAssetClasses(formattedAssetClasses)
+          
+          // Adjust allocations to sum to 100%
+          const equalAllocation = 100 / formattedAssetClasses.length
+          const adjustedAssetClasses = formattedAssetClasses.map((ac, index) => ({
+            ...ac,
+            targetAllocation: index === formattedAssetClasses.length - 1 
+              ? 100 - (Math.floor(equalAllocation) * (formattedAssetClasses.length - 1)) 
+              : Math.floor(equalAllocation)
+          }))
+          
+          setAssetClasses(adjustedAssetClasses)
+          setEditedAssetClasses(adjustedAssetClasses)
         } catch (error) {
           console.error("Error fetching asset classes:", error)
           setError("Failed to load asset classes")
@@ -107,18 +119,25 @@ export function AssetClassEditor({ initialAssetClasses }: AssetClassEditorProps)
     }
 
     setIsSaving(true)
+    setSaveSuccess(false)
     try {
-      // Update all asset classes
-      for (const assetClass of editedAssetClasses) {
-        const formData = new FormData()
-        formData.append("name", assetClass.name)
-        formData.append("target_allocation", assetClass.targetAllocation.toString())
+      // Create form data with all asset class allocations
+      const formData = new FormData()
+      
+      // Add each asset class target allocation
+      editedAssetClasses.forEach(assetClass => {
+        formData.append(`target_${assetClass.name}`, assetClass.targetAllocation.toString())
+      })
 
-        await updateAssetClass(assetClass.id, formData)
-      }
+      // Save all allocations at once
+      await saveTargetAllocation(formData)
 
       setAssetClasses(editedAssetClasses)
       setError(null)
+      setSaveSuccess(true)
+      
+      // Hide success message after 3 seconds
+      setTimeout(() => setSaveSuccess(false), 3000)
     } catch (error) {
       console.error("Error updating asset classes:", error)
       setError("Failed to save changes")
@@ -128,7 +147,7 @@ export function AssetClassEditor({ initialAssetClasses }: AssetClassEditorProps)
   }
 
   if (isLoading) {
-    return <div>Loading asset classes...</div>
+    return <div className="flex justify-center p-8">Loading asset classes...</div>
   }
 
   return (
@@ -137,6 +156,12 @@ export function AssetClassEditor({ initialAssetClasses }: AssetClassEditorProps)
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      
+      {saveSuccess && (
+        <Alert variant="default" className="bg-green-50 border-green-200">
+          <AlertDescription className="text-green-700">Asset allocation saved successfully!</AlertDescription>
         </Alert>
       )}
 
@@ -181,4 +206,3 @@ export function AssetClassEditor({ initialAssetClasses }: AssetClassEditorProps)
     </div>
   )
 }
-

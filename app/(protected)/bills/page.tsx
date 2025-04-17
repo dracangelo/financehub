@@ -5,7 +5,6 @@ import { BillsCalendar } from "@/components/bills/bills-calendar"
 import { BillsSummary } from "@/components/bills/bills-summary"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
-
 export const dynamic = "force-dynamic"
 
 export default function BillsPage() {
@@ -16,15 +15,13 @@ export default function BillsPage() {
         <p className="text-muted-foreground mt-2">Track, schedule, and pay your bills on time</p>
       </div>
 
-      
-
       <Suspense fallback={<Skeleton className="h-[200px] w-full" />}>
         <BillsSummary />
       </Suspense>
 
-      <Tabs defaultValue="list" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 lg:w-[400px]">
-          <TabsTrigger value="list">Bills List</TabsTrigger>
+      <Tabs defaultValue="list" className="mt-4">
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="list">List View</TabsTrigger>
           <TabsTrigger value="calendar">Calendar View</TabsTrigger>
         </TabsList>
         <TabsContent value="list" className="mt-4">
@@ -34,7 +31,7 @@ export default function BillsPage() {
         </TabsContent>
         <TabsContent value="calendar" className="mt-4">
           <Suspense fallback={<Skeleton className="h-[400px] w-full" />}>
-            <BillsCalendar />
+            <BillsListWithCalendar />
           </Suspense>
         </TabsContent>
       </Tabs>
@@ -42,3 +39,11 @@ export default function BillsPage() {
   )
 }
 
+// This component combines BillsList and BillsCalendar to share bill data
+function BillsListWithCalendar() {
+  return (
+    <div className="space-y-6">
+      <BillsList showCalendarView={true} />
+    </div>
+  )
+}

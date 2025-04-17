@@ -16,6 +16,17 @@ export interface Investment {
     governance: number
     total: number
   }
+  shares?: number
+  initialPrice?: number
+  currentPrice?: number
+  taxLocation?: string
+  account?: string
+  category?: string
+  currency?: string
+  gain?: number
+  gainPercent?: number
+  yield?: number
+  risk?: string
 }
 
 export interface AssetClass {
@@ -104,12 +115,14 @@ export const riskProfiles: RiskProfile[] = [
     name: "Conservative",
     description: "Focus on capital preservation with minimal risk",
     targetAllocations: {
-      "US Stocks": 20,
-      "International Stocks": 10,
-      Bonds: 50,
-      Cash: 15,
-      "Real Estate": 5,
-      Alternatives: 0,
+      "Stocks": 15,
+      "Bonds": 35,
+      "Cash": 15,
+      "Alternative": 5,
+      "Shares": 10,
+      "Bills": 10,
+      "Crypto": 0,
+      "Real Estate": 10
     },
     expectedReturn: 4.5,
     expectedRisk: 6.0,
@@ -119,12 +132,14 @@ export const riskProfiles: RiskProfile[] = [
     name: "Moderate",
     description: "Balance between growth and income with moderate risk",
     targetAllocations: {
-      "US Stocks": 35,
-      "International Stocks": 15,
-      Bonds: 35,
-      Cash: 5,
-      "Real Estate": 7,
-      Alternatives: 3,
+      "Stocks": 25,
+      "Bonds": 25,
+      "Cash": 10,
+      "Alternative": 5,
+      "Shares": 15,
+      "Bills": 5,
+      "Crypto": 5,
+      "Real Estate": 10
     },
     expectedReturn: 6.0,
     expectedRisk: 10.0,
@@ -134,12 +149,14 @@ export const riskProfiles: RiskProfile[] = [
     name: "Growth",
     description: "Focus on long-term growth with higher risk tolerance",
     targetAllocations: {
-      "US Stocks": 45,
-      "International Stocks": 25,
-      Bonds: 20,
-      Cash: 0,
-      "Real Estate": 7,
-      Alternatives: 3,
+      "Stocks": 30,
+      "Bonds": 15,
+      "Cash": 5,
+      "Alternative": 5,
+      "Shares": 20,
+      "Bills": 5,
+      "Crypto": 10,
+      "Real Estate": 10
     },
     expectedReturn: 7.5,
     expectedRisk: 14.0,
@@ -149,12 +166,14 @@ export const riskProfiles: RiskProfile[] = [
     name: "Aggressive",
     description: "Maximize growth potential with high risk tolerance",
     targetAllocations: {
-      "US Stocks": 55,
-      "International Stocks": 30,
-      Bonds: 5,
-      Cash: 0,
-      "Real Estate": 5,
-      Alternatives: 5,
+      "Stocks": 35,
+      "Bonds": 5,
+      "Cash": 0,
+      "Alternative": 10,
+      "Shares": 20,
+      "Bills": 0,
+      "Crypto": 15,
+      "Real Estate": 15
     },
     expectedReturn: 9.0,
     expectedRisk: 18.0,
@@ -317,8 +336,8 @@ export function calculateCurrentAllocation(investments: Investment[]): AssetClas
   // Create asset class objects
   let colorIndex = 0
   return Array.from(assetClassMap.entries()).map(([name, data]) => ({
-    id: name.toLowerCase().replace(/\s+/g, "-"),
-    name,
+    id: (name || "unknown").toLowerCase().replace(/\s+/g, "-"),
+    name: name || "Unknown",
     targetAllocation: 0, // Will be set based on risk profile
     currentAllocation: (data.value / totalValue) * 100,
     color: colors[colorIndex++ % colors.length],
@@ -562,7 +581,7 @@ export function calculateGainLoss(investments: Investment[]): {
   totalGainPercentage: number
 } {
   const totalValue = calculatePortfolioValue(investments)
-  const totalCost = investments.reduce((total, investment) => total + investment.costBasis, 0)
+  const totalCost = investments.reduce((sum, investment) => sum + (investment.costBasis || 0), 0)
   const totalGain = totalValue - totalCost
   const totalGainPercentage = totalCost > 0 ? (totalGain / totalCost) * 100 : 0
 
@@ -583,8 +602,8 @@ export function calculateRebalancingRecommendations(
   action: "buy" | "sell" | "hold"
   amountToRebalance: number
 }[] {
-  return assetClasses.map((assetClass) => {
-    const difference = assetClass.currentAllocation - assetClass.targetAllocation
+  return assetClasses.map((asset) => {
+    const difference = asset.currentAllocation - asset.targetAllocation
 
     // Determine action based on difference
     let action: "buy" | "sell" | "hold" = "hold"
@@ -599,8 +618,8 @@ export function calculateRebalancingRecommendations(
 
     return {
       assetClass,
-      targetAllocation: assetClass.targetAllocation,
-      currentAllocation: assetClass.currentAllocation,
+      targetAllocation: asset.targetAllocation,
+      currentAllocation: asset.currentAllocation,
       difference,
       action,
       amountToRebalance,
@@ -672,7 +691,7 @@ export function calculatePerformance(investments: Investment[]): {
   weightedDividendYield: number
 } {
   const totalValue = investments.reduce((sum, inv) => sum + inv.value, 0)
-  const totalCost = investments.reduce((sum, inv) => sum + inv.costBasis, 0)
+  const totalCost = investments.reduce((sum, investment) => sum + (investment.costBasis || 0), 0)
   const totalGain = totalValue - totalCost
   const totalGainPercent = totalCost > 0 ? (totalGain / totalCost) * 100 : 0
 
@@ -773,35 +792,19 @@ export function calculateTaxEfficiency(investments: Investment[]): {
 // Default asset classes
 export const defaultAssetClasses: AssetClass[] = [
   {
-    id: "us-stocks",
-    name: "US Stocks",
-    targetAllocation: 40,
+    id: "stocks",
+    name: "Stocks",
+    targetAllocation: 30,
     currentAllocation: 0,
     color: "rgb(59, 130, 246)", // blue-500
     investments: []
   },
   {
-    id: "international-stocks",
-    name: "International Stocks",
-    targetAllocation: 20,
-    currentAllocation: 0,
-    color: "rgb(16, 185, 129)", // green-500
-    investments: []
-  },
-  {
     id: "bonds",
     name: "Bonds",
-    targetAllocation: 30,
+    targetAllocation: 20,
     currentAllocation: 0,
     color: "rgb(239, 68, 68)", // red-500
-    investments: []
-  },
-  {
-    id: "real-estate",
-    name: "Real Estate",
-    targetAllocation: 5,
-    currentAllocation: 0,
-    color: "rgb(245, 158, 11)", // amber-500
     investments: []
   },
   {
@@ -813,12 +816,43 @@ export const defaultAssetClasses: AssetClass[] = [
     investments: []
   },
   {
-    id: "alternatives",
-    name: "Alternatives",
-    targetAllocation: 0,
+    id: "alternative",
+    name: "Alternative",
+    targetAllocation: 5,
     currentAllocation: 0,
     color: "rgb(20, 184, 166)", // teal-500
     investments: []
+  },
+  {
+    id: "shares",
+    name: "Shares",
+    targetAllocation: 15,
+    currentAllocation: 0,
+    color: "rgb(16, 185, 129)", // green-500
+    investments: []
+  },
+  {
+    id: "bills",
+    name: "Bills",
+    targetAllocation: 5,
+    currentAllocation: 0,
+    color: "rgb(99, 102, 241)", // indigo-500
+    investments: []
+  },
+  {
+    id: "crypto",
+    name: "Crypto",
+    targetAllocation: 5,
+    currentAllocation: 0,
+    color: "rgb(249, 115, 22)", // orange-500
+    investments: []
+  },
+  {
+    id: "real-estate",
+    name: "Real Estate",
+    targetAllocation: 15,
+    currentAllocation: 0,
+    color: "rgb(245, 158, 11)", // amber-500
+    investments: []
   }
 ]
-

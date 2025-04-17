@@ -1,9 +1,11 @@
 "use server"
 
-import { supabase } from "@/lib/supabase/server"
+import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { v4 as uuidv4 } from "uuid"
 
 export async function seedInitialData(userId: string) {
+  const supabase = await createServerSupabaseClient()
+
   // Check if user already has data
   const { count: transactionCount } = await supabase
     .from("transactions")
@@ -375,4 +377,3 @@ export async function seedInitialData(userId: string) {
 
   return { success: true, message: "Initial data seeded successfully" }
 }
-
