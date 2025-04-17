@@ -87,7 +87,7 @@ export function DebtDialog({ open, onOpenChange, debt, onSave }: DebtDialogProps
               </Label>
               <Input
                 id="name"
-                value={formData.name}
+                value={formData.name || ""}
                 onChange={(e) => handleChange("name", e.target.value)}
                 className="col-span-3"
                 required
@@ -97,7 +97,7 @@ export function DebtDialog({ open, onOpenChange, debt, onSave }: DebtDialogProps
               <Label htmlFor="type" className="text-right">
                 Type
               </Label>
-              <Select value={formData.type} onValueChange={(value) => handleChange("type", value)}>
+              <Select value={formData.type || "credit_card"} onValueChange={(value) => handleChange("type", value)}>
                 <SelectTrigger id="type" className="col-span-3">
                   <SelectValue placeholder="Select debt type" />
                 </SelectTrigger>
@@ -121,7 +121,7 @@ export function DebtDialog({ open, onOpenChange, debt, onSave }: DebtDialogProps
                 type="number"
                 min="0"
                 step="0.01"
-                value={formData.principal}
+                value={formData.principal ?? 0}
                 onChange={(e) => handleChange("principal", Number.parseFloat(e.target.value) || 0)}
                 className="col-span-3"
                 required
@@ -136,7 +136,7 @@ export function DebtDialog({ open, onOpenChange, debt, onSave }: DebtDialogProps
                 type="number"
                 min="0"
                 step="0.01"
-                value={formData.interest_rate}
+                value={formData.interest_rate ?? 0}
                 onChange={(e) => handleChange("interest_rate", Number.parseFloat(e.target.value) || 0)}
                 className="col-span-3"
                 required
@@ -151,7 +151,7 @@ export function DebtDialog({ open, onOpenChange, debt, onSave }: DebtDialogProps
                 type="number"
                 min="0"
                 step="0.01"
-                value={formData.minimum_payment}
+                value={formData.minimum_payment ?? 0}
                 onChange={(e) => handleChange("minimum_payment", Number.parseFloat(e.target.value) || 0)}
                 className="col-span-3"
                 required
@@ -164,7 +164,7 @@ export function DebtDialog({ open, onOpenChange, debt, onSave }: DebtDialogProps
               <Input
                 id="due_date"
                 type="date"
-                value={formData.due_date}
+                value={formData.due_date || ""}
                 onChange={(e) => handleChange("due_date", e.target.value)}
                 className="col-span-3"
               />
@@ -176,7 +176,7 @@ export function DebtDialog({ open, onOpenChange, debt, onSave }: DebtDialogProps
               <Input
                 id="start_date"
                 type="date"
-                value={formData.start_date}
+                value={formData.start_date || ""}
                 onChange={(e) => handleChange("start_date", e.target.value)}
                 className="col-span-3"
               />
@@ -189,7 +189,7 @@ export function DebtDialog({ open, onOpenChange, debt, onSave }: DebtDialogProps
                 id="term_months"
                 type="number"
                 min="0"
-                value={formData.term_months}
+                value={formData.term_months ?? 0}
                 onChange={(e) => handleChange("term_months", Number.parseInt(e.target.value) || 0)}
                 className="col-span-3"
               />

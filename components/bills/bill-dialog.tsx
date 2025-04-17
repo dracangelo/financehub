@@ -128,7 +128,8 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
         const recurrencePattern = formData.get("recurrence_pattern") as string || "monthly"
         formData.set("billing_frequency", recurrencePattern)
       } else {
-        formData.set("billing_frequency", "one-time")
+        // Use 'monthly' as default for non-recurring bills to match database constraints
+        formData.set("billing_frequency", "monthly")
       }
       
       // Add auto-pay

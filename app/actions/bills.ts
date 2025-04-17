@@ -14,14 +14,21 @@ export async function getBills() {
 
     const supabase = await createServerSupabaseClient()
 
+    // Use the user_bills table that actually exists in the database
     const { data: bills, error } = await supabase
       .from("user_bills")
       .select(`
         *,
-        billers (name, category),
-        payment_schedule (status, scheduled_date)
+        biller:biller_id (
+          id,
+          name,
+          category,
+          website_url,
+          support_contact
+        )
       `)
       .eq("user_id", user.id)
+      .eq("is_active", true)
       .order("next_payment_date", { ascending: true })
 
     if (error) {
@@ -49,8 +56,13 @@ export async function getBillById(id: string) {
       .from("user_bills")
       .select(`
         *,
-        billers (name, category),
-        payment_schedule (status, scheduled_date)
+        biller:biller_id (
+          id,
+          name,
+          category,
+          website_url,
+          support_contact
+        )
       `)
       .eq("id", id)
       .eq("user_id", user.id)
@@ -61,7 +73,7 @@ export async function getBillById(id: string) {
       throw new Error("Failed to fetch bill")
     }
 
-    // Get bill history
+    // Get bill payment history
     const { data: history, error: historyError } = await supabase
       .from("bill_payments")
       .select("*")
@@ -103,7 +115,7 @@ export async function createBill(formData: FormData) {
       throw new Error("Invalid bill amount")
     }
 
-    const due_date = formData.get("due_date") as string
+    const due_date = formData.get("next_payment_date") as string
     if (!due_date) {
       throw new Error("Due date is required")
     }
@@ -126,9 +138,11 @@ export async function createBill(formData: FormData) {
     const type = (formData.get("type") as string) || "other"
     const billing_frequency = (formData.get("recurrence_pattern") as string) || "monthly"
     const auto_pay = formData.get("auto_pay") === "true"
-    const is_recurring = formData.get("is_recurring") === "true"
+    // Store whether the bill is recurring in a variable for later use
+    // but don't try to save it to the database since the column doesn't exist
+    const isRecurring = formData.get("is_recurring") === "true"
 
-    // Create the bill with only essential fields that exist in the database
+    // Create the bill with fields that match the database schema
     const { data: bill, error } = await supabase
       .from("user_bills")
       .insert({
@@ -139,8 +153,7 @@ export async function createBill(formData: FormData) {
         billing_frequency,
         auto_pay,
         type,
-        is_active: true,
-        is_recurring
+        is_active: true
       })
       .select()
       .single()
@@ -151,22 +164,26 @@ export async function createBill(formData: FormData) {
     }
 
     // Create initial payment schedule entry
-    const { error: scheduleError } = await supabase.from("payment_schedule").insert({
-      user_bill_id: bill.id,
-      scheduled_date: formattedDate,
-      status: "pending"
-    })
+    if (bill) {
+      const { error: scheduleError } = await supabase.from("payment_schedule").insert({
+        user_bill_id: bill.id,
+        scheduled_date: formattedDate,
+        status: "pending"
+      })
 
-    if (scheduleError) {
-      console.error("Error creating payment schedule:", scheduleError)
-      // Don't throw here, we've already created the bill
+      if (scheduleError) {
+        console.error("Error creating payment schedule:", scheduleError)
+        // Don't throw here, we've already created the bill
+      }
     }
 
     revalidatePath("/bills")
     return bill
   } catch (error) {
     console.error("Error in createBill:", error)
-    throw new Error("Failed to create bill")
+    // Include the original error message for better debugging
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    throw new Error(`Failed to create bill: ${errorMessage}`)
   }
 }
 
@@ -194,7 +211,7 @@ export async function updateBill(id: string, formData: FormData) {
       throw new Error("Invalid bill amount")
     }
 
-    const due_date = formData.get("due_date") as string
+    const due_date = formData.get("next_payment_date") as string
     if (!due_date) {
       throw new Error("Due date is required")
     }
@@ -332,7 +349,7 @@ export async function markBillAsPaid(id: string, formData: FormData) {
     // Update payment schedule to mark as paid
     const { data: scheduleData, error: scheduleQueryError } = await supabase
       .from("payment_schedule")
-      .select("id")
+      .select("id, status")
       .eq("user_bill_id", id)
       .order("scheduled_date", { ascending: false })
       .limit(1)
@@ -341,6 +358,13 @@ export async function markBillAsPaid(id: string, formData: FormData) {
       console.error("Error fetching payment schedule:", scheduleQueryError)
     } else if (scheduleData && scheduleData.length > 0) {
       const scheduleId = scheduleData[0].id
+      const currentStatus = scheduleData[0].status
+      const isOverdue = currentStatus === "overdue"
+      
+      // Log if we're handling an overdue bill
+      if (isOverdue) {
+        console.log("Updating overdue bill to paid status")
+      }
       
       const { error: updateError } = await supabase
         .from("payment_schedule")
@@ -356,22 +380,26 @@ export async function markBillAsPaid(id: string, formData: FormData) {
     }
 
     // Create bill payment record
+    const isOverdue = scheduleData && scheduleData.length > 0 && scheduleData[0].status === "overdue"
+    const paymentNotes = isOverdue ? "Overdue bill marked as paid" : "Marked as paid manually"
+    
     const { error: paymentError } = await supabase.from("bill_payments").insert({
       user_bill_id: id,
       payment_schedule_id: scheduleData && scheduleData.length > 0 ? scheduleData[0].id : null,
       amount_paid: bill.amount,
       payment_date: new Date().toISOString(),
-      payment_method: "other",
+      payment_method: formData.get("payment_method") as string || "other",
       payment_status: "completed",
-      notes: "Marked as paid manually"
+      notes: paymentNotes
     })
 
     if (paymentError) {
       console.error("Error creating bill payment:", paymentError)
     }
 
-    // If recurring, calculate next payment date and create new entry
-    if (bill.is_recurring) {
+    // If it has a billing_frequency other than 'one-time', treat it as recurring
+    // Since there's no is_recurring column, we'll use billing_frequency to determine if it's recurring
+    if (bill.billing_frequency && bill.billing_frequency !== 'one-time') {
       const nextDueDate = calculateNextDueDate(bill.next_payment_date, bill.billing_frequency)
       
       // Update bill with next payment date
@@ -399,18 +427,10 @@ export async function markBillAsPaid(id: string, formData: FormData) {
         console.error("Error creating new payment schedule:", newScheduleError)
       }
     } else {
-      // For non-recurring bills, mark the bill itself as paid by updating the payment_status field
-      const { error: updateBillError } = await supabase
-        .from("user_bills")
-        .update({
-          is_paid: true // Add a flag to indicate the bill is paid
-        })
-        .eq("id", id)
-        .eq("user_id", user.id)
-
-      if (updateBillError) {
-        console.error("Error updating bill payment status:", updateBillError)
-      }
+      // For non-recurring bills, we don't need to update the bill itself
+      // since there's no is_paid column. The payment record and payment schedule
+      // status will indicate that the bill has been paid.
+      console.log("Non-recurring bill marked as paid via payment record")
     }
 
     revalidatePath("/bills")

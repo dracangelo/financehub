@@ -61,14 +61,28 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
   const remainingBudget = (budget?.income || 0) - totalAllocated
   const allocationPercentage = budget?.income ? (totalAllocated / budget.income) * 100 : 0
   
+  // Use categories from budget creation for visualizations
+  // First check if we have budget categories, if not use the provided categories prop
+  const budgetHasCategories = budget?.budget_categories && budget.budget_categories.length > 0
+  
   // Prepare data for visualizations
-  const categoryData = budget?.budget_categories?.map((category: any) => ({
-    id: category.id,
-    name: category.name || "Unnamed Category",
-    amount: category.amount_allocated,
-    percentage: (category.amount_allocated / (budget?.income || 1)) * 100,
-    color: getCategoryColor(category.amount_allocated, budget?.income || 1),
-  })) || []
+  const categoryData = budgetHasCategories ? 
+    // Use categories from the budget if available
+    budget.budget_categories.map((category: any) => ({
+      id: category.id,
+      name: category.name || "Unnamed Category",
+      amount: category.amount_allocated,
+      percentage: (category.amount_allocated / (budget?.income || 1)) * 100,
+      color: getCategoryColor(category.amount_allocated, budget?.income || 1),
+    })) : 
+    // Otherwise use the provided categories prop
+    categories.map((category: any) => ({
+      id: category.id,
+      name: category.name || "Unnamed Category",
+      amount: category.amount || 0,
+      percentage: (category.amount || 0) / (budget?.income || 1) * 100,
+      color: getCategoryColor(category.amount || 0, budget?.income || 1),
+    }))
 
   // Format data for the treemap
   const treemapData = {
@@ -119,7 +133,7 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
     )
   }
 
-  if (!budget.budget_categories || budget.budget_categories.length === 0) {
+  if ((!budget.budget_categories || budget.budget_categories.length === 0) && (!categories || categories.length === 0)) {
     return (
       <Card className="h-full">
         <CardHeader>
