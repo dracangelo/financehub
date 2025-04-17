@@ -11,6 +11,7 @@ interface Subscription {
   id: string
   name: string
   provider: string
+  category?: string
   monthlyAmount: number
   usageScore: number
   usageHours: number
@@ -18,6 +19,8 @@ interface Subscription {
   costPerHour: number
   roiScore: number
   valueCategory: "poor" | "average" | "good"
+  valueRatio: number
+  utilization: number
   recommendation: string
 }
 
@@ -34,8 +37,8 @@ export function SubscriptionValueMatrix({ subscriptions }: SubscriptionValueMatr
 
   // Helper function to determine the usage category
   const getUsageCategory = (usageScore: number): number => {
-    if (usageScore < 4) return 0 // Low
-    if (usageScore < 7) return 1 // Medium
+    if (usageScore < 3.5) return 0 // Low
+    if (usageScore < 7.5) return 1 // Medium
     return 2 // High
   }
 
@@ -48,7 +51,9 @@ export function SubscriptionValueMatrix({ subscriptions }: SubscriptionValueMatr
 
     const q1 = sortedAmounts[q1Index]?.monthlyAmount || 0
     const q3 = sortedAmounts[q3Index]?.monthlyAmount || 100
+    const median = sortedAmounts[Math.floor(sortedAmounts.length / 2)]?.monthlyAmount || 50
 
+    // Adjust thresholds based on data distribution
     if (monthlyAmount > q3) return 0 // High cost
     if (monthlyAmount > q1) return 1 // Medium cost
     return 2 // Low cost
@@ -74,14 +79,18 @@ export function SubscriptionValueMatrix({ subscriptions }: SubscriptionValueMatr
 
   // Get color for a cell based on its position
   const getCellColor = (costIndex: number, usageIndex: number) => {
+    // Calculate a value score (0-4) based on position
+    const valueScore = costIndex + usageIndex
+    
     // Bottom right (high usage, low cost) is best
     if (costIndex === 2 && usageIndex === 2) return "bg-green-100 border-green-300"
     // Top left (low usage, high cost) is worst
     if (costIndex === 0 && usageIndex === 0) return "bg-red-100 border-red-300"
     // Diagonal from top-right to bottom-left is medium
     if (costIndex === usageIndex) return "bg-yellow-100 border-yellow-300"
-    // Others based on position
-    if (costIndex > usageIndex) return "bg-yellow-50 border-yellow-200"
+    // Others based on value score
+    if (valueScore >= 3) return "bg-green-50 border-green-200"
+    if (valueScore === 2) return "bg-yellow-50 border-yellow-200"
     return "bg-orange-50 border-orange-200"
   }
 
@@ -167,7 +176,14 @@ export function SubscriptionValueMatrix({ subscriptions }: SubscriptionValueMatr
             <div className="flex justify-between items-start mb-4">
               <div>
                 <h3 className="text-xl font-bold">{selectedSubscription.name}</h3>
-                <p className="text-sm text-muted-foreground">{selectedSubscription.provider}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm text-muted-foreground">{selectedSubscription.provider}</p>
+                  {selectedSubscription.category && (
+                    <Badge variant="outline" className="text-xs">
+                      {selectedSubscription.category}
+                    </Badge>
+                  )}
+                </div>
               </div>
               <Badge
                 className={
@@ -203,6 +219,45 @@ export function SubscriptionValueMatrix({ subscriptions }: SubscriptionValueMatr
               </div>
             </div>
 
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <p className="text-sm text-muted-foreground">Value Ratio</p>
+                <div className="w-full bg-gray-200 rounded-full h-2.5 mt-1">
+                  <div
+                    className={`h-2.5 rounded-full ${
+                      selectedSubscription.valueRatio >= 1.5
+                        ? "bg-green-500"
+                        : selectedSubscription.valueRatio >= 0.8
+                          ? "bg-yellow-500"
+                          : "bg-red-500"
+                    }`}
+                    style={{ width: `${Math.min(100, selectedSubscription.valueRatio * 50)}%` }}
+                  ></div>
+                </div>
+                <p className="text-right text-xs text-muted-foreground mt-1">
+                  {selectedSubscription.valueRatio.toFixed(2)}x
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Utilization</p>
+                <div className="w-full bg-gray-200 rounded-full h-2.5 mt-1">
+                  <div
+                    className={`h-2.5 rounded-full ${
+                      selectedSubscription.utilization >= 0.75
+                        ? "bg-green-500"
+                        : selectedSubscription.utilization >= 0.4
+                          ? "bg-yellow-500"
+                          : "bg-red-500"
+                    }`}
+                    style={{ width: `${selectedSubscription.utilization * 100}%` }}
+                  ></div>
+                </div>
+                <p className="text-right text-xs text-muted-foreground mt-1">
+                  {(selectedSubscription.utilization * 100).toFixed(0)}%
+                </p>
+              </div>
+            </div>
+
             <div className="mb-4">
               <p className="text-sm text-muted-foreground">ROI Score</p>
               <div className="w-full bg-gray-200 rounded-full h-2.5 mt-1">
@@ -222,12 +277,29 @@ export function SubscriptionValueMatrix({ subscriptions }: SubscriptionValueMatr
               </p>
             </div>
 
-            <div>
-              <p className="text-sm font-medium">Recommendation:</p>
+            <div className="p-3 rounded-md bg-gray-50 mb-4">
+              <p className="text-sm font-medium mb-1">Recommendation:</p>
               <p className="text-sm text-muted-foreground">{selectedSubscription.recommendation}</p>
             </div>
 
-            <div className="flex justify-end mt-4">
+            <div className="flex justify-between mt-4">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="sm">
+                      <InfoIcon className="h-4 w-4 mr-1" /> Value Metrics Explained
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-sm p-4">
+                    <p className="font-medium mb-2">Value Metrics Explained:</p>
+                    <ul className="text-xs space-y-2">
+                      <li><span className="font-medium">Value Ratio:</span> Perceived value divided by cost. Higher is better. Above 1.0 means you're getting more value than what you pay for.</li>
+                      <li><span className="font-medium">Utilization:</span> How much you actually use the subscription compared to its potential. Higher is better.</li>
+                      <li><span className="font-medium">ROI Score:</span> Overall return on investment score that combines value, usage, and cost metrics.</li>
+                    </ul>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               <Button variant="outline" size="sm" onClick={() => setSelectedSubscription(null)}>
                 Close
               </Button>

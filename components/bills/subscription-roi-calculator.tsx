@@ -37,7 +37,11 @@ interface ROIAnalysis {
   costPerUse: number
   valueScore: number
   roiPercentage: number
+  valueRatio: number
+  utilization: number
+  optimizationPotential: number
   recommendation: string
+  actionItems: string[]
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D'];
@@ -99,12 +103,16 @@ export function SubscriptionROICalculator() {
   const calculateROIAnalysis = (sub: Subscription): ROIAnalysis => {
     // Calculate monthly cost based on billing cycle
     let monthlyCost = sub.cost
-    if (sub.billing_cycle === 'yearly') {
+    if (sub.billing_cycle === 'annually' || sub.billing_cycle === 'yearly') {
       monthlyCost = sub.cost / 12
     } else if (sub.billing_cycle === 'quarterly') {
       monthlyCost = sub.cost / 3
-    } else if (sub.billing_cycle === 'bi-annual') {
+    } else if (sub.billing_cycle === 'semi-annually' || sub.billing_cycle === 'bi-annual') {
       monthlyCost = sub.cost / 6
+    } else if (sub.billing_cycle === 'biweekly') {
+      monthlyCost = sub.cost * 2.17 // Average bi-weeks per month
+    } else if (sub.billing_cycle === 'weekly') {
+      monthlyCost = sub.cost * 4.33 // Average weeks per month
     }
     
     // Calculate cost per use (assuming usage is a percentage of optimal usage)
@@ -119,19 +127,44 @@ export function SubscriptionROICalculator() {
     const roiPercentage = sub.usage > 0 
       ? Math.round((sub.value / sub.usage) * 100) 
       : 0
+      
+    // Calculate value ratio (value divided by cost, normalized)
+    const valueRatio = sub.value > 0 && monthlyCost > 0
+      ? (sub.value / 100) / (monthlyCost / 50) // Normalize to make 1.0 a "fair" value
+      : 0
+      
+    // Calculate utilization (actual usage vs potential usage)
+    const utilization = sub.usage / 100
     
-    // Generate recommendation
+    // Calculate optimization potential (how much could be saved or improved)
+    const optimizationPotential = monthlyCost > 0
+      ? Math.max(0, (1 - (utilization * valueRatio)) * 100)
+      : 0
+    
+    // Generate recommendation and action items
     let recommendation = ""
-    if (sub.usage < 30 && sub.cost > 10) {
-      recommendation = "Consider cancelling or downgrading this subscription due to low usage."
-    } else if (sub.usage < 50 && sub.cost > 20) {
-      recommendation = "Evaluate if this subscription is still necessary or if a lower tier would suffice."
-    } else if (sub.value > 80 && sub.cost > 20) {
-      recommendation = "This is a high-value subscription. Consider annual plans for potential savings."
-    } else if (roiPercentage < 50) {
-      recommendation = "The return on investment is low. Consider alternatives or optimizing usage."
+    const actionItems: string[] = []
+    
+    if (sub.usage < 30 && monthlyCost > 10) {
+      recommendation = "Consider canceling this subscription due to low usage."
+      actionItems.push("Review alternatives with lower cost or free tiers")
+      actionItems.push("Set a calendar reminder to cancel before next renewal")
+    } else if (sub.usage < 50 && monthlyCost > 15) {
+      recommendation = "Evaluate if this subscription can be shared or downgraded to a cheaper plan."
+      actionItems.push("Check if a family or group plan is available")
+      actionItems.push("Look for seasonal promotions or annual payment discounts")
+    } else if (roiPercentage < 80) {
+      recommendation = "Look for alternatives with better value for your needs."
+      actionItems.push("Research competitor offerings and pricing")
+      actionItems.push("Consider if you need all features or could use a simpler plan")
+    } else if (roiPercentage > 120) {
+      recommendation = "Great value! Consider upgrading if you use this service frequently."
+      actionItems.push("Set reminders to use this subscription more often")
+      actionItems.push("Check if premium features would provide even more value")
     } else {
-      recommendation = "This subscription provides good value for your usage."
+      recommendation = "This subscription provides fair value for the cost."
+      actionItems.push("Review usage patterns to maximize value")
+      actionItems.push("Set a calendar reminder to review before renewal")
     }
     
     return {
@@ -140,7 +173,11 @@ export function SubscriptionROICalculator() {
       costPerUse,
       valueScore,
       roiPercentage,
-      recommendation
+      valueRatio,
+      utilization,
+      optimizationPotential,
+      recommendation,
+      actionItems
     }
   }
 
@@ -246,44 +283,109 @@ export function SubscriptionROICalculator() {
                 ) : (
                   <div className="space-y-4">
                     {roiAnalysis.map((analysis, index) => (
-                      <Card key={index} className="overflow-hidden">
-                        <div className="p-4 border-b">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <h3 className="font-medium">{analysis.subscription.name}</h3>
+                      <div key={index} className="bg-white p-4 rounded-lg shadow-sm border">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h4 className="text-lg font-medium">{analysis.subscription.name}</h4>
+                            <div className="flex items-center gap-2">
                               <p className="text-sm text-muted-foreground">
-                                {analysis.subscription.category} • {analysis.subscription.billing_cycle}
+                                {formatCurrency(analysis.monthlyCost)} / month
                               </p>
+                              {analysis.subscription.category && (
+                                <Badge variant="outline" className="text-xs">
+                                  {analysis.subscription.category}
+                                </Badge>
+                              )}
                             </div>
-                            <div className="text-right">
-                              <div className="font-medium">{formatCurrency(analysis.monthlyCost)}/mo</div>
-                              <div className={`text-sm ${getValueColor(analysis.valueScore)}`}>
-                                Value: {analysis.valueScore}/100
-                              </div>
-                            </div>
+                          </div>
+                          <div className="flex items-center space-x-1">
+                            {analysis.roiPercentage >= 100 ? (
+                              <CheckCircle2 className="h-5 w-5 text-green-500" />
+                            ) : analysis.roiPercentage >= 80 ? (
+                              <TrendingUp className="h-5 w-5 text-yellow-500" />
+                            ) : (
+                              <AlertTriangle className="h-5 w-5 text-red-500" />
+                            )}
+                            <span
+                              className={`font-medium ${
+                                analysis.roiPercentage >= 100
+                                  ? "text-green-600"
+                                  : analysis.roiPercentage >= 80
+                                  ? "text-yellow-600"
+                                  : "text-red-600"
+                              }`}
+                            >
+                              {analysis.roiPercentage}% ROI
+                            </span>
                           </div>
                         </div>
                         
-                        <div className="p-4 bg-muted/30">
-                          <div className="grid grid-cols-2 gap-4 mb-4">
-                            <div>
-                              <div className="text-sm text-muted-foreground">Usage</div>
-                              <div className="font-medium">{analysis.subscription.usage}%</div>
+                        <div className="grid grid-cols-3 gap-4 mt-3">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Value Ratio</p>
+                            <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
+                              <div
+                                className={`h-2 rounded-full ${
+                                  analysis.valueRatio >= 1.5
+                                    ? "bg-green-500"
+                                    : analysis.valueRatio >= 0.8
+                                      ? "bg-yellow-500"
+                                      : "bg-red-500"
+                                }`}
+                                style={{ width: `${Math.min(100, analysis.valueRatio * 50)}%` }}
+                              ></div>
                             </div>
-                            <div>
-                              <div className="text-sm text-muted-foreground">ROI</div>
-                              <div className={`font-medium ${getROIColor(analysis.roiPercentage)}`}>
-                                {analysis.roiPercentage}%
-                              </div>
-                            </div>
+                            <p className="text-right text-xs text-muted-foreground mt-1">
+                              {analysis.valueRatio.toFixed(2)}x
+                            </p>
                           </div>
-                          
-                          <div className="text-sm">
-                            <div className="font-medium mb-1">Recommendation:</div>
-                            <p>{analysis.recommendation}</p>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Utilization</p>
+                            <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
+                              <div
+                                className={`h-2 rounded-full ${
+                                  analysis.utilization >= 0.75
+                                    ? "bg-green-500"
+                                    : analysis.utilization >= 0.4
+                                      ? "bg-yellow-500"
+                                      : "bg-red-500"
+                                }`}
+                                style={{ width: `${analysis.utilization * 100}%` }}
+                              ></div>
+                            </div>
+                            <p className="text-right text-xs text-muted-foreground mt-1">
+                              {(analysis.utilization * 100).toFixed(0)}%
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Optimization Potential</p>
+                            <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
+                              <div
+                                className={`h-2 rounded-full ${
+                                  analysis.optimizationPotential <= 20
+                                    ? "bg-green-500"
+                                    : analysis.optimizationPotential <= 50
+                                      ? "bg-yellow-500"
+                                      : "bg-red-500"
+                                }`}
+                                style={{ width: `${analysis.optimizationPotential}%` }}
+                              ></div>
+                            </div>
+                            <p className="text-right text-xs text-muted-foreground mt-1">
+                              {analysis.optimizationPotential.toFixed(0)}%
+                            </p>
                           </div>
                         </div>
-                      </Card>
+                        
+                        <div className="mt-4 text-sm">
+                          <p className="font-medium">{analysis.recommendation}</p>
+                          <ul className="mt-2 text-xs text-muted-foreground space-y-1 list-disc pl-4">
+                            {analysis.actionItems.map((item, i) => (
+                              <li key={i}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 )}

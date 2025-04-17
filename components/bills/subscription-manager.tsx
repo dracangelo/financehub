@@ -27,7 +27,7 @@ export function SubscriptionManager() {
     {
       id: "1",
       name: "Netflix",
-      category: "Entertainment",
+      category: "Streaming",
       cost: 15.99,
       billingCycle: "monthly",
       nextBillingDate: new Date(2023, 5, 15),
@@ -40,7 +40,7 @@ export function SubscriptionManager() {
     {
       id: "2",
       name: "Spotify Premium",
-      category: "Entertainment",
+      category: "Music",
       cost: 9.99,
       billingCycle: "monthly",
       nextBillingDate: new Date(2023, 5, 20),
@@ -65,41 +65,136 @@ export function SubscriptionManager() {
     },
     {
       id: "4",
-      name: "Gym Membership",
-      category: "Health",
-      cost: 49.99,
+      name: "New York Times",
+      category: "News",
+      cost: 17.99,
       billingCycle: "monthly",
       nextBillingDate: new Date(2023, 5, 1),
-      usage: 30,
-      value: 40,
+      usage: 65,
+      value: 70,
       paymentMethod: "Bank Account",
       autoRenew: true,
-      notes: "Annual contract, 3 months left"
+      notes: "Digital subscription"
     },
     {
       id: "5",
+      name: "Fitness Plus",
+      category: "Fitness",
+      cost: 9.99,
+      billingCycle: "monthly",
+      nextBillingDate: new Date(2023, 5, 5),
+      usage: 50,
+      value: 60,
+      paymentMethod: "Credit Card",
+      autoRenew: true,
+      notes: "Online fitness classes"
+    },
+    {
+      id: "6",
       name: "Amazon Prime",
       category: "Shopping",
       cost: 139.00,
-      billingCycle: "yearly",
+      billingCycle: "annually",
       nextBillingDate: new Date(2023, 11, 15),
       usage: 70,
       value: 85,
       paymentMethod: "Credit Card",
       autoRenew: true,
       notes: "Includes Prime Video and Music"
+    },
+    {
+      id: "7",
+      name: "Coursera Plus",
+      category: "Education",
+      cost: 59.00,
+      billingCycle: "monthly",
+      nextBillingDate: new Date(2023, 6, 5),
+      usage: 40,
+      value: 75,
+      paymentMethod: "Credit Card",
+      autoRenew: true,
+      notes: "Unlimited access to courses"
+    },
+    {
+      id: "8",
+      name: "Notion Pro",
+      category: "Productivity",
+      cost: 8.00,
+      billingCycle: "monthly",
+      nextBillingDate: new Date(2023, 6, 12),
+      usage: 90,
+      value: 95,
+      paymentMethod: "Credit Card",
+      autoRenew: true,
+      notes: "Project management and notes"
+    },
+    {
+      id: "9",
+      name: "Xbox Game Pass",
+      category: "Gaming",
+      cost: 14.99,
+      billingCycle: "monthly",
+      nextBillingDate: new Date(2023, 6, 18),
+      usage: 65,
+      value: 80,
+      paymentMethod: "Credit Card",
+      autoRenew: true,
+      notes: "Includes EA Play"
+    },
+    {
+      id: "10",
+      name: "Google One",
+      category: "Cloud Storage",
+      cost: 9.99,
+      billingCycle: "monthly",
+      nextBillingDate: new Date(2023, 6, 22),
+      usage: 75,
+      value: 70,
+      paymentMethod: "Credit Card",
+      autoRenew: true,
+      notes: "2TB storage plan"
+    },
+    {
+      id: "11",
+      name: "YNAB",
+      category: "Finance",
+      cost: 14.99,
+      billingCycle: "monthly",
+      nextBillingDate: new Date(2023, 7, 3),
+      usage: 80,
+      value: 85,
+      paymentMethod: "Credit Card",
+      autoRenew: true,
+      notes: "Budgeting software"
+    },
+    {
+      id: "12",
+      name: "Calm",
+      category: "Health",
+      cost: 69.99,
+      billingCycle: "annually",
+      nextBillingDate: new Date(2024, 1, 15),
+      usage: 30,
+      value: 50,
+      paymentMethod: "Credit Card",
+      autoRenew: true,
+      notes: "Meditation and sleep stories"
     }
   ]
   
   const totalMonthlyCost = subscriptions.reduce((total, sub) => {
     if (sub.billingCycle === "monthly") {
       return total + sub.cost
-    } else if (sub.billingCycle === "yearly") {
-      return total + (sub.cost / 12)
+    } else if (sub.billingCycle === "weekly") {
+      return total + (sub.cost * 4.33) // Average weeks per month
+    } else if (sub.billingCycle === "biweekly") {
+      return total + (sub.cost * 2.17) // Average bi-weeks per month
     } else if (sub.billingCycle === "quarterly") {
       return total + (sub.cost / 3)
-    } else if (sub.billingCycle === "bi-annual") {
+    } else if (sub.billingCycle === "semi-annually") {
       return total + (sub.cost / 6)
+    } else if (sub.billingCycle === "annually") {
+      return total + (sub.cost / 12)
     }
     return total
   }, 0)

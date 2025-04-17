@@ -150,13 +150,13 @@ export function SubscriptionDialog({ open, onOpenChange, subscription, onSave }:
               <Label htmlFor="billing_cycle" className="text-right">
                 Billing Cycle
               </Label>
-              <Select name="billing_cycle" defaultValue={subscription?.billing_cycle || subscription?.payment_cycle || "monthly"}>
+              <Select name="billing_cycle" defaultValue={subscription?.billing_cycle || subscription?.billing_frequency || subscription?.payment_cycle || "monthly"}>
                 <SelectTrigger id="billing_cycle" className="col-span-3">
                   <SelectValue placeholder="Select billing cycle" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="weekly">Weekly</SelectItem>
-                  <SelectItem value="bi-weekly">Bi-weekly</SelectItem>
+                  <SelectItem value="biweekly">Biweekly</SelectItem>
                   <SelectItem value="monthly">Monthly</SelectItem>
                   <SelectItem value="quarterly">Quarterly</SelectItem>
                   <SelectItem value="semi-annually">Semi-annually</SelectItem>
@@ -197,7 +197,7 @@ export function SubscriptionDialog({ open, onOpenChange, subscription, onSave }:
               <Label htmlFor="category_id" className="text-right">
                 Category
               </Label>
-              <Select name="category_id" defaultValue={subscription?.category_id || (subscription?.biller?.category ? subscription.biller.category : "uncategorized")}>
+              <Select name="category_id" defaultValue={subscription?.category_id || subscription?.biller?.category || "uncategorized"}>
                 <SelectTrigger id="category_id" className="col-span-3">
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
@@ -208,6 +208,18 @@ export function SubscriptionDialog({ open, onOpenChange, subscription, onSave }:
                   <SelectItem value="software">Software</SelectItem>
                   <SelectItem value="news">News</SelectItem>
                   <SelectItem value="fitness">Fitness</SelectItem>
+                  <SelectItem value="education">Education</SelectItem>
+                  <SelectItem value="productivity">Productivity</SelectItem>
+                  <SelectItem value="gaming">Gaming</SelectItem>
+                  <SelectItem value="music">Music</SelectItem>
+                  <SelectItem value="cloud_storage">Cloud Storage</SelectItem>
+                  <SelectItem value="finance">Finance</SelectItem>
+                  <SelectItem value="health">Health</SelectItem>
+                  <SelectItem value="food_delivery">Food Delivery</SelectItem>
+                  <SelectItem value="shopping">Shopping</SelectItem>
+                  <SelectItem value="utilities">Utilities</SelectItem>
+                  <SelectItem value="security">Security</SelectItem>
+                  <SelectItem value="social_media">Social Media</SelectItem>
                   <SelectItem value="other">Other</SelectItem>
                 </SelectContent>
               </Select>

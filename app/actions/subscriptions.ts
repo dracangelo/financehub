@@ -126,13 +126,9 @@ export async function createSubscription(formData: FormData) {
     }
     
     // Normalize billing frequency values
-    if (billing_frequency === "bi-weekly") {
-      billing_frequency = "bi-weekly"
-    } else if (billing_frequency === "biweekly") {
-      billing_frequency = "bi-weekly"
-    } else if (billing_frequency === "semi-annually") {
-      billing_frequency = "semi-annually"
-    } else if (billing_frequency === "semiannually") {
+    if (billing_frequency === "bi-weekly" || billing_frequency === "biweekly") {
+      billing_frequency = "biweekly"
+    } else if (billing_frequency === "semi-annually" || billing_frequency === "semiannually") {
       billing_frequency = "semi-annually"
     }
     
@@ -194,7 +190,7 @@ export async function createSubscription(formData: FormData) {
         .from("billers")
         .insert({
           name: provider,
-          category: formData.get("category") as string || null,
+          category: formData.get("category_id") as string || formData.get("category") as string || null,
           website_url: formData.get("website_url") as string || null,
           support_contact: formData.get("support_contact") as string || null
         })
@@ -225,7 +221,8 @@ export async function createSubscription(formData: FormData) {
         payment_method,
         auto_pay,
         usage_value,
-        is_active: true
+        is_active: true,
+        category: formData.get("category_id") as string || formData.get("category") as string || null
       })
       .select()
       .single()
@@ -262,13 +259,9 @@ export async function updateSubscription(id: string, formData: FormData) {
     let billing_cycle = (formData.get("billing_cycle") as string) || "monthly"
     
     // Normalize billing frequency values
-    if (billing_cycle === "bi-weekly") {
-      billing_cycle = "bi-weekly"
-    } else if (billing_cycle === "biweekly") {
-      billing_cycle = "bi-weekly"
-    } else if (billing_cycle === "semi-annually") {
-      billing_cycle = "semi-annually"
-    } else if (billing_cycle === "semiannually") {
+    if (billing_cycle === "bi-weekly" || billing_cycle === "biweekly") {
+      billing_cycle = "biweekly"
+    } else if (billing_cycle === "semi-annually" || billing_cycle === "semiannually") {
       billing_cycle = "semi-annually"
     }
     

@@ -1,5 +1,5 @@
 -- Create enum types
-CREATE TYPE billing_cycle AS ENUM ('monthly', 'quarterly', 'annually', 'weekly', 'biweekly');
+CREATE TYPE billing_cycle AS ENUM ('weekly', 'biweekly', 'monthly', 'quarterly', 'semi-annually', 'annually');
 CREATE TYPE payment_status AS ENUM ('pending', 'paid', 'overdue', 'cancelled');
 CREATE TYPE payment_method_type AS ENUM ('credit_card', 'debit_card', 'bank_transfer', 'cash', 'other');
 

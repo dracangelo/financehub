@@ -27,7 +27,7 @@ interface SubscriptionFormProps {
 export function SubscriptionForm({ onClose, onSave, initialData }: SubscriptionFormProps) {
   const [formData, setFormData] = useState(initialData || {
     name: "",
-    category: "Entertainment",
+    category: "Uncategorized",
     cost: 0,
     billingCycle: "monthly",
     nextBillingDate: new Date().toISOString().split("T")[0],
@@ -39,7 +39,7 @@ export function SubscriptionForm({ onClose, onSave, initialData }: SubscriptionF
   })
   
   const handleChange = (field: string, value: any) => {
-    setFormData(prev => ({
+    setFormData((prev: any) => ({
       ...prev,
       [field]: value
     }))
@@ -98,12 +98,24 @@ export function SubscriptionForm({ onClose, onSave, initialData }: SubscriptionF
                     <SelectValue placeholder="Select a category" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="Uncategorized">Uncategorized</SelectItem>
                     <SelectItem value="Entertainment">Entertainment</SelectItem>
+                    <SelectItem value="Streaming">Streaming</SelectItem>
                     <SelectItem value="Software">Software</SelectItem>
+                    <SelectItem value="News">News</SelectItem>
+                    <SelectItem value="Fitness">Fitness</SelectItem>
+                    <SelectItem value="Education">Education</SelectItem>
+                    <SelectItem value="Productivity">Productivity</SelectItem>
+                    <SelectItem value="Gaming">Gaming</SelectItem>
+                    <SelectItem value="Music">Music</SelectItem>
+                    <SelectItem value="Cloud Storage">Cloud Storage</SelectItem>
+                    <SelectItem value="Finance">Finance</SelectItem>
                     <SelectItem value="Health">Health</SelectItem>
+                    <SelectItem value="Food Delivery">Food Delivery</SelectItem>
                     <SelectItem value="Shopping">Shopping</SelectItem>
                     <SelectItem value="Utilities">Utilities</SelectItem>
-                    <SelectItem value="Streaming">Streaming</SelectItem>
+                    <SelectItem value="Security">Security</SelectItem>
+                    <SelectItem value="Social Media">Social Media</SelectItem>
                     <SelectItem value="Other">Other</SelectItem>
                   </SelectContent>
                 </Select>
@@ -135,10 +147,12 @@ export function SubscriptionForm({ onClose, onSave, initialData }: SubscriptionF
                     <SelectValue placeholder="Select billing cycle" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="weekly">Weekly</SelectItem>
+                    <SelectItem value="biweekly">Biweekly</SelectItem>
                     <SelectItem value="monthly">Monthly</SelectItem>
                     <SelectItem value="quarterly">Quarterly</SelectItem>
-                    <SelectItem value="bi-annual">Bi-Annual</SelectItem>
-                    <SelectItem value="yearly">Yearly</SelectItem>
+                    <SelectItem value="semi-annually">Semi-annually</SelectItem>
+                    <SelectItem value="annually">Annually</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

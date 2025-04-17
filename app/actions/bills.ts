@@ -555,6 +555,7 @@ function calculateNextDueDate(currentDueDate: string, recurrencePattern: string)
     case "quarterly":
       date.setMonth(date.getMonth() + 3)
       break
+    case "semi-annually":
     case "semiannually":
       date.setMonth(date.getMonth() + 6)
       break
