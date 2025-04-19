@@ -32,8 +32,8 @@ export function ESGInvestmentTable({ investments }: ESGInvestmentTableProps) {
             <TableRow key={investment.id}>
               <TableCell className="font-medium">{investment.name}</TableCell>
               <TableCell>{investment.ticker}</TableCell>
-              <TableCell className="capitalize">{investment.type.replace("_", " ")}</TableCell>
-              <TableCell className="text-right">{formatCurrency(investment.price)}</TableCell>
+              <TableCell className="capitalize">{investment.type ? investment.type.replace("_", " ") : "N/A"}</TableCell>
+              <TableCell className="text-right">{investment.price ? formatCurrency(investment.price) : "N/A"}</TableCell>
               <TableCell className="text-right">
                 {investment.expenseRatio ? formatPercentage(investment.expenseRatio / 100) : "N/A"}
               </TableCell>
@@ -41,16 +41,16 @@ export function ESGInvestmentTable({ investments }: ESGInvestmentTableProps) {
                 <div className="flex items-center justify-end space-x-2">
                   <div
                     className="h-2 w-16 bg-muted rounded-full overflow-hidden"
-                    title={`ESG Score: ${investment.esgScore?.total.toFixed(1) || "N/A"}`}
+                    title={`ESG Score: ${investment.esgScore?.total ? investment.esgScore.total.toFixed(1) : "N/A"}`}
                   >
                     <div
                       className="h-full bg-primary"
                       style={{
-                        width: `${investment.esgScore ? (investment.esgScore.total / 10) * 100 : 0}%`,
+                        width: `${investment.esgScore?.total ? (investment.esgScore.total / 10) * 100 : 0}%`,
                       }}
                     ></div>
                   </div>
-                  <span>{investment.esgScore?.total.toFixed(1) || "N/A"}</span>
+                  <span>{investment.esgScore?.total ? investment.esgScore.total.toFixed(1) : "N/A"}</span>
                 </div>
               </TableCell>
               <TableCell>{investment.sector}</TableCell>
@@ -61,4 +61,3 @@ export function ESGInvestmentTable({ investments }: ESGInvestmentTableProps) {
     </div>
   )
 }
-

@@ -1721,6 +1721,13 @@ export async function fetchESGCategories() {
     
     if (error) {
       console.error('Error fetching ESG categories:', error)
+      
+      // If the table doesn't exist yet, return mock data
+      if (error.code === "42P01") { // PostgreSQL code for undefined_table
+        console.log("ESG categories table doesn't exist yet. Using mock data.")
+        return getMockESGCategories()
+      }
+      
       return getMockESGCategories()
     }
     
@@ -1741,6 +1748,13 @@ export async function fetchExcludedSectors() {
     
     if (error) {
       console.error('Error fetching excluded sectors:', error)
+      
+      // If the table doesn't exist yet, return mock data
+      if (error.code === "42P01") { // PostgreSQL code for undefined_table
+        console.log("Excluded sectors table doesn't exist yet. Using mock data.")
+        return getMockExcludedSectors()
+      }
+      
       return getMockExcludedSectors()
     }
     

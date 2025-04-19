@@ -27,6 +27,7 @@ export interface Investment {
   gainPercent?: number
   yield?: number
   risk?: string
+  price?: number
 }
 
 export interface AssetClass {
@@ -655,7 +656,17 @@ export function calculateESGScore(investments: Investment[]): PortfolioESGScore 
   }
 
   // Calculate total value of all investments
-  const totalValue = investments.reduce((sum, investment) => sum + investment.value, 0)
+  const totalValue = investments.reduce((sum, investment) => sum + (investment.value || investment.price || 0), 0)
+  
+  // If there's no total value, return zeros to avoid NaN
+  if (totalValue === 0) {
+    return {
+      environmentalScore: 0,
+      socialScore: 0,
+      governanceScore: 0,
+      totalESGScore: 0,
+    }
+  }
 
   // Calculate weighted ESG scores
   let weightedEnvironmental = 0
@@ -664,8 +675,9 @@ export function calculateESGScore(investments: Investment[]): PortfolioESGScore 
   let weightedTotal = 0
 
   investments.forEach((investment) => {
-    if (investment.esgScore && investment.value > 0) {
-      const weight = investment.value / totalValue
+    if (investment.esgScore) {
+      const investmentValue = investment.value || investment.price || 0
+      const weight = investmentValue / totalValue
       weightedEnvironmental += investment.esgScore.environmental * weight
       weightedSocial += investment.esgScore.social * weight
       weightedGovernance += investment.esgScore.governance * weight
@@ -674,10 +686,10 @@ export function calculateESGScore(investments: Investment[]): PortfolioESGScore 
   })
 
   return {
-    environmentalScore: weightedEnvironmental,
-    socialScore: weightedSocial,
-    governanceScore: weightedGovernance,
-    totalESGScore: weightedTotal,
+    environmentalScore: weightedEnvironmental || 0,
+    socialScore: weightedSocial || 0,
+    governanceScore: weightedGovernance || 0,
+    totalESGScore: weightedTotal || 0,
   }
 }
 
