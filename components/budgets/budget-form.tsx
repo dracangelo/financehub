@@ -63,22 +63,60 @@ export function BudgetForm({ budget, categories, onSuccess }: BudgetFormProps) {
     setLoading(true)
 
     try {
+      // Process categories to ensure all calculations are correct and optimize storage
+      console.log('Original categories data:', formData.categories);
+      
       const budgetData = {
         ...formData,
-        categories: formData.categories.map(cat => ({
-          ...cat,
-          amount: (cat.percentage / 100) * formData.amount,
-          subcategories: cat.subcategories?.map((sub: any) => ({
-            ...sub,
-            amount: (sub.percentage / 100) * ((cat.percentage / 100) * formData.amount)
-          }))
-        }))
-      }
+        categories: formData.categories.map(cat => {
+          // Get amount_allocated directly if available, otherwise calculate from percentage
+          const amount = cat.amount_allocated || ((cat.percentage / 100) * formData.amount);
+          
+          // Create a streamlined category object with only necessary fields
+          const categoryData = {
+            id: cat.id || undefined, // Preserve original ID if it exists
+            name: cat.name,
+            amount_allocated: amount, // Use amount_allocated or calculated amount
+          };
+          
+          // Process subcategories if they exist
+          if (cat.subcategories?.length) {
+            console.log(`Processing ${cat.subcategories.length} subcategories for ${cat.name}`);
+            
+            const subcategories = cat.subcategories.map((sub: any) => {
+              // Get amount_allocated directly if available, otherwise calculate from percentage
+              const subAmount = sub.amount_allocated || ((sub.percentage / 100) * amount);
+              
+              // Create a streamlined subcategory object
+              return {
+                id: sub.id || undefined, // Preserve original ID if it exists
+                name: sub.name,
+                amount_allocated: subAmount, // Use amount_allocated or calculated amount
+                parent_id: cat.id // Link to parent category
+              };
+            });
+            
+            // Return the category with its subcategories
+            return {
+              ...categoryData,
+              subcategories
+            };
+          }
+          
+          return categoryData;
+        })
+      };
+      
+      console.log('Submitting optimized budget data:', budgetData);
+      console.log('Categories count:', budgetData.categories.length);
+      console.log('First category sample:', budgetData.categories[0]);
       
       if (budget?.id) {
+        console.log(`Updating budget with ID: ${budget.id}`);
         await updateBudget(budget.id, budgetData)
         toast.success("Budget updated successfully")
       } else {
+        console.log('Creating new budget');
         await createBudget(budgetData)
         toast.success("Budget created successfully")
       }
@@ -93,15 +131,77 @@ export function BudgetForm({ budget, categories, onSuccess }: BudgetFormProps) {
     }
   }
 
-  const handleSaveCategories = (categories: any[]) => {
-    setFormData(prev => ({ ...prev, categories }))
+  const handleSaveCategories = async (categories: any[]) => {
+    // Update the form data with the new categories
+    setFormData(prev => ({ ...prev, categories }));
     
-    // Create a synthetic event to simulate form submission
-    const event = {
-      preventDefault: () => {}
-    } as React.FormEvent<HTMLFormElement>;
+    // Set loading state
+    setLoading(true);
     
-    handleSubmit(event);
+    try {
+      // Process categories to ensure all calculations are correct
+      const budgetData = {
+        ...formData,
+        categories: categories.map(cat => {
+          // Get amount_allocated directly if available, otherwise calculate from percentage
+          const amount = cat.amount_allocated || ((cat.percentage / 100) * formData.amount);
+          
+          // Create a streamlined category object with only necessary fields
+          const categoryData = {
+            id: cat.id || undefined, // Preserve original ID if it exists
+            name: cat.name,
+            amount_allocated: amount, // Use amount_allocated or calculated amount
+          };
+          
+          // Process subcategories if they exist
+          if (cat.subcategories?.length) {
+            console.log(`Processing ${cat.subcategories.length} subcategories for ${cat.name}`);
+            
+            const subcategories = cat.subcategories.map((sub: any) => {
+              // Get amount_allocated directly if available, otherwise calculate from percentage
+              const subAmount = sub.amount_allocated || ((sub.percentage / 100) * amount);
+              
+              // Create a streamlined subcategory object
+              return {
+                id: sub.id || undefined, // Preserve original ID if it exists
+                name: sub.name,
+                amount_allocated: subAmount, // Use amount_allocated or calculated amount
+                parent_id: cat.id // Link to parent category
+              };
+            });
+            
+            // Return the category with its subcategories
+            return {
+              ...categoryData,
+              subcategories
+            };
+          }
+          
+          return categoryData;
+        })
+      };
+      
+      console.log('Submitting budget data from handleSaveCategories:', budgetData);
+      console.log('Categories count:', budgetData.categories.length);
+      
+      if (budget?.id) {
+        console.log(`Updating budget with ID: ${budget.id}`);
+        await updateBudget(budget.id, budgetData);
+        toast.success("Budget updated successfully");
+      } else {
+        console.log('Creating new budget');
+        await createBudget(budgetData);
+        toast.success("Budget created successfully");
+      }
+
+      onSuccess?.();
+      router.push("/budgets");
+      router.refresh();
+    } catch (error: any) {
+      toast.error(error.message || "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
   }
 
   if (step === 2) {
@@ -109,6 +209,7 @@ export function BudgetForm({ budget, categories, onSuccess }: BudgetFormProps) {
       <BudgetCategoryForm
         initialCategories={formData.categories}
         onSave={handleSaveCategories}
+        useExistingCategories={true}
       />
     )
   }

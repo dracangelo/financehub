@@ -2,6 +2,7 @@ import { Suspense } from "react"
 import { getBudgets } from "@/app/actions/budgets"
 import { getCategories, ensureStaticCategories } from "@/app/actions/categories"
 import { BudgetDashboard } from "@/components/budgets/budget-dashboard"
+import { BudgetList } from "@/components/budgets/budget-list"
 import { QuickActionsWrapper } from "@/components/budgets/quick-actions-wrapper"
 import { BudgetTemplatesWrapper } from "@/components/budgets/templates/budget-templates-wrapper"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -42,35 +43,12 @@ async function BudgetsList() {
     }
     
     return (
-      <div className="space-y-4">
+      <div className="space-y-6">
+        {/* Budget List with Edit and Delete functionality */}
+        <BudgetList budgets={budgets} />
+        
+        {/* Create New Budget Card */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {budgets.map((budget) => (
-            <Link href={`/budgets/${budget.id}`} key={budget.id}>
-              <Card className="h-full hover:border-primary transition-colors cursor-pointer">
-                <CardHeader>
-                  <CardTitle>{budget.name}</CardTitle>
-                  <CardDescription>
-                    {new Date(budget.start_date).toLocaleDateString()} - 
-                    {budget.end_date ? new Date(budget.end_date).toLocaleDateString() : 'Ongoing'}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Budget</p>
-                      <p className="text-2xl font-bold">${budget.income.toLocaleString()}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Categories</p>
-                      <p className="text-xl font-medium">{budget.budget_categories?.length || 0}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
-          
-          {/* Create New Budget Card */}
           <Link href="/budgets/manage/create">
             <Card className="h-full border-dashed hover:border-primary transition-colors cursor-pointer flex flex-col justify-center items-center p-6">
               <div className="rounded-full bg-primary/10 p-4 mb-4">

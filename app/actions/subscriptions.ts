@@ -120,16 +120,37 @@ export async function createSubscription(formData: FormData) {
     const amount = amountValue ? Number(amountValue) : 0
     
     // Get values with defaults for required fields
-    let billing_frequency = formData.get("billing_cycle") as string | null || formData.get("billing_frequency") as string | null
-    if (!billing_frequency) {
-      billing_frequency = "monthly"
+    let billing_cycle = formData.get("billing_cycle") as string | null || formData.get("billing_frequency") as string | null
+    if (!billing_cycle) {
+      billing_cycle = "monthly"
     }
     
-    // Normalize billing frequency values
-    if (billing_frequency === "bi-weekly" || billing_frequency === "biweekly") {
-      billing_frequency = "biweekly"
-    } else if (billing_frequency === "semi-annually" || billing_frequency === "semiannually") {
-      billing_frequency = "semi-annually"
+    // Map billing cycle to valid billing_frequency values according to the schema constraint
+    // check (billing_frequency in ('monthly', 'quarterly', 'yearly', 'weekly'))
+    let billing_frequency: string;
+    switch (billing_cycle) {
+      case 'weekly':
+        billing_frequency = 'weekly';
+        break;
+      case 'biweekly':
+        billing_frequency = 'weekly'; // closest match
+        break;
+      case 'monthly':
+        billing_frequency = 'monthly';
+        break;
+      case 'quarterly':
+        billing_frequency = 'quarterly';
+        break;
+      case 'semi-annually':
+      case 'semiannually':
+        billing_frequency = 'quarterly'; // closest match
+        break;
+      case 'annually':
+      case 'yearly':
+        billing_frequency = 'yearly';
+        break;
+      default:
+        billing_frequency = 'monthly';
     }
     
     // Set start date to today if not provided
@@ -221,8 +242,7 @@ export async function createSubscription(formData: FormData) {
         payment_method,
         auto_pay,
         usage_value,
-        is_active: true,
-        category: formData.get("category_id") as string || formData.get("category") as string || null
+        is_active: true
       })
       .select()
       .single()

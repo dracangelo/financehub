@@ -73,7 +73,7 @@ export async function getTaxLossHarvestingOpportunities() {
         accounts:account_id (id, name, type)
       `)
       .eq('user_id', user.id)
-      .lt('value', 'cost_basis') // Only get investments where value < cost_basis (loss)
+      .filter('value', 'lt', 'cost_basis') // Only get investments where value < cost_basis (loss)
     
     if (error) {
       console.error("Error fetching tax loss opportunities:", error)

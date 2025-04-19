@@ -1666,3 +1666,183 @@ export async function getAssetClasses(): Promise<string[]> {
     return defaultClasses;
   }
 }
+
+// ESG-related functions
+export async function fetchInvestments({ type }: { type: 'portfolio' | 'universe' }) {
+  try {
+    const user = await getCurrentUser()
+    if (!user) {
+      return []
+    }
+
+    const supabase = await createServerSupabaseClient()
+    
+    // Determine which investments to fetch based on type
+    if (type === 'portfolio') {
+      // Fetch user's portfolio investments
+      const { data, error } = await supabase
+        .from('investments')
+        .select('*')
+        .eq('user_id', user.id)
+      
+      if (error) {
+        console.error('Error fetching portfolio investments:', error)
+        return []
+      }
+      
+      return data || []
+    } else {
+      // Fetch all available investments for screening (universe)
+      const { data, error } = await supabase
+        .from('investment_universe')
+        .select('*')
+      
+      if (error) {
+        console.error('Error fetching investment universe:', error)
+        // Return mock data if table doesn't exist
+        return getMockInvestments()
+      }
+      
+      return data || getMockInvestments()
+    }
+  } catch (error) {
+    console.error('Error in fetchInvestments:', error)
+    return getMockInvestments()
+  }
+}
+
+export async function fetchESGCategories() {
+  try {
+    const supabase = await createServerSupabaseClient()
+    
+    const { data, error } = await supabase
+      .from('esg_categories')
+      .select('*')
+    
+    if (error) {
+      console.error('Error fetching ESG categories:', error)
+      return getMockESGCategories()
+    }
+    
+    return data || getMockESGCategories()
+  } catch (error) {
+    console.error('Error in fetchESGCategories:', error)
+    return getMockESGCategories()
+  }
+}
+
+export async function fetchExcludedSectors() {
+  try {
+    const supabase = await createServerSupabaseClient()
+    
+    const { data, error } = await supabase
+      .from('excluded_sectors')
+      .select('*')
+    
+    if (error) {
+      console.error('Error fetching excluded sectors:', error)
+      return getMockExcludedSectors()
+    }
+    
+    return data || getMockExcludedSectors()
+  } catch (error) {
+    console.error('Error in fetchExcludedSectors:', error)
+    return getMockExcludedSectors()
+  }
+}
+
+// Helper functions for mock data
+function getMockInvestments() {
+  return [
+    {
+      id: '1',
+      name: 'Sustainable Energy Fund',
+      ticker: 'SESG',
+      esgScore: { environmental: 9.2, social: 8.5, governance: 8.8, total: 8.8 },
+      sector_id: 'renewable_energy',
+      esg_categories: ['climate_action', 'clean_energy'],
+      price: 78.45,
+      change: 2.3,
+      marketCap: '45B',
+      description: 'Focuses on companies leading in renewable energy and sustainability.'
+    },
+    {
+      id: '2',
+      name: 'Social Impact ETF',
+      ticker: 'SIMP',
+      esgScore: { environmental: 7.5, social: 9.3, governance: 8.2, total: 8.3 },
+      sector_id: 'healthcare',
+      esg_categories: ['social_equity', 'healthcare_access'],
+      price: 65.21,
+      change: 1.1,
+      marketCap: '12B',
+      description: 'Invests in companies making positive social impacts in healthcare and education.'
+    },
+    {
+      id: '3',
+      name: 'Clean Water Fund',
+      ticker: 'WATR',
+      esgScore: { environmental: 9.5, social: 8.0, governance: 7.8, total: 8.4 },
+      sector_id: 'utilities',
+      esg_categories: ['water_conservation', 'pollution_reduction'],
+      price: 45.67,
+      change: -0.5,
+      marketCap: '8B',
+      description: 'Focuses on companies involved in water purification and conservation.'
+    },
+    {
+      id: '4',
+      name: 'Fossil Fuel Free Index',
+      ticker: 'NFFL',
+      esgScore: { environmental: 8.9, social: 7.2, governance: 8.0, total: 8.0 },
+      sector_id: 'diversified',
+      esg_categories: ['climate_action', 'renewable_energy'],
+      price: 112.34,
+      change: 3.2,
+      marketCap: '30B',
+      description: 'Broad market exposure excluding fossil fuel companies.'
+    },
+    {
+      id: '5',
+      name: 'Weapons Free Defense ETF',
+      ticker: 'PEACE',
+      esgScore: { environmental: 6.8, social: 9.5, governance: 8.5, total: 8.3 },
+      sector_id: 'defense',
+      esg_categories: ['peace', 'human_rights'],
+      price: 89.45,
+      change: 0.7,
+      marketCap: '15B',
+      description: 'Defense sector companies that do not manufacture weapons.'
+    }
+  ]
+}
+
+function getMockESGCategories() {
+  return [
+    { id: 'climate_action', name: 'Climate Action', category: 'environmental' },
+    { id: 'clean_energy', name: 'Clean Energy', category: 'environmental' },
+    { id: 'water_conservation', name: 'Water Conservation', category: 'environmental' },
+    { id: 'pollution_reduction', name: 'Pollution Reduction', category: 'environmental' },
+    { id: 'social_equity', name: 'Social Equity', category: 'social' },
+    { id: 'healthcare_access', name: 'Healthcare Access', category: 'social' },
+    { id: 'human_rights', name: 'Human Rights', category: 'social' },
+    { id: 'diversity_inclusion', name: 'Diversity & Inclusion', category: 'social' },
+    { id: 'board_diversity', name: 'Board Diversity', category: 'governance' },
+    { id: 'executive_compensation', name: 'Executive Compensation', category: 'governance' },
+    { id: 'transparency', name: 'Transparency', category: 'governance' },
+    { id: 'ethical_practices', name: 'Ethical Business Practices', category: 'governance' }
+  ]
+}
+
+function getMockExcludedSectors() {
+  return [
+    { id: 'fossil_fuels', name: 'Fossil Fuels' },
+    { id: 'weapons', name: 'Weapons Manufacturing' },
+    { id: 'tobacco', name: 'Tobacco' },
+    { id: 'gambling', name: 'Gambling' },
+    { id: 'adult_entertainment', name: 'Adult Entertainment' },
+    { id: 'alcohol', name: 'Alcohol' },
+    { id: 'nuclear', name: 'Nuclear Power' },
+    { id: 'animal_testing', name: 'Animal Testing' }
+  ]
+}

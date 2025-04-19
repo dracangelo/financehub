@@ -1,15 +1,16 @@
 import { Suspense } from "react"
 import { Skeleton } from "@/components/ui/skeleton"
+import { WatchlistContent } from "./watchlist-content"
+import { getWatchlistItems } from "@/app/actions/watchlist"
 
 export const dynamic = "force-dynamic"
 
-async function WatchlistContent() {
-  return (
-    <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6">
-      <h2 className="text-xl font-semibold mb-4">Investment Watchlist</h2>
-      <p className="text-muted-foreground">Track potential investments here. This page is under development.</p>
-    </div>
-  )
+async function WatchlistData() {
+  // Fetch data on the server
+  const watchlistItems = await getWatchlistItems()
+  
+  // Pass the data to the client component
+  return <WatchlistContent initialItems={watchlistItems} />
 }
 
 export default function WatchlistPage() {
@@ -21,9 +22,8 @@ export default function WatchlistPage() {
       </div>
 
       <Suspense fallback={<Skeleton className="h-[400px] w-full" />}>
-        <WatchlistContent />
+        <WatchlistData />
       </Suspense>
     </div>
   )
 }
-
