@@ -4,17 +4,8 @@ import { useState } from "react"
 import { ResponsiveTreeMap } from "@nivo/treemap"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Tooltip } from "@/components/ui/tooltip"
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import { ZoomIn, ZoomOut, RotateCcw } from "lucide-react"
-import type { BudgetCategory } from "@/types/budget"
-
-interface InteractiveTreemapProps {
-  budget: {
-    categories: BudgetCategory[]
-    totalBudget: number
-  }
-  onCategoryClick?: (category: BudgetCategory) => void
-}
 
 interface TreemapNode {
   id: string
@@ -25,7 +16,7 @@ interface TreemapNode {
   parentId?: string
 }
 
-function transformToTreemapData(categories: BudgetCategory[], parentId?: string): TreemapNode[] {
+function transformToTreemapData(categories: any[], parentId?: string): TreemapNode[] {
   return categories.map(category => ({
     id: category.name,
     name: category.name,
@@ -45,15 +36,21 @@ function getColorByHealth(percentage: number): string {
   return "#22c55e" // Green - healthy
 }
 
-export function InteractiveTreemap({ budget, onCategoryClick }: InteractiveTreemapProps) {
+export function InteractiveTreemap({ data, onCategoryClick }: {
+  data: {
+    categories: any[]
+    totalBudget: number
+  }
+  onCategoryClick?: (category: any) => void
+}) {
   const [zoomLevel, setZoomLevel] = useState(1)
   const [focusedNode, setFocusedNode] = useState<string | null>(null)
   const [rotation, setRotation] = useState(0)
 
-  const data = {
+  const treemapData = {
     id: "root",
     name: "Budget",
-    children: transformToTreemapData(budget.categories),
+    children: transformToTreemapData(data.categories),
   }
 
   const handleZoomIn = () => {
@@ -73,7 +70,7 @@ export function InteractiveTreemap({ budget, onCategoryClick }: InteractiveTreem
       setFocusedNode(focusedNode === node.id ? null : node.id)
     }
     
-    const category = budget.categories.find(c => c.name === node.id)
+    const category = data.categories.find(c => c.name === node.id)
     if (category && onCategoryClick) {
       onCategoryClick(category)
     }
@@ -84,21 +81,44 @@ export function InteractiveTreemap({ budget, onCategoryClick }: InteractiveTreem
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Budget Allocation</CardTitle>
         <div className="flex items-center gap-2">
-          <Tooltip content="Zoom In">
-            <Button variant="outline" size="icon" onClick={handleZoomIn}>
-              <ZoomIn className="h-4 w-4" />
-            </Button>
-          </Tooltip>
-          <Tooltip content="Zoom Out">
-            <Button variant="outline" size="icon" onClick={handleZoomOut}>
-              <ZoomOut className="h-4 w-4" />
-            </Button>
-          </Tooltip>
-          <Tooltip content="Rotate View">
-            <Button variant="outline" size="icon" onClick={handleRotate}>
-              <RotateCcw className="h-4 w-4" />
-            </Button>
-          </Tooltip>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="icon" onClick={handleZoomIn}>
+                  <ZoomIn className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Zoom In</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="icon" onClick={handleZoomOut}>
+                  <ZoomOut className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Zoom Out</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="icon" onClick={handleRotate}>
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Rotate View</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
       </CardHeader>
       <CardContent>
@@ -111,7 +131,7 @@ export function InteractiveTreemap({ budget, onCategoryClick }: InteractiveTreem
           }}
         >
           <ResponsiveTreeMap
-            data={data}
+            data={treemapData}
             identity="name"
             value="value"
             valueFormat=">$,.2f"
@@ -125,15 +145,20 @@ export function InteractiveTreemap({ budget, onCategoryClick }: InteractiveTreem
             animate={true}
             motionConfig="gentle"
             onClick={handleNodeClick}
-            tooltip={({ node }) => (
-              <div className="bg-white p-2 shadow rounded">
-                <strong>{node.data.name}</strong>
-                <br />
-                Amount: ${node.value.toLocaleString()}
-                <br />
-                {node.data.parentId && `Category: ${node.data.parentId}`}
-              </div>
-            )}
+            tooltip={({ node }) => {
+              // Cast the node data to include our custom properties
+              const nodeData = node.data as any;
+              
+              return (
+                <div className="bg-white p-2 shadow rounded">
+                  <strong>{nodeData.name}</strong>
+                  <br />
+                  Amount: ${node.value.toLocaleString()}
+                  <br />
+                  {nodeData.parentId && `Category: ${nodeData.parentId}`}
+                </div>
+              );
+            }}
             theme={{
               tooltip: {
                 container: {

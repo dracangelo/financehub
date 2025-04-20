@@ -13,7 +13,9 @@ import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Progress } from "@/components/ui/progress"
+import { formatCurrency } from "@/lib/utils/formatting"
 
 export const dynamic = "force-dynamic"
 
@@ -88,6 +90,33 @@ async function BudgetsAdvanced() {
 
     // Get budgets after categories are ensured
     const budgets = await getBudgets()
+    
+    // Check if we have any budgets
+    const hasBudgets = budgets && budgets.length > 0
+    
+    // Calculate total budget allocation across all budgets
+    const totalBudgeted = hasBudgets
+      ? budgets.reduce((sum, budget) => sum + (budget.amount || 0), 0)
+      : 0
+    
+    // Calculate total allocated across all budgets
+    const totalAllocated = hasBudgets
+      ? budgets.reduce((sum, budget) => {
+          const budgetAllocated = budget.budget_categories?.reduce(
+            (catSum, cat) => catSum + (cat.amount_allocated || 0),
+            0
+          ) || 0
+          return sum + budgetAllocated
+        }, 0)
+      : 0
+    
+    // Calculate overall allocation percentage
+    const overallAllocationPercentage = totalBudgeted > 0
+      ? (totalAllocated / totalBudgeted) * 100
+      : 0
+    
+    // Get the most recent budget for default display
+    const defaultBudgetId = hasBudgets ? budgets[0].id : ""
 
     return (
       <div className="space-y-6">
@@ -97,15 +126,25 @@ async function BudgetsAdvanced() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <LineChart className="h-5 w-5" />
-                Monthly Overview
+                Budget Overview
               </CardTitle>
               <CardDescription>
-                Spending vs Budget
+                Total Allocation Across All Budgets
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-emerald-500">
-                Under Budget
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span>Total Budgeted: {formatCurrency(totalBudgeted)}</span>
+                  <span>Allocated: {formatCurrency(totalAllocated)}</span>
+                </div>
+                <Progress 
+                  value={overallAllocationPercentage} 
+                  className="h-2" 
+                />
+                <p className="text-sm text-muted-foreground">
+                  {overallAllocationPercentage.toFixed(1)}% of total budget allocated
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -114,16 +153,41 @@ async function BudgetsAdvanced() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Target className="h-5 w-5" />
-                Budget Insights
+                Budget Summary
               </CardTitle>
               <CardDescription>
-                Key metrics and trends
+                Active Budgets: {hasBudgets ? budgets.length : 0}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-primary">
-                2 categories over budget
-              </div>
+              {hasBudgets ? (
+                <div className="space-y-2">
+                  <div className="text-lg font-medium">
+                    Most Recent: {budgets[0].name}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={`/budgets/${budgets[0].id}`}>
+                        View Details
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href="/budgets/manage/create">
+                        Create New Budget
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full">
+                  <p className="text-muted-foreground mb-2">No budgets created yet</p>
+                  <Button asChild size="sm">
+                    <Link href="/budgets/manage/create">
+                      Create Your First Budget
+                    </Link>
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -150,15 +214,55 @@ async function BudgetsAdvanced() {
         </div>
 
         {/* Bottom Row - Budget Allocation */}
-        <div className="grid grid-cols-1 gap-4 md:gap-6">
-          <div>
-            <BudgetDashboard
-              budgetId={budgets?.[0]?.id || ""}
-              categories={categories || []}
-              currentMembers={[]}
-            />
+        {hasBudgets ? (
+          <div className="grid grid-cols-1 gap-4 md:gap-6">
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-medium">Budget Allocation</h3>
+                {budgets.length > 1 && (
+                  <Select defaultValue={defaultBudgetId}>
+                    <SelectTrigger className="w-[250px]">
+                      <SelectValue placeholder="Select a budget" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {budgets.map((budget) => (
+                        <SelectItem key={budget.id} value={budget.id}>
+                          {budget.name} ({formatCurrency(budget.amount)})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+              <BudgetDashboard
+                budgetId={defaultBudgetId}
+                categories={categories || []}
+                currentMembers={[]}
+              />
+            </div>
           </div>
-        </div>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>Budget Allocation</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center justify-center p-8">
+              <div className="rounded-full bg-muted p-6 mb-4">
+                <Target className="h-10 w-10 text-primary" />
+              </div>
+              <h3 className="text-xl font-semibold mb-2">No Budget Data Available</h3>
+              <p className="text-muted-foreground text-center mb-6 max-w-md">
+                Create your first budget to see detailed allocation visualizations and insights.
+              </p>
+              <Button asChild>
+                <Link href="/budgets/manage/create">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create Budget
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </div>
     )
   } catch (error) {

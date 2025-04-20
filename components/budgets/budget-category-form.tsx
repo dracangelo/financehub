@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Plus, X, ChevronDown, ChevronRight, Loader2 } from "lucide-react"
+import { Plus, X, ChevronDown, ChevronRight, Loader2, AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -16,6 +16,7 @@ import { getCategories } from "@/app/actions/categories"
 import { CategorySelector } from "./category-selector"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "sonner"
+import { formatCurrency } from "@/lib/utils/formatting"
 
 interface BudgetCategory {
   id?: string
@@ -392,15 +393,48 @@ interface CategoryFormProps {
   onUpdate: (category: BudgetCategory) => void
   onDelete: () => void
   isSubcategory?: boolean
+  totalBudget?: number
+  parentAmount?: number
 }
 
-function CategoryForm({ category, onUpdate, onDelete, isSubcategory = false }: CategoryFormProps) {
+function CategoryForm({ 
+  category, 
+  onUpdate, 
+  onDelete, 
+  isSubcategory = false,
+  totalBudget = 0,
+  parentAmount = 0 
+}: CategoryFormProps) {
   const handleChange = (field: keyof BudgetCategory, value: string | number) => {
-    onUpdate({
-      ...category,
-      [field]: value
-    })
-  }
+    // Create a copy of the category to update
+    const updatedCategory = { ...category };
+    
+    // Update the specified field
+    updatedCategory[field] = value;
+    
+    // If we're updating amount or percentage, calculate the other field
+    if (field === "amount" && typeof value === "number") {
+      // Calculate percentage based on amount
+      if (isSubcategory && parentAmount > 0) {
+        // For subcategories, calculate percentage based on parent category amount
+        updatedCategory.percentage = Math.round((value / parentAmount) * 100 * 100) / 100;
+      } else if (!isSubcategory && totalBudget > 0) {
+        // For main categories, calculate percentage based on total budget
+        updatedCategory.percentage = Math.round((value / totalBudget) * 100 * 100) / 100;
+      }
+    } else if (field === "percentage" && typeof value === "number") {
+      // Calculate amount based on percentage
+      if (isSubcategory && parentAmount > 0) {
+        // For subcategories, calculate amount based on parent category amount
+        updatedCategory.amount = Math.round((value / 100) * parentAmount * 100) / 100;
+      } else if (!isSubcategory && totalBudget > 0) {
+        // For main categories, calculate amount based on total budget
+        updatedCategory.amount = Math.round((value / 100) * totalBudget * 100) / 100;
+      }
+    }
+    
+    onUpdate(updatedCategory);
+  };
 
   return (
     <div className={cn(
@@ -443,16 +477,30 @@ interface BudgetCategoryFormProps {
   onSave: (categories: BudgetCategory[]) => void
   initialCategories?: BudgetCategory[]
   useExistingCategories?: boolean
+  budgetAmount?: number
 }
 
-export function BudgetCategoryForm({ onSave, initialCategories, useExistingCategories = true }: BudgetCategoryFormProps) {
+export function BudgetCategoryForm({ 
+  onSave, 
+  initialCategories, 
+  useExistingCategories = true,
+  budgetAmount = 0 
+}: BudgetCategoryFormProps) {
+  const [loading, setLoading] = useState(false)
   const [categories, setCategories] = useState<BudgetCategory[]>(initialCategories || [])
   const [openCategories, setOpenCategories] = useState<string[]>([])
-  const [activeTab, setActiveTab] = useState<string>("templates")
-  const [userCategories, setUserCategories] = useState<any[]>([])
-  const [loading, setLoading] = useState(false)
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("")
-  
+  const [existingCategories, setExistingCategories] = useState<any[]>([])
+  const [selectedCategory, setSelectedCategory] = useState<string>("") 
+  const [totalPercentage, setTotalPercentage] = useState<number>(0)
+  const [showPercentageWarning, setShowPercentageWarning] = useState<boolean>(false)
+
+  // Calculate total percentage whenever categories change
+  useEffect(() => {
+    const total = categories.reduce((sum, category) => sum + (category.percentage || 0), 0);
+    setTotalPercentage(total);
+    setShowPercentageWarning(total > 100);
+  }, [categories]);
+
   // Fetch user categories when component mounts
   useEffect(() => {
     async function fetchUserCategories() {
@@ -460,7 +508,7 @@ export function BudgetCategoryForm({ onSave, initialCategories, useExistingCateg
         try {
           setLoading(true)
           const { categories: fetchedCategories } = await getCategories()
-          setUserCategories(fetchedCategories || [])
+          setExistingCategories(fetchedCategories || [])
         } catch (error) {
           console.error("Error fetching categories:", error)
         } finally {
@@ -495,38 +543,38 @@ export function BudgetCategoryForm({ onSave, initialCategories, useExistingCateg
   }
   
   const addExistingCategory = () => {
-    if (!selectedCategoryId) {
+    if (!selectedCategory) {
       toast.error("Please select a category first")
       return
     }
     
-    const selectedCategory = userCategories.find(cat => cat.id === selectedCategoryId)
-    if (!selectedCategory) return
+    const selectedCategoryData = existingCategories.find(cat => cat.id === selectedCategory)
+    if (!selectedCategoryData) return
     
     // Check if category already exists in the budget
     const categoryExists = categories.some(cat => 
-      cat.name.toLowerCase() === selectedCategory.name.toLowerCase()
+      cat.name.toLowerCase() === selectedCategoryData.name.toLowerCase()
     )
     
     if (categoryExists) {
-      toast.error(`Category '${selectedCategory.name}' already exists in your budget`)
+      toast.error(`Category '${selectedCategoryData.name}' already exists in your budget`)
       return
     }
     
     // Add the category with default percentage and preserve the original ID
     setCategories(prev => [...prev, {
-      id: selectedCategory.id, // Preserve the original category ID
-      name: selectedCategory.name,
+      id: selectedCategoryData.id, // Preserve the original category ID
+      name: selectedCategoryData.name,
       amount: 0,
       percentage: 10, // Default percentage
       subcategories: [],
-      color: selectedCategory.color, // Keep the color from the original category
-      is_income: selectedCategory.is_income // Preserve income status
+      color: selectedCategoryData.color, // Keep the color from the original category
+      is_income: selectedCategoryData.is_income // Preserve income status
     }])
     
     // Reset selection
-    setSelectedCategoryId("")
-    toast.success(`Added '${selectedCategory.name}' to your budget`)
+    setSelectedCategory("")
+    toast.success(`Added '${selectedCategoryData.name}' to your budget`)
   }
 
   const addSubcategory = (categoryIndex: number) => {
@@ -545,22 +593,55 @@ export function BudgetCategoryForm({ onSave, initialCategories, useExistingCateg
   }
 
   const updateCategory = (categoryIndex: number, updatedCategory: BudgetCategory) => {
-    setCategories(prev => {
-      const newCategories = [...prev]
-      newCategories[categoryIndex] = updatedCategory
-      return newCategories
-    })
-  }
+    const newCategories = [...categories];
+    newCategories[categoryIndex] = updatedCategory;
+    
+    // If budget amount is provided, update the amount based on percentage
+    if (budgetAmount > 0 && updatedCategory.percentage) {
+      newCategories[categoryIndex].amount = Math.round((updatedCategory.percentage / 100) * budgetAmount * 100) / 100;
+    }
+    
+    setCategories(newCategories);
+  };
 
   const updateSubcategory = (categoryIndex: number, subcategoryIndex: number, updatedSubcategory: BudgetCategory) => {
-    setCategories(prev => {
-      const newCategories = [...prev]
-      if (newCategories[categoryIndex].subcategories) {
-        newCategories[categoryIndex].subcategories![subcategoryIndex] = updatedSubcategory
+    const newCategories = [...categories];
+    if (!newCategories[categoryIndex].subcategories) {
+      newCategories[categoryIndex].subcategories = [];
+    }
+    
+    // Get the parent category amount
+    const parentAmount = newCategories[categoryIndex].amount || 0;
+    
+    // Calculate the total amount of all subcategories excluding the current one being updated
+    const otherSubcategoriesTotal = newCategories[categoryIndex].subcategories
+      ?.filter((_, idx) => idx !== subcategoryIndex)
+      .reduce((sum, sub) => sum + (sub.amount || 0), 0) || 0;
+    
+    // Calculate how much is available for this subcategory
+    const availableForThisSubcategory = parentAmount - otherSubcategoriesTotal;
+    
+    // If the updated amount exceeds what's available, cap it
+    if (updatedSubcategory.amount > availableForThisSubcategory) {
+      // Cap the amount to the available amount
+      updatedSubcategory.amount = availableForThisSubcategory;
+      
+      // Recalculate the percentage based on the capped amount
+      if (parentAmount > 0) {
+        updatedSubcategory.percentage = Math.round((availableForThisSubcategory / parentAmount) * 100 * 100) / 100;
       }
-      return newCategories
-    })
-  }
+      
+      // Show a toast warning
+      toast.warning(
+        `Subcategory amount capped to ${formatCurrency(availableForThisSubcategory)} to prevent exceeding the parent category amount.`
+      );
+    }
+    
+    // Update the subcategory with the potentially adjusted values
+    newCategories[categoryIndex].subcategories![subcategoryIndex] = updatedSubcategory;
+    
+    setCategories(newCategories);
+  };
 
   const deleteCategory = (categoryIndex: number) => {
     setCategories(prev => prev.filter((_, index) => index !== categoryIndex))
@@ -578,54 +659,47 @@ export function BudgetCategoryForm({ onSave, initialCategories, useExistingCateg
   }
 
   const handleSave = () => {
-    // Ensure all categories have proper calculations before saving
-    const processedCategories = categories.map(category => {
-      // Make sure percentage is a number (for UI calculations only)
-      const percentage = typeof category.percentage === 'number' ? category.percentage : 0;
-      
-      // Calculate amount based on percentage
-      const calculatedAmount = category.amount || (percentage / 100) * 100; // Default to 100 if no total amount
-      
-      // Process subcategories if they exist
-      const subcategories = category.subcategories?.map(sub => {
-        // Make sure subcategory percentage is a number (for UI calculations only)
-        const subPercentage = typeof sub.percentage === 'number' ? sub.percentage : 0;
-        
-        // Calculate subcategory amount based on parent category amount
-        const subAmount = (subPercentage / 100) * calculatedAmount;
-        
-        return {
-          ...sub,
-          id: sub.id || undefined, // Preserve original ID if it exists
-          percentage: subPercentage, // Keep percentage for UI calculations
-          amount: subAmount, // Keep amount for UI calculations
-          amount_allocated: subAmount, // Add amount_allocated for database compatibility
-        };
-      }) || [];
-      
-      return {
-        ...category,
-        id: category.id || undefined, // Preserve original ID if it exists
-        percentage: percentage, // Keep percentage for UI calculations
-        amount: calculatedAmount, // Keep amount for UI calculations
-        amount_allocated: calculatedAmount, // Add amount_allocated for database compatibility
-        subcategories: subcategories,
-        // Keep color only for UI, not for database
-        is_income: category.is_income // Preserve income status
-      };
-    });
-    
-    // Calculate total allocation percentage
-    const totalPercentage = processedCategories.reduce((sum, cat) => sum + cat.percentage, 0);
-    
-    // Warn if total allocation is not 100%
-    if (totalPercentage < 95 || totalPercentage > 105) {
-      toast.warning(`Your total allocation is ${totalPercentage.toFixed(1)}%. Consider adjusting to reach 100%.`);
+    if (totalPercentage > 100) {
+      toast.error("Total percentage exceeds 100%. Please adjust your categories.");
+      return;
     }
     
-    console.log('Saving processed categories:', processedCategories);
+    // Process categories for saving
+    const processedCategories = categories.map(category => {
+      // Ensure amount is calculated from percentage if budget amount is available
+      let amount = category.amount;
+      if (budgetAmount > 0 && category.percentage) {
+        amount = Math.round((category.percentage / 100) * budgetAmount * 100) / 100;
+      }
+      
+      const processedCategory = {
+        ...category,
+        amount,
+        amount_allocated: amount // Ensure amount_allocated is set for database
+      };
+      
+      // Process subcategories if they exist
+      if (category.subcategories && category.subcategories.length > 0) {
+        processedCategory.subcategories = category.subcategories.map(sub => {
+          // Calculate subcategory amount based on parent category amount
+          let subAmount = sub.amount;
+          if (amount > 0 && sub.percentage) {
+            subAmount = Math.round((sub.percentage / 100) * amount * 100) / 100;
+          }
+          
+          return {
+            ...sub,
+            amount: subAmount,
+            amount_allocated: subAmount // Ensure amount_allocated is set for database
+          };
+        });
+      }
+      
+      return processedCategory;
+    });
+    
     onSave(processedCategories);
-  }
+  };
 
   // Add custom scrollbar styles
   const customScrollbarStyles = `
@@ -655,7 +729,7 @@ export function BudgetCategoryForm({ onSave, initialCategories, useExistingCateg
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <Tabs value="templates" onValueChange={() => {}}>
           <TabsList className="mb-4">
             <TabsTrigger value="templates">Templates</TabsTrigger>
             <TabsTrigger value="existing">Existing Categories</TabsTrigger>
@@ -686,6 +760,7 @@ export function BudgetCategoryForm({ onSave, initialCategories, useExistingCateg
                           category={category}
                           onUpdate={(updated) => updateCategory(categoryIndex, updated)}
                           onDelete={() => deleteCategory(categoryIndex)}
+                          totalBudget={budgetAmount || 100}
                         />
                       </div>
                     </div>
@@ -699,6 +774,7 @@ export function BudgetCategoryForm({ onSave, initialCategories, useExistingCateg
                               onUpdate={(updated) => updateSubcategory(categoryIndex, subcategoryIndex, updated)}
                               onDelete={() => deleteSubcategory(categoryIndex, subcategoryIndex)}
                               isSubcategory
+                              parentAmount={category.amount || 0}
                             />
                           </div>
                         ))}
@@ -719,13 +795,13 @@ export function BudgetCategoryForm({ onSave, initialCategories, useExistingCateg
               ))}
             </div>
 
-        <div className="flex justify-between">
-          <Button variant="outline" onClick={addCategory}>
-            <Plus className="h-4 w-4 mr-2" />
-            Add Category
-          </Button>
-          <Button onClick={handleSave}>Save Categories</Button>
-        </div>
+            <div className="flex justify-between">
+              <Button variant="outline" onClick={addCategory}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Category
+              </Button>
+              <Button onClick={handleSave}>Save Categories</Button>
+            </div>
           </TabsContent>
           
           <TabsContent value="existing" className="space-y-6">
@@ -734,7 +810,7 @@ export function BudgetCategoryForm({ onSave, initialCategories, useExistingCateg
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 <span className="ml-2 text-muted-foreground">Loading categories...</span>
               </div>
-            ) : userCategories.length === 0 ? (
+            ) : existingCategories.length === 0 ? (
               <div className="text-center py-8">
                 <p className="text-muted-foreground">No custom categories found</p>
                 <p className="text-sm text-muted-foreground mt-1">You can add custom categories in the Categories section</p>
@@ -746,14 +822,14 @@ export function BudgetCategoryForm({ onSave, initialCategories, useExistingCateg
                     <Label htmlFor="category-selector">Select from your categories</Label>
                     <div className="mt-1">
                       <CategorySelector
-                        value={selectedCategoryId}
-                        onChange={setSelectedCategoryId}
+                        value={selectedCategory}
+                        onChange={setSelectedCategory}
                         placeholder="Select a category"
                         includeCustomOption={false}
                       />
                     </div>
                   </div>
-                  <Button onClick={addExistingCategory} disabled={!selectedCategoryId}>
+                  <Button onClick={addExistingCategory} disabled={!selectedCategory}>
                     <Plus className="h-4 w-4 mr-2" />
                     Add to Budget
                   </Button>
@@ -789,6 +865,7 @@ export function BudgetCategoryForm({ onSave, initialCategories, useExistingCateg
                                   category={category}
                                   onUpdate={(updated) => updateCategory(categoryIndex, updated)}
                                   onDelete={() => deleteCategory(categoryIndex)}
+                                  totalBudget={budgetAmount || 100}
                                 />
                               </div>
                             </div>
@@ -802,6 +879,7 @@ export function BudgetCategoryForm({ onSave, initialCategories, useExistingCateg
                                       onUpdate={(updated) => updateSubcategory(categoryIndex, subcategoryIndex, updated)}
                                       onDelete={() => deleteSubcategory(categoryIndex, subcategoryIndex)}
                                       isSubcategory
+                                      parentAmount={category.amount || 0}
                                     />
                                   </div>
                                 ))}
@@ -835,6 +913,26 @@ export function BudgetCategoryForm({ onSave, initialCategories, useExistingCateg
             )}
           </TabsContent>
         </Tabs>
+        
+        {/* Display percentage warning if total exceeds 100% */}
+        {showPercentageWarning && (
+          <div className="mb-4 p-3 bg-yellow-100 text-yellow-800 rounded-md">
+            <p className="flex items-center">
+              <AlertTriangle className="h-4 w-4 mr-2" />
+              Total allocation: {totalPercentage.toFixed(1)}% exceeds 100% of budget
+            </p>
+          </div>
+        )}
+        
+        {/* Display total percentage */}
+        <div className="mb-4 p-3 bg-muted rounded-md">
+          <p className="flex items-center justify-between">
+            <span>Total allocation:</span>
+            <span className={totalPercentage > 100 ? "text-red-500 font-bold" : ""}>
+              {totalPercentage.toFixed(1)}% of budget
+            </span>
+          </p>
+        </div>
       </CardContent>
     </Card>
   )

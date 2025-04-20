@@ -29,13 +29,48 @@ export function BudgetForm({ budget, categories, onSuccess }: BudgetFormProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState(1)
-  const [formData, setFormData] = useState({
-    name: budget?.name || "",
-    amount: budget?.amount || 0,
-    start_date: budget?.start_date || new Date().toISOString().split("T")[0],
-    end_date: budget?.end_date || "",
-    categories: budget?.categories || []
-  })
+  
+  // Properly initialize formData with budget values if they exist
+  const [formData, setFormData] = useState(() => {
+    // If we're editing an existing budget
+    if (budget?.id) {
+      console.log('Initializing form with existing budget:', budget);
+      
+      // Map categories to ensure they have the correct structure
+      const mappedCategories = budget.categories?.map((cat: any) => ({
+        id: cat.id,
+        name: cat.name,
+        amount: cat.amount_allocated || cat.amount || 0,
+        amount_allocated: cat.amount_allocated || cat.amount || 0,
+        percentage: cat.percentage || 0,
+        subcategories: cat.subcategories?.map((sub: any) => ({
+          id: sub.id,
+          name: sub.name,
+          amount: sub.amount_allocated || sub.amount || 0,
+          amount_allocated: sub.amount_allocated || sub.amount || 0,
+          percentage: sub.percentage || 0,
+          parent_id: cat.id
+        })) || []
+      })) || [];
+      
+      return {
+        name: budget.name || "",
+        amount: budget.amount || budget.income || 0,
+        start_date: budget.start_date || new Date().toISOString().split("T")[0],
+        end_date: budget.end_date || "",
+        categories: mappedCategories
+      };
+    }
+    
+    // Default values for new budget
+    return {
+      name: "",
+      amount: 0,
+      start_date: new Date().toISOString().split("T")[0],
+      end_date: "",
+      categories: []
+    };
+  });
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -210,6 +245,7 @@ export function BudgetForm({ budget, categories, onSuccess }: BudgetFormProps) {
         initialCategories={formData.categories}
         onSave={handleSaveCategories}
         useExistingCategories={true}
+        budgetAmount={formData.amount}
       />
     )
   }
