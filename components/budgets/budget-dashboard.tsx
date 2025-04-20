@@ -12,14 +12,15 @@ import { BudgetProgressTracker } from "./progress/budget-progress-tracker"
 import { BudgetSharingDialog } from "./shared/budget-sharing-dialog"
 import { LIFE_EVENT_TEMPLATES } from "@/lib/budget/templates/life-events"
 import { LIFESTYLE_TEMPLATES } from "@/lib/budget/templates/lifestyle"
-import { AlertCircle, BarChart3, LineChart, PieChart, Share2, Target, TrendingUp, TrendingDown, Percent, DollarSign, ArrowUpRight, ArrowDownRight, Info, Plus } from "lucide-react"
+import { AlertCircle, BarChart3, LineChart, PieChart, Share2, Target, TrendingUp, TrendingDown, Percent, DollarSign, ArrowUpRight, ArrowDownRight, Info, Plus, Check } from "lucide-react"
 import { getBudgetById, createBudget } from "@/app/actions/budgets"
 import { formatCurrency } from "@/lib/utils/formatting"
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { TooltipProvider, Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Badge } from "@/components/ui/badge"
+import { toast } from "sonner"
 
 // Helper function to get category colors based on percentage of budget
 function getCategoryColor(amount: number, totalBudget: number): string {
@@ -122,21 +123,30 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
         return;
       }
       
-      console.log("Creating budget from template:", selectedTemplateData);
+      // Show toast notification that we're creating a budget
+      toast.loading("Creating budget from template...");
       
       // Prepare budget data from template
       const defaultIncome = 5000; // Default income amount
       
-      // Format the categories correctly for the API
-      const formattedCategories = selectedTemplateData.categories.map(cat => {
+      // Format the categories correctly for the API - only include main categories first
+      const formattedCategories: Array<{
+        name: string;
+        amount_allocated: number;
+      }> = [];
+      
+      // Process main categories only
+      selectedTemplateData.categories.forEach(cat => {
         // Calculate the actual amount based on percentage
         const amount = Math.round((cat.percentage / 100) * defaultIncome);
         
-        return {
+        // Create the main category
+        const mainCategory = {
           name: cat.name,
           amount_allocated: amount,
-          // Don't include subcategories here, they'll be added separately
         };
+        
+        formattedCategories.push(mainCategory);
       });
       
       const newBudgetData = {
@@ -162,6 +172,7 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
         
         if (budgetData) {
           setBudget(budgetData);
+          
           // Add to available budgets
           setAvailableBudgets(prev => {
             // Make sure we don't add duplicates
@@ -171,19 +182,27 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
             return [...prev, budgetData];
           });
           
-          // Show success message or notification
-          console.log(`Budget created from template: ${selectedTemplateData.name}`);
+          // Show success notification
+          toast.success(`Budget created from template: ${selectedTemplateData.name}`);
           
-          // Force a refresh of the budget data
+          // Navigate to the Overview tab
           setTimeout(() => {
-            loadBudgetData(newBudget.id);
-          }, 500);
+            // Find the overview tab button and click it
+            const tabButtons = document.querySelectorAll('[role="tab"]');
+            tabButtons.forEach((button) => {
+              if (button instanceof HTMLElement && button.getAttribute('value') === 'overview') {
+                button.click();
+              }
+            });
+          }, 100);
         }
       } else {
+        toast.error("Failed to create budget from template");
         console.error("Failed to create budget from template");
         setError("Failed to create budget from template");
       }
     } catch (err) {
+      toast.error("Error creating budget from template");
       console.error("Error creating budget from template:", err);
       setError("Failed to create budget from template");
     } finally {
@@ -777,20 +796,34 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {LIFE_EVENT_TEMPLATES.map(template => (
-                  <BudgetTemplateCard 
-                    key={template.id} 
-                    template={template} 
-                    isSelected={selectedTemplate === template.id}
-                    onSelect={() => handleTemplateSelect(template.id)} 
-                  />
+                  <div key={template.id} className="cursor-pointer" onClick={() => {
+                    console.log('Template selected:', template.id);
+                    handleTemplateSelect(template.id);
+                  }}>
+                    <BudgetTemplateCard 
+                      template={template} 
+                      isSelected={selectedTemplate === template.id}
+                      onSelect={() => {
+                        console.log('Template card clicked:', template.id);
+                        handleTemplateSelect(template.id);
+                      }} 
+                    />
+                  </div>
                 ))}
                 {LIFESTYLE_TEMPLATES.map(template => (
-                  <BudgetTemplateCard 
-                    key={template.id} 
-                    template={template} 
-                    isSelected={selectedTemplate === template.id}
-                    onSelect={() => handleTemplateSelect(template.id)} 
-                  />
+                  <div key={template.id} className="cursor-pointer" onClick={() => {
+                    console.log('Template selected:', template.id);
+                    handleTemplateSelect(template.id);
+                  }}>
+                    <BudgetTemplateCard 
+                      template={template} 
+                      isSelected={selectedTemplate === template.id}
+                      onSelect={() => {
+                        console.log('Template card clicked:', template.id);
+                        handleTemplateSelect(template.id);
+                      }} 
+                    />
+                  </div>
                 ))}
               </div>
             </div>

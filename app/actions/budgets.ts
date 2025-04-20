@@ -237,7 +237,13 @@ export async function createBudget(budgetData: any) {
     }
 
     // Prepare budget data for insertion
-    const budgetInsertData = {
+    const budgetInsertData: {
+      user_id: string;
+      name: any;
+      income: any;
+      start_date: any;
+      end_date?: string;
+    } = {
       user_id: user.id,
       name: budgetData.name,
       income: budgetData.amount,
@@ -263,13 +269,20 @@ export async function createBudget(budgetData: any) {
 
     // Process and insert all categories and subcategories
     const allCategories = [];
+    const categoryMap = new Map(); // Map to store category name to ID mapping
     
     // Extract parent categories and their subcategories
     console.log(`Processing ${budgetData.categories.length} categories for budget ${budget.id}`);
     
+    // First pass: Create all main categories and build the mapping
     for (const category of budgetData.categories) {
+      // Skip subcategories in the first pass - we'll handle them in the second pass
+      if (category.parent_category) {
+        continue;
+      }
+      
       // Log the category we're about to insert
-      console.log(`Inserting category: ${category.name} with amount ${category.amount_allocated}`);
+      console.log(`Inserting main category: ${category.name} with amount ${category.amount_allocated}`);
       
       // Insert parent category - only include fields that exist in the database schema
       const { data: budgetCategory, error: categoryError } = await supabase
@@ -290,39 +303,54 @@ export async function createBudget(budgetData: any) {
         throw categoryError
       }
       
-      console.log(`Successfully inserted category with ID: ${budgetCategory.id}`);
+      console.log(`Successfully inserted main category with ID: ${budgetCategory.id}`);
       
       // Add to our collection of all categories
       allCategories.push(budgetCategory);
-
-      // Insert subcategories if they exist
-      if (category.subcategories && category.subcategories.length > 0) {
-        console.log(`Processing ${category.subcategories.length} subcategories for category ${budgetCategory.id}`);
-        
-        for (const subcategory of category.subcategories) {
-          console.log(`Inserting subcategory: ${subcategory.name} with amount ${subcategory.amount_allocated}`);
-          
-          const { data: insertedSubcategory, error: subcategoryError } = await supabase
-            .from("budget_categories")
-            .insert({
-              budget_id: budget.id,
-              parent_id: budgetCategory.id, // Link to parent category
-              name: subcategory.name,
-              amount_allocated: subcategory.amount_allocated,
-              // No category_id as it might not exist in our schema
-              id: subcategory.id || undefined // Preserve original ID if it exists
-            })
-            .select()
-            .single()
-
-          if (subcategoryError) {
-            console.error("Error creating subcategory:", subcategoryError)
-            throw subcategoryError
-          }
-          
-          console.log(`Successfully inserted subcategory with ID: ${insertedSubcategory?.id || 'unknown'}`);
-        }
+      
+      // Store in our map for subcategory linking
+      categoryMap.set(category.name, budgetCategory.id);
+    }
+    
+    // Second pass: Create all subcategories using the parent IDs from the map
+    for (const category of budgetData.categories) {
+      // Only process subcategories in the second pass
+      if (!category.parent_category) {
+        continue;
       }
+      
+      // Get the parent ID from our map
+      const parentId = categoryMap.get(category.parent_category);
+      
+      if (!parentId) {
+        console.error(`Parent category ${category.parent_category} not found for subcategory ${category.name}`);
+        continue; // Skip this subcategory if parent not found
+      }
+      
+      console.log(`Inserting subcategory: ${category.name} with amount ${category.amount_allocated} under parent ${category.parent_category} (ID: ${parentId})`);
+      
+      const { data: insertedSubcategory, error: subcategoryError } = await supabase
+        .from("budget_categories")
+        .insert({
+          budget_id: budget.id,
+          parent_id: parentId, // Link to parent category
+          name: category.name,
+          amount_allocated: category.amount_allocated,
+          // No category_id as it might not exist in our schema
+          id: category.id || undefined // Preserve original ID if it exists
+        })
+        .select()
+        .single()
+
+      if (subcategoryError) {
+        console.error("Error creating subcategory:", subcategoryError)
+        throw subcategoryError
+      }
+      
+      console.log(`Successfully inserted subcategory with ID: ${insertedSubcategory.id}`);
+      
+      // Add to our collection of all categories
+      allCategories.push(insertedSubcategory);
     }
 
     console.log(`Total categories saved: ${allCategories.length}`);
@@ -363,7 +391,12 @@ export async function updateBudget(id: string, budgetData: any) {
     }
 
     // Prepare budget data for update
-    const budgetUpdateData = {
+    const budgetUpdateData: {
+      name: any;
+      income: any;
+      start_date: any;
+      end_date?: string;
+    } = {
       name: budgetData.name,
       income: budgetData.amount,
       start_date: budgetData.start_date,
