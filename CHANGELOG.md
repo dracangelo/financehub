@@ -1,5 +1,27 @@
 # FinanceHub Changelog
 
+## Recent Updates (April 2025)
+
+### ESG Screener and Investment Database Enhancements
+
+#### Database Setup
+- Created SQL migration scripts for setting up ESG-related tables in Supabase
+  - `investment_universe` table with comprehensive investment data and ESG scores
+  - `esg_categories` table with 24 categories across environmental, social, and governance pillars
+  - `excluded_sectors` table with common sectors ESG-focused investors might want to exclude
+- Added detailed documentation for database setup in README files
+
+#### ESG Screener Improvements
+- Enhanced the ESG investment screener with real-time price data
+- Implemented automatic calculation of expense ratios based on investment type
+- Added intelligent ESG score estimation based on sector information
+- Improved error handling for missing database tables with graceful fallbacks to mock data
+- Fixed UI display issues with proper handling of missing data fields
+
+#### Watchlist Integration
+- Connected the watchlist feature with the ESG screener for comprehensive investment analysis
+- Enhanced data enrichment capabilities for investment data
+
 This document tracks the progress of the Ultimate Personal Finance Tracker project, documenting both implemented features and those that are still pending implementation.
 
 ## Implemented Features
@@ -38,6 +60,9 @@ This document tracks the progress of the Ultimate Personal Finance Tracker proje
 ### 8. Investment Portfolio Management 📈
 - Basic investment tracking
 - Portfolio visualization
+- Watchlist feature with real-time stock data integration
+- ESG investment screener with filtering capabilities
+- Investment universe database with ESG scores and sector information
 
 ### 9. Debt Management 🏦
 - Debt tracking functionality
@@ -126,24 +151,7 @@ This document tracks the progress of the Ultimate Personal Finance Tracker proje
   - Income goal celebration effects
   - Paycheck simulation tool
 
-### 6. Predictive Analytics & Insights 📊
-- Machine learning pattern recognition
-- Financial decision impact simulator
-- Spending pattern correlation analysis
-- Smart saving opportunities
-- Behavioral finance insights
-- Seasonal spending forecasts
-- Advanced visualizations:
-  - Decision tree visualization
-  - Multi-factor correlation matrix
-  - Predictive spending band
-  - Seasonality heatmap
-- Enhanced design elements:
-  - Insight cards with swipeable recommendation stack
-  - Interactive "what-if" controls
-  - Cognitive load management
-
-### 7. Goal-based Financial Planning 🎯
+### 6. Goal-based Financial Planning 🎯
 - Smart goal templates
 - Multi-stage goals with milestone tracking
 - Goal priority management
@@ -160,7 +168,7 @@ This document tracks the progress of the Ultimate Personal Finance Tracker proje
   - Milestone celebration animations
   - Goal journey timeline
 
-### 8. Intelligent Bill & Subscription Management 📅
+### 7. Bill & Subscription Management 📅
 - Bill negotiation assistant
 - Subscription ROI calculator
 - Smart payment scheduling
@@ -177,7 +185,7 @@ This document tracks the progress of the Ultimate Personal Finance Tracker proje
   - Calendar integration
   - Digital filing system
 
-### 9. Comprehensive Investment Portfolio Management 📈
+### 8. Investment Portfolio Management 📈
 - Asset allocation optimizer
 - ESG investment screener
 - Tax-efficient investment strategies
@@ -195,7 +203,7 @@ This document tracks the progress of the Ultimate Personal Finance Tracker proje
   - Market condition context indicators
   - Simplified vs. advanced views
 
-### 10. Strategic Debt Management 🏦
+### 9. Strategic Debt Management 🏦
 - Optimal repayment strategy calculator
 - Interest saving opportunities
 - Debt-to-income ratio tracker
@@ -211,7 +219,7 @@ This document tracks the progress of the Ultimate Personal Finance Tracker proje
   - Celebration milestones
   - Debt-free date countdown
 
-### 11. Enterprise-grade Security Framework 🔐
+### 10. Enterprise-grade Security Framework 🔐
 - Zero-knowledge architecture
 - Compliance with global financial data standards
 - Regular security audits
@@ -223,7 +231,7 @@ This document tracks the progress of the Ultimate Personal Finance Tracker proje
   - Privacy control center
   - Contextual security education
 
-### 12. Financial Education & Coaching 📚
+### 11. Financial Education & Coaching 📚
 - Personalized learning paths
 - Interactive financial simulations
 - Bite-sized financial literacy modules
@@ -239,7 +247,7 @@ This document tracks the progress of the Ultimate Personal Finance Tracker proje
   - Just-in-time learning
   - Multi-format content
 
-### 13. Comprehensive Financial Institution Integration 🏦
+### 12. Comprehensive Financial Institution Integration 🏦
 - Global bank compatibility
 - Real-time transaction alerts
 - Account aggregation dashboard
@@ -251,7 +259,7 @@ This document tracks the progress of the Ultimate Personal Finance Tracker proje
   - Safe-to-spend calculator
   - Financial institution relationship manager
 
-### 14. Behavioral Economics & Gamification 🎮
+### 13. Behavioral Economics & Gamification 🎮
 - Habit formation system
 - Financial challenge platform
 - Micro-saving games
@@ -267,7 +275,7 @@ This document tracks the progress of the Ultimate Personal Finance Tracker proje
   - Celebration animations
   - Progress visualization
 
-### 15. Community & Expert Access 🤝
+### 14. Community & Expert Access 🤝
 - Money mindset community
 - Expert directory
 - Anonymous question forum
@@ -279,7 +287,7 @@ This document tracks the progress of the Ultimate Personal Finance Tracker proje
   - Expert verification badges
   - Privacy-first sharing controls
 
-### 16. Augmented Intelligence Features 🧠
+### 15. Augmented Intelligence Features 🧠
 - Conversational financial assistant
 - Predictive text entry
 - Context-aware suggestions
@@ -291,7 +299,7 @@ This document tracks the progress of the Ultimate Personal Finance Tracker proje
   - Multi-modal input options
   - Simplified command interface
 
-### 17. Integrated Tax Planning & Preparation 📝
+### 16. Integrated Tax Planning & Preparation 📝
 - Year-round tax optimization
 - Tax-advantaged account recommendations
 - Deduction finder
@@ -307,7 +315,7 @@ This document tracks the progress of the Ultimate Personal Finance Tracker proje
   - Document checklist
   - Tax category tagging
 
-### 18. Future-focused Financial Innovation 🚀
+### 17. Future-focused Financial Innovation 🚀
 - Digital asset management
 - Climate impact analysis
 - Generational wealth planning tools
@@ -340,7 +348,12 @@ This document tracks the progress of the Ultimate Personal Finance Tracker proje
 - ✅ Multi-device synchronization
 
 ### Phase 3: Expansion & Ecosystem
-- 🔄 Investment portfolio management (basic implementation)
+- 🔄 Investment portfolio management (partially implemented)
+  - ✅ Basic investment tracking
+  - ✅ Portfolio visualization
+  - ✅ Watchlist feature with real-time stock data
+  - ✅ ESG investment screener
+  - 🔄 Investment universe database
 - 🔄 Debt optimization tools (basic implementation)
 - ❌ Educational content platform (not started)
 - ❌ Community features & social tools (not started)

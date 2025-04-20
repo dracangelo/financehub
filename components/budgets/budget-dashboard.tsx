@@ -232,7 +232,7 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
                     </tr>
                   </thead>
                   <tbody>
-                    {budget.budget_categories.map((category: any) => (
+                    {budget?.budget_categories?.map((category: any) => (
                       <tr key={category.id} className="border-b">
                         <td className="p-3">{category.name}</td>
                         <td className="text-right p-3">{formatCurrency(category.amount_allocated)}</td>
@@ -240,7 +240,13 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
                           {((category.amount_allocated / budget.income) * 100).toFixed(1)}%
                         </td>
                       </tr>
-                    ))}
+                    )) || (
+                      <tr>
+                        <td colSpan={3} className="p-3 text-center text-muted-foreground">
+                          No budget categories found
+                        </td>
+                      </tr>
+                    )}
                     <tr className="font-medium bg-muted/30">
                       <td className="p-3">Total</td>
                       <td className="text-right p-3">{formatCurrency(totalAllocated)}</td>

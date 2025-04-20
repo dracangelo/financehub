@@ -53,7 +53,7 @@ export function ESGInvestmentTable({ investments }: ESGInvestmentTableProps) {
                   <span>{investment.esgScore?.total ? investment.esgScore.total.toFixed(1) : "N/A"}</span>
                 </div>
               </TableCell>
-              <TableCell>{investment.sector}</TableCell>
+              <TableCell>{investment.sector || "N/A"}</TableCell>
             </TableRow>
           ))}
         </TableBody>

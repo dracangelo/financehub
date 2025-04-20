@@ -83,7 +83,10 @@ async function BudgetDetailContent({ budgetId }: { budgetId: string }) {
   }
 }
 
-export default function BudgetDetailPage({ params }: BudgetDetailPageProps) {
+export default async function BudgetDetailPage({ params }: BudgetDetailPageProps) {
+  // Await the params object to access its properties
+  const { id } = await params;
+  
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-8">
       <div className="mb-4">
@@ -95,7 +98,7 @@ export default function BudgetDetailPage({ params }: BudgetDetailPageProps) {
       </div>
 
       <Suspense fallback={<Skeleton className="h-[600px] w-full" />}>
-        <BudgetDetailContent budgetId={params.id} />
+        <BudgetDetailContent budgetId={id} />
       </Suspense>
     </div>
   )
