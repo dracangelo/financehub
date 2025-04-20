@@ -10,6 +10,7 @@ import { LIFE_EVENT_TEMPLATES } from "@/lib/budget/templates/life-events"
 import { LIFESTYLE_TEMPLATES } from "@/lib/budget/templates/lifestyle"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
+import { createBudget, getBudgetById } from "@/app/actions/budgets"
 
 export function BudgetTemplatesWrapper() {
   const router = useRouter()
@@ -26,15 +27,38 @@ export function BudgetTemplatesWrapper() {
       const template = [...LIFE_EVENT_TEMPLATES, ...LIFESTYLE_TEMPLATES].find(t => t.id === selectedTemplate)
       if (!template) throw new Error("Template not found")
 
-      // TODO: Implement template application
-      // For now, just show a success message
+      // Prepare budget data from template
+      const defaultIncome = 5000; // Default income amount
+      
+      // Format the categories correctly for the API - only include main categories
+      const formattedCategories = template.categories.map(cat => ({
+        name: cat.name,
+        amount_allocated: Math.round((cat.percentage / 100) * defaultIncome),
+      }));
+      
+      const newBudgetData = {
+        name: `${template.name} Budget`,
+        amount: defaultIncome,
+        start_date: new Date().toISOString().split('T')[0], // Today's date
+        categories: formattedCategories
+      };
+      
+      // Create the budget using the server action
+      const newBudget = await createBudget(newBudgetData);
+      
+      if (!newBudget || !newBudget.id) {
+        throw new Error("Failed to create budget");
+      }
+
       toast({
-        title: "Template Applied",
-        description: `Successfully applied ${template.name} template.`,
+        title: "Budget Created",
+        description: `Successfully created ${template.name} budget.`,
       })
       
       setShowDialog(false)
-      router.refresh()
+      
+      // Navigate to the new budget
+      router.push(`/budgets/${newBudget.id}`)
     } catch (error) {
       console.error("Error applying template:", error)
       toast({
