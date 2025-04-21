@@ -1,12 +1,13 @@
-import { Suspense } from "react"
 import { ArrowLeftIcon } from "lucide-react"
 import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Skeleton } from "@/components/ui/skeleton"
 import { ExpenseForm } from "@/components/expenses/expense-form"
 import { EXPENSE_CATEGORIES } from "@/lib/constants/categories"
+
+// Force static rendering to prevent switching between static and dynamic
+export const dynamic = 'force-static';
 
 export default function NewExpensePage() {
   return (
@@ -26,23 +27,9 @@ export default function NewExpensePage() {
           <CardDescription>Record a new expense</CardDescription>
         </CardHeader>
         <CardContent>
-          <Suspense fallback={<FormSkeleton />}>
-            <ExpenseForm categories={EXPENSE_CATEGORIES} />
-          </Suspense>
+          <ExpenseForm categories={EXPENSE_CATEGORIES} />
         </CardContent>
       </Card>
-    </div>
-  )
-}
-
-function FormSkeleton() {
-  return (
-    <div className="space-y-6">
-      <Skeleton className="h-10 w-full" />
-      <Skeleton className="h-10 w-full" />
-      <Skeleton className="h-10 w-full" />
-      <Skeleton className="h-10 w-full" />
-      <Skeleton className="h-10 w-1/3" />
     </div>
   )
 }
