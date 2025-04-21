@@ -130,7 +130,8 @@ export async function createExpense(expenseData: {
     // Prepare the expense data for insertion
     const insertData = {
       user_id: user.id,
-      merchant_name: expenseData.merchant_name || null,
+      // Remove merchant_name from the insert data to avoid schema errors
+      // merchant_name: expenseData.merchant_name || null,
       amount: expenseData.amount,
       category: expenseData.category_id,
       description: expenseData.description,

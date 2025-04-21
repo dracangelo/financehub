@@ -6,6 +6,7 @@ export interface LocationResult {
   latitude: number;
   longitude: number;
   address?: string;
+  id: string; // Add unique ID field
 }
 
 /**
@@ -37,13 +38,20 @@ export async function searchLocationByName(query: string): Promise<LocationResul
     
     const data = await response.json();
     
-    // Map the response to our LocationResult interface
-    return data.map((item: any) => ({
-      name: item.display_name.split(',')[0],
-      address: item.display_name,
-      latitude: parseFloat(item.lat),
-      longitude: parseFloat(item.lon)
-    }));
+    // Map the response to our LocationResult interface with unique IDs
+    return data.map((item: any) => {
+      const displayName = item.display_name.split(',')[0];
+      // Create a unique ID by combining the name with coordinates
+      const uniqueId = `${displayName}-${item.lat}-${item.lon}`;
+      
+      return {
+        name: displayName,
+        address: item.display_name,
+        latitude: parseFloat(item.lat),
+        longitude: parseFloat(item.lon),
+        id: uniqueId
+      };
+    });
   } catch (error) {
     console.error('Error searching for location:', error);
     return [];

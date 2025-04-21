@@ -99,6 +99,7 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
     name: string;
     latitude: number;
     longitude: number;
+    id: string;
   }>>([]);
 
   const form = useForm<ExpenseFormValues>({
@@ -250,7 +251,7 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
   };
   
   // Select a location from search results
-  const selectLocation = (location: { name: string; latitude: number; longitude: number }) => {
+  const selectLocation = (location: { name: string; latitude: number; longitude: number; id: string }) => {
     form.setValue("latitude", location.latitude);
     form.setValue("longitude", location.longitude);
     setLocationEnabled(true);
@@ -284,6 +285,11 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
 
   // Handle form submission
   const onSubmit = async (data: ExpenseFormValues) => {
+    // Prevent multiple submissions
+    if (isSubmitting) {
+      return;
+    }
+    
     setIsSubmitting(true);
     try {
       // Validate amount
@@ -329,8 +335,29 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
       // Upload receipt if provided
       if (data.receipt_image) {
         try {
-          const receiptUrl = await uploadReceipt(data.receipt_image);
-          expenseData.receipt_url = receiptUrl;
+          // Create the expense first if we're not editing
+          let expenseId = isEditing && expense ? expense.id : null;
+          
+          if (!expenseId) {
+            // For new expenses, we need to create the expense first to get an ID
+            const result = await createExpense(expenseData);
+            if (result && result.id) {
+              expenseId = result.id;
+              // Update our local reference to avoid creating duplicate expenses
+              expenseData.id = expenseId;
+            } else {
+              throw new Error("Failed to create expense before uploading receipt");
+            }
+          }
+          
+          // Now upload the receipt with the valid expense ID
+          const receiptResult = await uploadReceipt(data.receipt_image, expenseId);
+          expenseData.receipt_url = receiptResult.publicUrl;
+          
+          // If we're editing, we need to update the expense with the receipt URL
+          if (isEditing && expense) {
+            await updateExpense(expense.id, { receipt_url: receiptResult.publicUrl });
+          }
         } catch (error) {
           console.error("Error uploading receipt:", error);
           toast({
@@ -340,7 +367,7 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
           });
         }
       }
-
+      
       // Handle split expense
       if (data.split_with_name && data.split_amount) {
         try {
@@ -386,7 +413,8 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
           description: `Successfully updated "${data.description}"`,
           variant: "success",
         });
-      } else {
+      } else if (!expenseData.id) {
+        // Only create the expense if we haven't already created it for the receipt upload
         await createExpense(expenseData);
         toast({
           title: "Expense Created",
@@ -395,9 +423,10 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
         });
       }
 
-      // Redirect to expenses list
-      router.push("/expenses");
-      router.refresh();
+      // Use Next.js router for navigation and prevent the form from being submitted again
+      // This should stop the continuous POST requests
+      window.location.href = "/expenses";
+      return;
     } catch (error: any) {
       console.error("Error submitting form:", error);
       toast({
@@ -611,7 +640,7 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
                 <div className="rounded-md border p-4 space-y-4">
                   {locationSearchResults.map((location) => (
                     <Button
-                      key={location.name}
+                      key={location.id}
                       type="button"
                       variant="outline"
                       size="sm"
