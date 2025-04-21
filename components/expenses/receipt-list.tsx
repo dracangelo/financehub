@@ -52,7 +52,7 @@ export function ReceiptList({ receipts, onSelectReceipt, selectedReceiptId }: Re
               <div>
                 <h3 className="font-medium">{receipt.merchant}</h3>
                 <p className="text-sm text-muted-foreground">
-                  {formatDate(receipt.date)}
+                  {formatDate(receipt.date.toISOString())}
                 </p>
               </div>
               <div className="text-right">
@@ -65,7 +65,7 @@ export function ReceiptList({ receipts, onSelectReceipt, selectedReceiptId }: Re
             {receipt.warranty && (
               <div className="mt-2">
                 <Badge variant="secondary" className="text-xs">
-                  Warranty until {formatDate(receipt.warranty.expirationDate)}
+                  Warranty until {formatDate(receipt.warranty.expirationDate.toISOString())}
                 </Badge>
               </div>
             )}

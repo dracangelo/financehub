@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
-import { db } from "@/lib/db"
+import { getAuthenticatedUser } from "@/lib/auth"
+import { getSupabase, handleDatabaseError } from "@/lib/db"
 import { z } from "zod"
 
 // Schema for payment validation
@@ -17,9 +17,9 @@ const paymentSchema = z.object({
 // GET /api/payments - Get all payments for the current user
 export async function GET(req: Request) {
   try {
-    const session = await auth()
+    const user = await getAuthenticatedUser()
     
-    if (!session?.user?.id) {
+    if (!user?.id) {
       return new NextResponse("Unauthorized", { status: 401 })
     }
     
@@ -28,7 +28,7 @@ export async function GET(req: Request) {
     const billId = searchParams.get("billId")
     
     const where: any = {
-      userId: session.user.id,
+      user_id: user.id,
     }
     
     if (subscriptionId) {
@@ -39,16 +39,17 @@ export async function GET(req: Request) {
       where.billId = billId
     }
     
-    const payments = await db.payment.findMany({
-      where,
-      orderBy: {
-        date: "desc",
-      },
-      include: {
-        subscription: true,
-        bill: true,
-      },
-    })
+    const supabase = await getSupabase()
+    const { data: payments, error } = await supabase
+      .from('payments')
+      .select('*, subscriptions(*), bills(*)')
+      .match(where)
+      .order('date', { ascending: false })
+    
+    if (error) {
+      console.error("[PAYMENTS_GET] Database error:", error)
+      return new NextResponse(JSON.stringify(handleDatabaseError(error)), { status: 500 })
+    }
     
     return NextResponse.json(payments)
   } catch (error) {
@@ -60,75 +61,92 @@ export async function GET(req: Request) {
 // POST /api/payments - Create a new payment
 export async function POST(req: Request) {
   try {
-    const session = await auth()
+    const user = await getAuthenticatedUser()
     
-    if (!session?.user?.id) {
+    if (!user?.id) {
       return new NextResponse("Unauthorized", { status: 401 })
     }
     
     const body = await req.json()
     const validatedData = paymentSchema.parse(body)
     
+    const supabase = await getSupabase()
+    
     // Check if subscription or bill exists and belongs to user
     if (validatedData.subscriptionId) {
-      const subscription = await db.subscription.findUnique({
-        where: {
-          id: validatedData.subscriptionId,
-          userId: session.user.id,
-        },
-      })
+      const { data: subscription, error } = await supabase
+        .from('subscriptions')
+        .select()
+        .eq('id', validatedData.subscriptionId)
+        .eq('user_id', user.id)
+        .maybeSingle()
       
-      if (!subscription) {
+      if (error || !subscription) {
         return new NextResponse("Subscription not found", { status: 404 })
       }
     }
     
     if (validatedData.billId) {
-      const bill = await db.bill.findUnique({
-        where: {
-          id: validatedData.billId,
-          userId: session.user.id,
-        },
-      })
+      const { data: bill, error } = await supabase
+        .from('bills')
+        .select()
+        .eq('id', validatedData.billId)
+        .eq('user_id', user.id)
+        .maybeSingle()
       
-      if (!bill) {
+      if (error || !bill) {
         return new NextResponse("Bill not found", { status: 404 })
       }
     }
     
-    const payment = await db.payment.create({
-      data: {
+    // Create the payment
+    const { data: payment, error: createError } = await supabase
+      .from('payments')
+      .insert({
         ...validatedData,
-        userId: session.user.id,
-      },
-    })
+        user_id: user.id,
+        created_at: new Date().toISOString()
+      })
+      .select()
+      .single()
+    
+    if (createError) {
+      console.error("[PAYMENTS_POST] Create error:", createError)
+      return new NextResponse(JSON.stringify(handleDatabaseError(createError)), { status: 500 })
+    }
     
     // Update subscription or bill status if payment is completed
     if (validatedData.status === "completed") {
       if (validatedData.subscriptionId) {
-        await db.subscription.update({
-          where: {
-            id: validatedData.subscriptionId,
-          },
-          data: {
-            nextBillingDate: new Date(
-              new Date(validatedData.date).setMonth(
-                new Date(validatedData.date).getMonth() + 1
-              )
-            ),
-          },
-        })
+        const nextBillingDate = new Date(
+          new Date(validatedData.date).setMonth(
+            new Date(validatedData.date).getMonth() + 1
+          )
+        )
+        
+        const { error: updateError } = await supabase
+          .from('subscriptions')
+          .update({
+            next_billing_date: nextBillingDate.toISOString()
+          })
+          .eq('id', validatedData.subscriptionId)
+        
+        if (updateError) {
+          console.error("[PAYMENTS_POST] Subscription update error:", updateError)
+        }
       }
       
       if (validatedData.billId) {
-        await db.bill.update({
-          where: {
-            id: validatedData.billId,
-          },
-          data: {
-            status: "paid",
-          },
-        })
+        const { error: updateError } = await supabase
+          .from('bills')
+          .update({
+            status: "paid"
+          })
+          .eq('id', validatedData.billId)
+        
+        if (updateError) {
+          console.error("[PAYMENTS_POST] Bill update error:", updateError)
+        }
       }
     }
     

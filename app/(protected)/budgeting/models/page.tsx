@@ -114,8 +114,6 @@ export default function BudgetModelsPage() {
         { category: "Transportation", percentage: 10 },
         { category: "Utilities", percentage: 5 },
         { category: "Entertainment", percentage: 5 },
-        { category: "Clothing", percentage: 5 },\
-        { category: "Dining Out  percentage: 5 },
         { category: "Clothing", percentage: 5 },
         { category: "Dining Out", percentage: 10 },
         { category: "Personal Care", percentage: 5 },
