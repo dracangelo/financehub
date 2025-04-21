@@ -1,6 +1,6 @@
 "use client"
 
-import type React from "react"
+import React, { useRef, useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -19,8 +19,9 @@ import {
 import { LogOut, Settings, User, X } from "lucide-react"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { useRouter } from "next/navigation"
-import { useState, useEffect } from "react"
 import { NavItems } from "./nav-items"
+import { MobileNav } from "@/components/mobile-nav"
+import { navItems } from "@/lib/utils/navigation"
 
 interface MainNavigationProps {
   className?: string;
@@ -33,16 +34,44 @@ export function MainNavigation({
   className,
   isOpen = true,
   onClose,
-  navItems,
+  navItems: propNavItems,
 }: MainNavigationProps) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClientComponentClient()
+  const hasNavigated = useRef(false);
 
-  // Close sidebar when navigating on mobile
+  // Track recently visited pages
   useEffect(() => {
-    if (onClose && window.innerWidth < 768) {
+    if (typeof window !== "undefined" && pathname) {
+      try {
+        // Get current page info
+        const currentPageTitle = document.title || "Page"
+        const currentPage = { title: currentPageTitle, href: pathname }
+        
+        // Get existing recent pages
+        const storedPages = localStorage.getItem("recentPages")
+        const recentPages = storedPages ? JSON.parse(storedPages) : []
+        
+        // Add current page to recent pages if not already there
+        const pageExists = recentPages.some((page: any) => page.href === pathname)
+        if (!pageExists && pathname !== "/login" && pathname !== "/register") {
+          // Add to beginning and limit to 5 items
+          const updatedPages = [currentPage, ...recentPages].slice(0, 5)
+          localStorage.setItem("recentPages", JSON.stringify(updatedPages))
+        }
+      } catch (error) {
+        console.error("Error updating recent pages:", error)
+      }
+    }
+  }, [pathname]);
+
+  // Close sidebar when navigating on mobile - MODIFIED to use a ref to prevent immediate closing
+  useEffect(() => {
+    if (hasNavigated.current && onClose && window.innerWidth < 768) {
       onClose();
+    } else {
+      hasNavigated.current = true;
     }
   }, [pathname, onClose]);
 
@@ -51,6 +80,11 @@ export function MainNavigation({
     router.push("/login")
     router.refresh()
   }
+
+  // Prevent clicks inside the sidebar from closing it
+  const handleSidebarClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+  };
 
   return (
     <aside 
@@ -61,6 +95,7 @@ export function MainNavigation({
         isOpen ? "translate-x-0" : "-translate-x-full",
         className
       )}
+      onClick={handleSidebarClick}
     >
       <div className="flex items-center justify-between mb-6 md:hidden">
         <Link href="/" className="flex flex-col items-start">
@@ -77,9 +112,9 @@ export function MainNavigation({
       <div className="mb-4"></div>
 
       <div className="overflow-y-auto flex-grow">
-        {navItems ? (
+        {propNavItems ? (
           <ul className="space-y-1">
-            {navItems.map((item, index) => (
+            {propNavItems.map((item, index) => (
               <li key={index}>
                 <Link 
                   href={item.href}
@@ -94,7 +129,14 @@ export function MainNavigation({
             ))}
           </ul>
         ) : (
-          <NavItems className="mb-4" />
+          <>
+            <div className="hidden md:block">
+              <NavItems className="mb-4" />
+            </div>
+            <div className="md:hidden">
+              <MobileNav items={navItems} onItemClick={onClose} />
+            </div>
+          </>
         )}
       </div>
 

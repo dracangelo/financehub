@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useRef } from "react"
 import { MainNavigation } from "@/components/layout/main-navigation"
 import { TopNavigation } from "@/components/layout/top-navigation"
 
@@ -10,6 +10,8 @@ export function ResponsiveLayout({
   children: React.ReactNode
 }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const sidebarRef = useRef<HTMLDivElement>(null)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
   
   // Close sidebar when window resizes to desktop size
   useEffect(() => {
@@ -26,17 +28,23 @@ export function ResponsiveLayout({
   // Close sidebar when clicking outside on mobile
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      const sidebar = document.getElementById('sidebar')
+      // Don't close if clicking on the menu button (that's handled by the toggle)
+      if (menuButtonRef.current && menuButtonRef.current.contains(event.target as Node)) {
+        return;
+      }
+      
+      // Only close if clicking outside the sidebar
       if (
         isSidebarOpen &&
-        sidebar &&
-        !sidebar.contains(event.target as Node) &&
+        sidebarRef.current &&
+        !sidebarRef.current.contains(event.target as Node) &&
         window.innerWidth < 768
       ) {
         setIsSidebarOpen(false)
       }
     }
 
+    // Use mousedown to catch the event before any navigation happens
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [isSidebarOpen])
@@ -50,17 +58,23 @@ export function ResponsiveLayout({
     }
   }, [isSidebarOpen])
 
+  // Handle menu toggle with debounce to prevent accidental double-clicks
+  const handleMenuToggle = () => {
+    setIsSidebarOpen(prev => !prev)
+  }
+
   return (
     <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-950">
       {/* Top Navigation - visible on all screen sizes */}
       <TopNavigation 
-        onMenuToggle={() => setIsSidebarOpen(!isSidebarOpen)} 
+        onMenuToggle={handleMenuToggle} 
         isSidebarOpen={isSidebarOpen} 
+        menuButtonRef={menuButtonRef}
       />
       
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar Navigation - fixed on mobile, visible on desktop */}
-        <div id="sidebar" className="md:w-64 flex-shrink-0">
+        <div ref={sidebarRef} className="md:w-64 flex-shrink-0">
           <MainNavigation 
             isOpen={isSidebarOpen} 
             onClose={() => setIsSidebarOpen(false)}

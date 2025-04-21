@@ -3,6 +3,7 @@ import { Inter } from "next/font/google"
 import { Toaster } from "@/components/ui/toaster"
 import { MainNavigation } from "@/components/layout/main-navigation"
 import { Providers } from "./providers"
+import "./globals.css"
 import {
   Home,
   CreditCard,
@@ -53,7 +54,7 @@ const navItems = [
       { title: "Goals", href: "/goals", icon: Target },
       { title: "Bills", href: "/bills", icon: FileText },
       { title: "Tax Planner", href: "/tax-planner", icon: Calculator },
-      { title: "Emergency Fund", href: "/emergency-fund", icon: Shield },
+      { title: "Net Worth", href: "/net-worth", icon: TrendingUp },
     ],
   },
   {
