@@ -537,6 +537,7 @@ export async function getCombinedTransactions(): Promise<CombinedTransaction[]> 
       date: expense.spent_at,
       is_income: false,
       category: expense.category,
+      category_id: expense.category_id || expense.category, // Include category_id from expense
       account: expense.account,
       source_type: 'expense' as const,
       merchant_name: expense.merchant_name,

@@ -2,6 +2,7 @@ import { getRecentTransactions, getMonthlyIncomeExpenseData, getTransactionStats
 import { getAccountSummary } from "@/app/actions/accounts"
 import { getCategorySpending } from "@/app/actions/categories"
 import { getCashflowForecast } from "@/lib/cashflow-utils"
+import { getNetWorth } from "@/app/actions/net-worth"
 import { requireAuth } from "@/lib/auth"
 
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
@@ -41,7 +42,8 @@ export default async function DashboardPage() {
       transactionStats, 
       cashflowForecast,
       financialCalendarData,
-      combinedTransactions
+      combinedTransactions,
+      netWorthData
     ] = await Promise.all([
       getRecentTransactions(5).catch(() => []),
       getAccountSummary().catch(() => ({
@@ -68,7 +70,18 @@ export default async function DashboardPage() {
         monthOverMonth: { income: 0, expenses: 0 }
       })),
       getFinancialCalendarData().catch(() => []),
-      getCombinedTransactions().catch(() => [])
+      getCombinedTransactions().catch(() => []),
+      getNetWorth().catch(() => ({
+        totalAssets: 0,
+        totalLiabilities: 0,
+        netWorth: 0,
+        assets: [],
+        liabilities: [],
+        assetBreakdown: [],
+        liabilityBreakdown: [],
+        history: [],
+        snapshots: []
+      }))
     ])
 
     // Calculate total income and expenses from combined transactions
@@ -132,7 +145,14 @@ export default async function DashboardPage() {
         {/* Additional Visualizations */}
         <div className="grid gap-6 md:grid-cols-2">
           <SankeyDiagram />
-          <NetWorthTimeline />
+          <NetWorthTimeline 
+            data={netWorthData.history.map(item => ({
+              date: new Date(item.date).toLocaleDateString("en-US", { month: "short", year: "numeric" }),
+              assets: item.assets,
+              liabilities: item.liabilities,
+              netWorth: item.netWorth
+            }))} 
+          />
         </div>
 
         {/* Investment Portfolio Analytics */}
