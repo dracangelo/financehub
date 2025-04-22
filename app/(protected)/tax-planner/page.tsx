@@ -1,25 +1,70 @@
-import type { Metadata } from "next"
+"use client"
+
+import { useState } from "react"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { TaxPlanningDashboard } from "@/components/tax/tax-planning-dashboard"
 import { TaxBreadcrumb } from "@/components/tax/tax-breadcrumb"
 import { Calculator } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { TaxDocumentList } from "@/components/tax/tax-document-list"
+import { TaxTimelineList } from "@/components/tax/tax-timeline-list"
+import { TaxDeductionList } from "@/components/tax/tax-deduction-list"
+import { TaxRecommendationList } from "@/components/tax/tax-recommendation-list"
+import { TaxPredictionList } from "@/components/tax/tax-prediction-list"
+import { TaxInfoForm } from "@/components/tax/tax-info-form"
 
-export const metadata: Metadata = {
-  title: "Tax Planner",
-  description: "Plan and optimize your tax strategy.",
-}
-
-export default async function TaxPlannerPage() {
+export default function TaxPlannerPage() {
+  const [activeTab, setActiveTab] = useState("overview")
   return (
     <DashboardShell>
       <DashboardHeader
         heading="Tax Planner"
         text="Plan and optimize your tax strategy and maximize your returns."
-        icon={<Calculator className="h-6 w-6" />}
-      />
+      >
+        <Calculator className="h-6 w-6" />
+      </DashboardHeader>
       <TaxBreadcrumb />
-      <TaxPlanningDashboard />
+      
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <TabsList className="grid grid-cols-7 w-full md:w-auto">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="documents">Documents</TabsTrigger>
+          <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="deductions">Deductions</TabsTrigger>
+          <TabsTrigger value="recommendations">Recommendations</TabsTrigger>
+          <TabsTrigger value="predictions">Predictions</TabsTrigger>
+          <TabsTrigger value="info">Tax Info</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview">
+          <TaxPlanningDashboard />
+        </TabsContent>
+
+        <TabsContent value="documents">
+          <TaxDocumentList />
+        </TabsContent>
+
+        <TabsContent value="timeline">
+          <TaxTimelineList />
+        </TabsContent>
+
+        <TabsContent value="deductions">
+          <TaxDeductionList />
+        </TabsContent>
+
+        <TabsContent value="recommendations">
+          <TaxRecommendationList />
+        </TabsContent>
+
+        <TabsContent value="predictions">
+          <TaxPredictionList />
+        </TabsContent>
+
+        <TabsContent value="info">
+          <TaxInfoForm />
+        </TabsContent>
+      </Tabs>
     </DashboardShell>
   )
 }

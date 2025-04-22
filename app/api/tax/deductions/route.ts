@@ -8,8 +8,11 @@ import { getCurrentUser } from "@/lib/auth"
 // Updated schema to match the form's field names
 const deductionSchema = z.object({
   name: z.string().min(1, "Name is required"),
-  amount: z.string().min(1, "Amount is required"),
-  category: z.string().min(1, "Category is required"),
+  description: z.string().optional(),
+  amount: z.coerce.number().min(0, "Amount must be a positive number"),
+  max_amount: z.coerce.number().min(0, "Maximum amount must be a positive number").optional(),
+  category_id: z.string().optional(),
+  tax_year: z.string().min(1, "Tax year is required"),
   notes: z.string().optional(),
 })
 
@@ -61,20 +64,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid request data", details: result.error.format() }, { status: 400 })
     }
 
-    // Parse the amount to a number
-    const amountValue = parseFloat(result.data.amount)
-
-    // Insert the deduction - mapping form fields to database fields
+    // Insert the deduction with our updated schema
     try {
       const { data, error } = await supabase
         .from("tax_deductions")
         .insert({
           user_id: user.id,
-          deduction_name: result.data.name, // Map form 'name' to DB 'deduction_name'
-          category: result.data.category,
-          eligible: true, // Set default
-          estimated_savings: amountValue, // Map form 'amount' to DB 'estimated_savings'
+          name: result.data.name,
+          description: result.data.description,
+          amount: result.data.amount,
+          max_amount: result.data.max_amount,
+          category_id: result.data.category_id,
+          tax_year: result.data.tax_year,
           notes: result.data.notes,
+          date_added: new Date().toISOString(),
         })
         .select()
         .single()
@@ -122,9 +125,6 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "Invalid request data", details: result.error.format() }, { status: 400 })
     }
 
-    // Parse the amount to a number
-    const amountValue = parseFloat(result.data.amount)
-
     // Verify ownership
     const { data: existingDeduction, error: fetchError } = await supabase
       .from("tax_deductions")
@@ -137,14 +137,16 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "Tax deduction not found" }, { status: 404 })
     }
 
-    // Update the tax deduction - mapping form fields to database fields
+    // Update the tax deduction with our updated schema
     const { data, error } = await supabase
       .from("tax_deductions")
       .update({
-        deduction_name: result.data.name, // Map form 'name' to DB 'deduction_name'
-        category: result.data.category,
-        eligible: true, // Default
-        estimated_savings: amountValue, // Map form 'amount' to DB 'estimated_savings'
+        name: result.data.name,
+        description: result.data.description,
+        amount: result.data.amount,
+        max_amount: result.data.max_amount,
+        category_id: result.data.category_id,
+        tax_year: result.data.tax_year,
         notes: result.data.notes,
       })
       .eq("id", id)
