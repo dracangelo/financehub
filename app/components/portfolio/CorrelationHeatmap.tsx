@@ -11,6 +11,23 @@ interface CorrelationHeatmapProps {
 }
 
 export function CorrelationHeatmap({ assets, correlationMatrix }: CorrelationHeatmapProps) {
+  // Handle empty data
+  if (!assets || assets.length === 0 || !correlationMatrix || correlationMatrix.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Asset Correlation</CardTitle>
+          <CardDescription>
+            See how your investments correlate with each other
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center justify-center py-10 text-center">
+          <p className="text-muted-foreground mb-2">No correlation data available.</p>
+          <p className="text-sm text-muted-foreground">Add at least two investments to your portfolio to see correlation analysis.</p>
+        </CardContent>
+      </Card>
+    )
+  }
   // Generate color based on correlation value
   const getColor = (value: number) => {
     // Red for negative correlation, blue for positive

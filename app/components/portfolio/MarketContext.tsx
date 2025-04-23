@@ -24,6 +24,26 @@ export function MarketContext({ currentIndicators, historicalData, showMarketCon
   if (!showMarketContext) {
     return null
   }
+  
+  // Handle empty data
+  if (!currentIndicators || currentIndicators.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Market Context</CardTitle>
+          <CardDescription>
+            Economic indicators that may affect your investments
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col items-center justify-center py-6 text-center">
+            <p className="text-muted-foreground mb-2">No market data available at this time.</p>
+            <p className="text-sm text-muted-foreground">Market data will be updated automatically when available.</p>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
 
   // Format dates for display
   const formatDate = (dateString: string) => {

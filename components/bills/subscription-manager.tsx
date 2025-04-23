@@ -1,10 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { Plus, AlertTriangle, Calendar, FileText, CreditCard, BarChart3, Settings } from "lucide-react"
+import { Plus, AlertTriangle, Calendar, FileText, CreditCard, BarChart3, Settings, Loader2 } from "lucide-react"
 import { SubscriptionCard } from "./subscription-card"
 import { BillNegotiationAssistant } from "./bill-negotiation-assistant"
 import { SubscriptionROICalculator } from "./subscription-roi-calculator"
@@ -17,136 +17,68 @@ import { SubscriptionValueMatrix } from "./subscription-value-matrix"
 import { BillChangeTracker } from "./bill-change-tracker"
 import { PaymentMethodDistribution } from "./payment-method-distribution"
 import { SubscriptionForm } from "./subscription-form"
+import { supabaseClient } from "@/lib/supabase"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Skeleton } from "@/components/ui/skeleton"
+import { createSubscription, updateSubscription, deleteSubscription } from "@/app/actions/subscriptions"
+
 
 export function SubscriptionManager() {
   const [activeTab, setActiveTab] = useState("overview")
   const [showAddForm, setShowAddForm] = useState(false)
+  const [selectedSubscription, setSelectedSubscription] = useState(null)
   
-  // In a real app, this would come from your database
-  const subscriptions = [
-    {
-      id: "1",
-      name: "Netflix",
-      category: "Streaming",
-      cost: 15.99,
-      billingCycle: "monthly",
-      nextBillingDate: new Date(2023, 5, 15),
-      usage: 85,
-      value: 90,
-      paymentMethod: "Credit Card",
-      autoRenew: true,
-      notes: "Family plan, shared with 3 others"
-    },
-    {
-      id: "2",
-      name: "Spotify Premium",
-      category: "Music",
-      cost: 9.99,
-      billingCycle: "monthly",
-      nextBillingDate: new Date(2023, 5, 20),
-      usage: 95,
-      value: 95,
-      paymentMethod: "Credit Card",
-      autoRenew: true,
-      notes: "Student discount applied"
-    },
-    {
-      id: "3",
-      name: "Adobe Creative Cloud",
-      category: "Software",
-      cost: 52.99,
-      billingCycle: "monthly",
-      nextBillingDate: new Date(2023, 5, 10),
-      usage: 60,
-      value: 75,
-      paymentMethod: "Credit Card",
-      autoRenew: true,
-      notes: "Photoshop and Illustrator only"
-    },
-    {
-      id: "4",
-      name: "New York Times",
-      category: "News",
-      cost: 17.99,
-      billingCycle: "monthly",
-      nextBillingDate: new Date(2023, 5, 1),
-      usage: 65,
-      value: 70,
-      paymentMethod: "Bank Account",
-      autoRenew: true,
-      notes: "Digital subscription"
-    },
-    {
-      id: "5",
-      name: "Fitness Plus",
-      category: "Fitness",
-      cost: 9.99,
-      billingCycle: "monthly",
-      nextBillingDate: new Date(2023, 5, 5),
-      usage: 50,
-      value: 60,
-      paymentMethod: "Credit Card",
-      autoRenew: true,
-      notes: "Online fitness classes"
-    },
-    {
-      id: "6",
-      name: "Amazon Prime",
-      category: "Shopping",
-      cost: 139.00,
-      billingCycle: "annually",
-      nextBillingDate: new Date(2023, 11, 15),
-      usage: 70,
-      value: 85,
-      paymentMethod: "Credit Card",
-      autoRenew: true,
-      notes: "Includes Prime Video and Music"
-    },
-    {
-      id: "7",
-      name: "Coursera Plus",
-      category: "Education",
-      cost: 59.00,
-      billingCycle: "monthly",
-      nextBillingDate: new Date(2023, 6, 5),
-      usage: 40,
-      value: 75,
-      paymentMethod: "Credit Card",
-      autoRenew: true,
-      notes: "Unlimited access to courses"
-    },
-    {
-      id: "8",
-      name: "Notion Pro",
-      category: "Productivity",
-      cost: 8.00,
-      billingCycle: "monthly",
-      nextBillingDate: new Date(2023, 6, 12),
-      usage: 90,
-      value: 95,
-      paymentMethod: "Credit Card",
-      autoRenew: true,
-      notes: "Project management and notes"
-    },
-    {
-      id: "9",
-      name: "Xbox Game Pass",
-      category: "Gaming",
-      cost: 14.99,
-      billingCycle: "monthly",
-      nextBillingDate: new Date(2023, 6, 18),
-      usage: 65,
-      value: 80,
-      paymentMethod: "Credit Card",
-      autoRenew: true,
-      notes: "Includes EA Play"
-    },
-    {
-      id: "10",
-      name: "Google One",
-      category: "Cloud Storage",
-      cost: 9.99,
-      billingCycle: "monthly",
+  const [subscriptions, setSubscriptions] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  
+  // Fetch subscriptions from Supabase
+  useEffect(() => {
+    async function fetchSubscriptions() {
+      try {
+        setLoading(true)
+        
+        // Get the current user
+        const { data: { user } } = await supabaseClient.auth.getUser()
+        
+        if (!user) {
+          throw new Error('User not authenticated')
+        }
+        
+        // Fetch subscriptions from the database
+        const { data, error: fetchError } = await supabaseClient
+          .from('user_subscriptions')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('is_active', true)
+          .order('next_billing_date', { ascending: true })
+        
+        if (fetchError) {
+          throw fetchError
+        }
+        
+        // Transform the data to match our application's structure
+        const transformedData = data.map(sub => ({
+          id: sub.id,
+          name: sub.name,
+          category: sub.category || 'Other',
+          cost: parseFloat(sub.amount) || 0,
+          billingCycle: sub.billing_cycle || 'monthly',
+          nextBillingDate: sub.next_billing_date ? new Date(sub.next_billing_date) : new Date(),
+          usage: sub.usage_score || 50, // Default to 50% if not set
+          value: sub.value_score || 50, // Default to 50% if not set
+          paymentMethod: sub.payment_method || 'Credit Card',
+          autoRenew: sub.auto_renew !== false, // Default to true
+          notes: sub.notes || ''
+        }))
+        
+        setSubscriptions(transformedData)
+      } catch (err) {
+        console.error('Error fetching subscriptions:', err)
+        setError(err.message || 'Failed to load subscriptions')
+      } finally {
+        setLoading(false)
+      }
       nextBillingDate: new Date(2023, 6, 22),
       usage: 75,
       value: 70,
@@ -294,9 +226,61 @@ export function SubscriptionManager() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {subscriptions.map(subscription => (
-                    <SubscriptionCard key={subscription.id} subscription={subscription} />
-                  ))}
+                  {loading ? (
+                    // Loading state
+                    Array(3).fill(0).map((_, i) => (
+                      <div key={`skeleton-${i}`} className="p-4 border rounded-lg">
+                        <div className="flex justify-between items-start">
+                          <div className="space-y-2">
+                            <Skeleton className="h-5 w-32" />
+                            <Skeleton className="h-4 w-24" />
+                          </div>
+                          <Skeleton className="h-8 w-16 rounded-full" />
+                        </div>
+                        <div className="mt-4 space-y-2">
+                          <Skeleton className="h-4 w-full" />
+                          <Skeleton className="h-4 w-3/4" />
+                        </div>
+                      </div>
+                    ))
+                  ) : error ? (
+                    // Error state
+                    <Alert variant="destructive">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertTitle>Error</AlertTitle>
+                      <AlertDescription>{error}</AlertDescription>
+                    </Alert>
+                  ) : subscriptions.length === 0 ? (
+                    // Empty state
+                    <div className="text-center py-8">
+                      <p className="text-muted-foreground mb-4">You don't have any active subscriptions</p>
+                      <Button onClick={() => setShowAddForm(true)} variant="outline">
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add Your First Subscription
+                      </Button>
+                    </div>
+                  ) : (
+                    // Subscriptions list
+                    subscriptions.map(subscription => (
+                      <SubscriptionCard 
+                        key={subscription.id} 
+                        subscription={subscription} 
+                        onEdit={(sub) => {
+                          // Handle edit subscription
+                          setSelectedSubscription(sub);
+                          setShowAddForm(true);
+                        }}
+                        onDelete={(id) => {
+                          // Handle delete subscription
+                          if (confirm('Are you sure you want to delete this subscription?')) {
+                            deleteSubscription(id).then(() => {
+                              setSubscriptions(subscriptions.filter(s => s.id !== id));
+                            });
+                          }
+                        }}
+                      />
+                    ))
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -382,11 +366,33 @@ export function SubscriptionManager() {
       
       {showAddForm && (
         <SubscriptionForm 
-          onClose={() => setShowAddForm(false)} 
-          onSave={(subscription) => {
-            // In a real app, this would save to your database
-            console.log("Saving subscription:", subscription)
-            setShowAddForm(false)
+          subscription={selectedSubscription}
+          onClose={() => {
+            setShowAddForm(false);
+            setSelectedSubscription(null);
+          }} 
+          onSave={async (subscription) => {
+            try {
+              let result;
+              
+              if (subscription.id) {
+                // Update existing subscription
+                result = await updateSubscription(subscription);
+                setSubscriptions(subscriptions.map(s => 
+                  s.id === subscription.id ? { ...s, ...subscription } : s
+                ));
+              } else {
+                // Create new subscription
+                result = await createSubscription(subscription);
+                setSubscriptions([...subscriptions, { ...subscription, id: result.id }]);
+              }
+              
+              setShowAddForm(false);
+              setSelectedSubscription(null);
+            } catch (err) {
+              console.error('Error saving subscription:', err);
+              alert('Failed to save subscription. Please try again.');
+            }
           }} 
         />
       )}

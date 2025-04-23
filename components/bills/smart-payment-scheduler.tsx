@@ -86,6 +86,132 @@ const EXPENSE_CATEGORIES = [
   { name: "Other", color: "#c6dbef" }
 ]
 
+// Helper function to categorize expenses based on name
+const categorizeExpense = (name: string): string => {
+  const lowerName = name.toLowerCase()
+  
+  // Housing related
+  if (lowerName.includes('rent') || lowerName.includes('mortgage') || lowerName.includes('hoa') || lowerName.includes('property')) {
+    return 'Housing'
+  }
+  
+  // Utilities
+  if (lowerName.includes('electric') || lowerName.includes('water') || lowerName.includes('gas') || 
+      lowerName.includes('internet') || lowerName.includes('phone') || lowerName.includes('utility') || 
+      lowerName.includes('wifi') || lowerName.includes('cable') || lowerName.includes('broadband')) {
+    return 'Utilities'
+  }
+  
+  // Insurance
+  if (lowerName.includes('insurance') || lowerName.includes('coverage') || lowerName.includes('policy')) {
+    return 'Insurance'
+  }
+  
+  // Transportation
+  if (lowerName.includes('car') || lowerName.includes('auto') || lowerName.includes('vehicle') || 
+      lowerName.includes('gas') || lowerName.includes('fuel') || lowerName.includes('transportation') || 
+      lowerName.includes('uber') || lowerName.includes('lyft') || lowerName.includes('transit')) {
+    return 'Transportation'
+  }
+  
+  // Food
+  if (lowerName.includes('grocery') || lowerName.includes('food') || lowerName.includes('meal') || 
+      lowerName.includes('restaurant') || lowerName.includes('dining')) {
+    return 'Food'
+  }
+  
+  // Healthcare
+  if (lowerName.includes('health') || lowerName.includes('medical') || lowerName.includes('doctor') || 
+      lowerName.includes('dental') || lowerName.includes('pharmacy') || lowerName.includes('prescription')) {
+    return 'Healthcare'
+  }
+  
+  // Entertainment
+  if (lowerName.includes('entertainment') || lowerName.includes('movie') || lowerName.includes('game') || 
+      lowerName.includes('subscription') || lowerName.includes('streaming')) {
+    return 'Entertainment'
+  }
+  
+  // Education
+  if (lowerName.includes('tuition') || lowerName.includes('education') || lowerName.includes('school') || 
+      lowerName.includes('college') || lowerName.includes('university') || lowerName.includes('student')) {
+    return 'Education'
+  }
+  
+  // Debt Payments
+  if (lowerName.includes('loan') || lowerName.includes('debt') || lowerName.includes('credit card') || 
+      lowerName.includes('payment') || lowerName.includes('finance')) {
+    return 'Debt Payments'
+  }
+  
+  return 'Other'
+}
+
+// Helper function to categorize subscriptions based on name
+const categorizeSubscription = (name: string): string => {
+  const lowerName = name.toLowerCase()
+  
+  // Entertainment subscriptions
+  if (lowerName.includes('netflix') || lowerName.includes('hulu') || lowerName.includes('disney') || 
+      lowerName.includes('spotify') || lowerName.includes('apple music') || lowerName.includes('youtube') || 
+      lowerName.includes('hbo') || lowerName.includes('prime') || lowerName.includes('streaming')) {
+    return 'Entertainment'
+  }
+  
+  // Software subscriptions
+  if (lowerName.includes('adobe') || lowerName.includes('microsoft') || lowerName.includes('office') || 
+      lowerName.includes('software') || lowerName.includes('app') || lowerName.includes('cloud')) {
+    return 'Education'  // Software often categorized as education/productivity
+  }
+  
+  // Fitness subscriptions
+  if (lowerName.includes('gym') || lowerName.includes('fitness') || lowerName.includes('workout') || 
+      lowerName.includes('peloton') || lowerName.includes('exercise')) {
+    return 'Personal Care'
+  }
+  
+  // News and media
+  if (lowerName.includes('news') || lowerName.includes('magazine') || lowerName.includes('newspaper') || 
+      lowerName.includes('journal') || lowerName.includes('subscription')) {
+    return 'Entertainment'
+  }
+  
+  return 'Entertainment'  // Default for most subscriptions
+}
+
+// Helper function to calculate next occurrences of recurring bills
+const calculateNextOccurrences = (startDate: Date, frequency: string, count: number): Date[] => {
+  const dates: Date[] = []
+  const lowerFrequency = frequency.toLowerCase()
+  
+  for (let i = 1; i <= count; i++) {
+    const nextDate = new Date(startDate)
+    
+    if (lowerFrequency.includes('daily')) {
+      nextDate.setDate(startDate.getDate() + (i * 1))
+    } else if (lowerFrequency.includes('weekly')) {
+      nextDate.setDate(startDate.getDate() + (i * 7))
+    } else if (lowerFrequency.includes('bi-weekly') || lowerFrequency.includes('biweekly') || lowerFrequency.includes('fortnightly')) {
+      nextDate.setDate(startDate.getDate() + (i * 14))
+    } else if (lowerFrequency.includes('monthly')) {
+      nextDate.setMonth(startDate.getMonth() + (i * 1))
+    } else if (lowerFrequency.includes('quarterly') || lowerFrequency.includes('quarter')) {
+      nextDate.setMonth(startDate.getMonth() + (i * 3))
+    } else if (lowerFrequency.includes('semi-annual') || lowerFrequency.includes('semiannual') || lowerFrequency.includes('half-yearly')) {
+      nextDate.setMonth(startDate.getMonth() + (i * 6))
+    } else if (lowerFrequency.includes('annual') || lowerFrequency.includes('yearly')) {
+      nextDate.setFullYear(startDate.getFullYear() + (i * 1))
+    } else {
+      // Default to monthly if frequency is unknown
+      nextDate.setMonth(startDate.getMonth() + (i * 1))
+    }
+    
+    dates.push(nextDate)
+  }
+  
+  return dates
+}
+
 export function SmartPaymentScheduler() {
   const [bills, setBills] = useState<Bill[]>([])
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
@@ -93,6 +219,9 @@ export function SmartPaymentScheduler() {
   const [cashFlowProjection, setCashFlowProjection] = useState<CashFlowProjection[]>([])
   const [categoryExpenses, setCategoryExpenses] = useState<CategoryExpense[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saveSuccess, setSaveSuccess] = useState(false)
   const [activeTab, setActiveTab] = useState("calendar")
   const [selectedMonth, setSelectedMonth] = useState<Date>(new Date())
   const [monthlyIncome, setMonthlyIncome] = useState(5000) // Default monthly income
@@ -113,27 +242,68 @@ export function SmartPaymentScheduler() {
   const fetchData = async () => {
     try {
       setLoading(true)
+      setError(null)
       
-      // Fetch bills
+      // Get the current user
+      const { data: { user } } = await supabaseClient.auth.getUser()
+      
+      if (!user) {
+        setError("You must be logged in to view your payment schedule")
+        return
+      }
+      
+      // Fetch bills with proper filtering
       const { data: billsData, error: billsError } = await supabaseClient
         .from('bills')
         .select('*')
-        .eq('is_recurring', true)
+        .eq('user_id', user.id)
       
-      if (billsError) throw billsError
+      if (billsError) {
+        console.error("Error fetching bills:", billsError)
+        setError("Failed to load bills data")
+        return
+      }
       
-      // Fetch subscriptions
+      // Fetch subscriptions with proper filtering
       const { data: subsData, error: subsError } = await supabaseClient
         .from('subscriptions')
         .select('*')
+        .eq('user_id', user.id)
       
-      if (subsError) throw subsError
+      if (subsError) {
+        console.error("Error fetching subscriptions:", subsError)
+        setError("Failed to load subscription data")
+        return
+      }
       
-      setBills(billsData || [])
-      setSubscriptions(subsData || [])
+      // Fetch user income data
+      const { data: incomeData, error: incomeError } = await supabaseClient
+        .from('user_financial_profile')
+        .select('monthly_income')
+        .eq('user_id', user.id)
+        .single()
+      
+      if (!incomeError && incomeData && incomeData.monthly_income) {
+        setMonthlyIncome(incomeData.monthly_income)
+      }
+      
+      // Process and normalize the data
+      const normalizedBills = billsData?.map(bill => ({
+        ...bill,
+        category: bill.category || categorizeExpense(bill.name)
+      })) || []
+      
+      const normalizedSubscriptions = subsData?.map(sub => ({
+        ...sub,
+        category: sub.category || categorizeSubscription(sub.name)
+      })) || []
+      
+      setBills(normalizedBills)
+      setSubscriptions(normalizedSubscriptions)
       
     } catch (error) {
       console.error("Error fetching data:", error)
+      setError("An unexpected error occurred while loading your data")
     } finally {
       setLoading(false)
     }
@@ -149,57 +319,104 @@ export function SmartPaymentScheduler() {
     
     // Add bills to the schedule
     bills.forEach(bill => {
-      const dueDate = new Date(bill.due_date)
-      
-      // Check if the bill is due in the selected month
-      if (dueDate >= startDate && dueDate <= endDate) {
-        const dateKey = dueDate.toISOString().split('T')[0]
+      try {
+        // Skip bills with invalid dates
+        if (!bill.due_date) return
         
-        if (!scheduleMap.has(dateKey)) {
-          scheduleMap.set(dateKey, {
-            date: dateKey,
-            amount: 0,
-            items: []
+        const dueDate = new Date(bill.due_date)
+        if (isNaN(dueDate.getTime())) return
+        
+        // Check if the bill is due in the selected month
+        if (dueDate >= startDate && dueDate <= endDate) {
+          const dateKey = dueDate.toISOString().split('T')[0]
+          
+          if (!scheduleMap.has(dateKey)) {
+            scheduleMap.set(dateKey, {
+              date: dateKey,
+              amount: 0,
+              items: []
+            })
+          }
+          
+          const schedule = scheduleMap.get(dateKey)!
+          schedule.amount += bill.amount
+          schedule.items.push({
+            id: bill.id,
+            name: bill.name,
+            amount: bill.amount,
+            type: "bill",
+            category: bill.category || "Other"
           })
         }
         
-        const schedule = scheduleMap.get(dateKey)!
-        schedule.amount += bill.amount
-        schedule.items.push({
-          id: bill.id,
-          name: bill.name,
-          amount: bill.amount,
-          type: "bill",
-          category: bill.category || "Other"
-        })
+        // For recurring bills, also check if we need to add future occurrences
+        if (bill.is_recurring && bill.frequency) {
+          // Calculate next occurrences based on frequency
+          const nextDates = calculateNextOccurrences(dueDate, bill.frequency, 3) // Get next 3 occurrences
+          
+          // Add future occurrences that fall within this month
+          nextDates.forEach(nextDate => {
+            if (nextDate >= startDate && nextDate <= endDate && nextDate > dueDate) {
+              const dateKey = nextDate.toISOString().split('T')[0]
+              
+              if (!scheduleMap.has(dateKey)) {
+                scheduleMap.set(dateKey, {
+                  date: dateKey,
+                  amount: 0,
+                  items: []
+                })
+              }
+              
+              const schedule = scheduleMap.get(dateKey)!
+              schedule.amount += bill.amount
+              schedule.items.push({
+                id: bill.id,
+                name: bill.name,
+                amount: bill.amount,
+                type: "bill",
+                category: bill.category || "Other"
+              })
+            }
+          })
+        }
+      } catch (e) {
+        console.error("Error processing bill:", e)
       }
     })
     
     // Add subscriptions to the schedule
     subscriptions.forEach(subscription => {
-      const nextBillingDate = new Date(subscription.next_billing_date)
-      
-      // Check if the subscription is due in the selected month
-      if (nextBillingDate >= startDate && nextBillingDate <= endDate) {
-        const dateKey = nextBillingDate.toISOString().split('T')[0]
+      try {
+        // Skip subscriptions with invalid dates
+        if (!subscription.next_billing_date) return
         
-        if (!scheduleMap.has(dateKey)) {
-          scheduleMap.set(dateKey, {
-            date: dateKey,
-            amount: 0,
-            items: []
+        const nextBillingDate = new Date(subscription.next_billing_date)
+        if (isNaN(nextBillingDate.getTime())) return
+        
+        // Check if the subscription is due in the selected month
+        if (nextBillingDate >= startDate && nextBillingDate <= endDate) {
+          const dateKey = nextBillingDate.toISOString().split('T')[0]
+          
+          if (!scheduleMap.has(dateKey)) {
+            scheduleMap.set(dateKey, {
+              date: dateKey,
+              amount: 0,
+              items: []
+            })
+          }
+          
+          const schedule = scheduleMap.get(dateKey)!
+          schedule.amount += subscription.cost
+          schedule.items.push({
+            id: subscription.id,
+            name: subscription.name,
+            amount: subscription.cost,
+            type: "subscription",
+            category: subscription.category || "Other"
           })
         }
-        
-        const schedule = scheduleMap.get(dateKey)!
-        schedule.amount += subscription.cost
-        schedule.items.push({
-          id: subscription.id,
-          name: subscription.name,
-          amount: subscription.cost,
-          type: "subscription",
-          category: subscription.category || "Other"
-        })
+      } catch (e) {
+        console.error("Error processing subscription:", e)
       }
     })
     
@@ -209,27 +426,129 @@ export function SmartPaymentScheduler() {
     )
     
     // Apply optimization strategy
+    const optimizedSchedule = [...schedule]
+    
     if (optimizationStrategy === "early") {
-      // Move payments to the beginning of the month
-      schedule.forEach(item => {
-        const date = new Date(item.date)
-        date.setDate(5) // Move to the 5th of the month
-        item.date = date.toISOString().split('T')[0]
-      })
+      // Group payments to the beginning of the month to maximize cash flow later in the month
+      // First, calculate total expenses for the month
+      const totalExpenses = schedule.reduce((sum, item) => sum + item.amount, 0)
+      
+      // Determine if we have enough income to cover all expenses at the beginning
+      if (totalExpenses <= monthlyIncome * 0.5) {
+        // We can pay everything early
+        const earlyDate = new Date(startDate)
+        earlyDate.setDate(5) // 5th of the month
+        const earlyDateKey = earlyDate.toISOString().split('T')[0]
+        
+        // Create a combined payment for all items
+        const combinedItems: PaymentSchedule['items'] = []
+        schedule.forEach(item => {
+          combinedItems.push(...item.items)
+        })
+        
+        // Replace the schedule with a single optimized payment
+        return setPaymentSchedule([{
+          date: earlyDateKey,
+          amount: totalExpenses,
+          items: combinedItems
+        }])
+      } else {
+        // We need to prioritize which bills to pay early
+        // Sort items by importance/priority (using amount as a proxy for now)
+        const sortedItems = schedule.flatMap(item => item.items).sort((a, b) => b.amount - a.amount)
+        
+        // Create two payment dates - early and mid-month
+        const earlyDate = new Date(startDate)
+        earlyDate.setDate(5) // 5th of the month
+        const earlyDateKey = earlyDate.toISOString().split('T')[0]
+        
+        const midDate = new Date(startDate)
+        midDate.setDate(15) // 15th of the month
+        const midDateKey = midDate.toISOString().split('T')[0]
+        
+        // Allocate items to early or mid-month based on income
+        const earlyItems: PaymentSchedule['items'] = []
+        const midItems: PaymentSchedule['items'] = []
+        let earlyTotal = 0
+        let midTotal = 0
+        
+        sortedItems.forEach(item => {
+          if (earlyTotal + item.amount <= monthlyIncome * 0.5) {
+            earlyItems.push(item)
+            earlyTotal += item.amount
+          } else {
+            midItems.push(item)
+            midTotal += item.amount
+          }
+        })
+        
+        // Create the optimized schedule
+        const optimizedSchedule = [
+          {
+            date: earlyDateKey,
+            amount: earlyTotal,
+            items: earlyItems
+          },
+          {
+            date: midDateKey,
+            amount: midTotal,
+            items: midItems
+          }
+        ]
+        
+        return setPaymentSchedule(optimizedSchedule)
+      }
     } else if (optimizationStrategy === "late") {
-      // Move payments to the end of the month
+      // Group payments toward the end of the month to maximize interest earned
+      // Create a payment date near the end of the month
+      const lateDate = new Date(startDate)
+      lateDate.setDate(25) // 25th of the month
+      const lateDateKey = lateDate.toISOString().split('T')[0]
+      
+      // Create a combined payment for all items
+      const combinedItems: PaymentSchedule['items'] = []
       schedule.forEach(item => {
-        const date = new Date(item.date)
-        date.setDate(25) // Move to the 25th of the month
-        item.date = date.toISOString().split('T')[0]
+        combinedItems.push(...item.items)
       })
+      
+      // Replace the schedule with a single optimized payment
+      return setPaymentSchedule([{
+        date: lateDateKey,
+        amount: combinedItems.reduce((sum, item) => sum + item.amount, 0),
+        items: combinedItems
+      }])
+    } else if (optimizationStrategy === "balanced") {
+      // Distribute payments evenly throughout the month to maintain steady cash flow
+      // Group payments into weekly batches
+      const weeklySchedule: PaymentSchedule[] = []
+      
+      // Create 4 payment dates (roughly weekly)
+      for (let week = 0; week < 4; week++) {
+        const weekDate = new Date(startDate)
+        weekDate.setDate(7 * week + 7) // 7th, 14th, 21st, 28th
+        const weekDateKey = weekDate.toISOString().split('T')[0]
+        
+        weeklySchedule.push({
+          date: weekDateKey,
+          amount: 0,
+          items: []
+        })
+      }
+      
+      // Distribute items across the weeks
+      schedule.flatMap(item => item.items).forEach((item, index) => {
+        const weekIndex = index % 4
+        weeklySchedule[weekIndex].items.push(item)
+        weeklySchedule[weekIndex].amount += item.amount
+      })
+      
+      // Filter out weeks with no payments
+      const filteredSchedule = weeklySchedule.filter(week => week.items.length > 0)
+      
+      return setPaymentSchedule(filteredSchedule)
     }
     
-    // Re-sort after optimization
-    schedule.sort((a, b) => 
-      new Date(a.date).getTime() - new Date(b.date).getTime()
-    )
-    
+    // If no optimization strategy applied or it failed, use the original schedule
     setPaymentSchedule(schedule)
   }
 
@@ -375,6 +694,84 @@ export function SmartPaymentScheduler() {
 
   const handleStrategyChange = (value: string) => {
     setOptimizationStrategy(value)
+  }
+  
+  // Function to save the current payment schedule to Supabase
+  const saveSchedule = async () => {
+    try {
+      setSaving(true)
+      setSaveSuccess(false)
+      setError(null)
+      
+      // Get the current user
+      const { data: { user } } = await supabaseClient.auth.getUser()
+      
+      if (!user) {
+        setError("You must be logged in to save your payment schedule")
+        return
+      }
+      
+      // Format the schedule for storage
+      const scheduleToSave = {
+        user_id: user.id,
+        month: selectedMonth.toISOString().split('T')[0].substring(0, 7), // YYYY-MM format
+        strategy: optimizationStrategy,
+        schedule: paymentSchedule,
+        created_at: new Date().toISOString(),
+        total_amount: paymentSchedule.reduce((sum, item) => sum + item.amount, 0)
+      }
+      
+      // Check if a schedule already exists for this month
+      const { data: existingSchedule, error: checkError } = await supabaseClient
+        .from('payment_schedules')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('month', scheduleToSave.month)
+        .single()
+      
+      let saveError
+      
+      if (existingSchedule) {
+        // Update existing schedule
+        const { error } = await supabaseClient
+          .from('payment_schedules')
+          .update({
+            strategy: scheduleToSave.strategy,
+            schedule: scheduleToSave.schedule,
+            updated_at: scheduleToSave.created_at,
+            total_amount: scheduleToSave.total_amount
+          })
+          .eq('id', existingSchedule.id)
+        
+        saveError = error
+      } else {
+        // Insert new schedule
+        const { error } = await supabaseClient
+          .from('payment_schedules')
+          .insert(scheduleToSave)
+        
+        saveError = error
+      }
+      
+      if (saveError) {
+        console.error("Error saving schedule:", saveError)
+        setError("Failed to save your payment schedule")
+        return
+      }
+      
+      setSaveSuccess(true)
+      
+      // Reset success message after 3 seconds
+      setTimeout(() => {
+        setSaveSuccess(false)
+      }, 3000)
+      
+    } catch (error) {
+      console.error("Error in saveSchedule:", error)
+      setError("An unexpected error occurred while saving your schedule")
+    } finally {
+      setSaving(false)
+    }
   }
 
   const getCategoryColor = (categoryName: string) => {

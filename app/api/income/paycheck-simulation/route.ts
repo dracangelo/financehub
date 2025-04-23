@@ -61,6 +61,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Valid base salary is required" }, { status: 400 })
     }
     
+    // Ensure required tables exist
+    await ensureTablesExist(supabase)
+    
     // Get tax brackets for the specified country and region
     let taxBrackets = null;
     let taxError = null;
@@ -91,6 +94,25 @@ export async function POST(request: Request) {
     if (!taxBrackets || taxBrackets.length === 0) {
       console.log("Using default tax brackets as fallback");
       taxBrackets = DEFAULT_TAX_BRACKETS;
+      
+      // Try to insert default tax brackets if table exists but is empty
+      if (taxError === null) {
+        try {
+          const defaultBracketsWithCountry = DEFAULT_TAX_BRACKETS.map(bracket => ({
+            ...bracket,
+            country: "US",
+            region: "Federal"
+          }));
+          
+          await supabase
+            .from("tax_brackets")
+            .insert(defaultBracketsWithCountry);
+            
+          console.log("Inserted default tax brackets into database");
+        } catch (insertError) {
+          console.error("Error inserting default tax brackets:", insertError);
+        }
+      }
     }
     
     // Calculate pre-tax deductions
@@ -168,44 +190,33 @@ export async function POST(request: Request) {
       estimatedTakeHome
     }
     
-    // Try to save the simulation, but don't fail if it doesn't work
+    // Try to save the simulation
     try {
-      // Check if the table exists first
-      const { data: tableExists, error: tableCheckError } = await supabase
-        .from('paycheck_simulations')
-        .select('id')
-        .limit(1)
-        .maybeSingle();
+      const { data: savedSimulation, error: saveError } = await supabase
+        .from("paycheck_simulations")
+        .insert({
+          user_id: user.id,
+          base_salary: baseSalary,
+          deductions: {
+            preTax: preTaxDeductions,
+            postTax: postTaxDeductions
+          },
+          taxes: {
+            total: totalTax,
+            brackets: appliedBrackets
+          },
+          estimated_take_home: estimatedTakeHome,
+          created_at: new Date().toISOString()
+        })
+        .select()
+        .single();
       
-      // Only attempt to save if the table check didn't error
-      if (!tableCheckError) {
-        const { data: savedSimulation, error: saveError } = await supabase
-          .from("paycheck_simulations")
-          .insert({
-            user_id: user.id,
-            base_salary: baseSalary,
-            deductions: {
-              preTax: preTaxDeductions,
-              postTax: postTaxDeductions
-            },
-            taxes: {
-              total: totalTax,
-              brackets: appliedBrackets
-            },
-            estimated_take_home: estimatedTakeHome
-          })
-          .select()
-          .single();
-        
-        if (saveError) {
-          console.error("Error saving simulation:", saveError);
-          // Continue without failing if save fails
-        } else if (savedSimulation) {
-          simulationResult.id = savedSimulation.id;
-          console.log("Saved simulation with ID:", savedSimulation.id);
-        }
-      } else {
-        console.log("Skipping save as table check failed:", tableCheckError);
+      if (saveError) {
+        console.error("Error saving simulation:", saveError);
+        // Continue without failing if save fails
+      } else if (savedSimulation) {
+        simulationResult.id = savedSimulation.id;
+        console.log("Saved simulation with ID:", savedSimulation.id);
       }
     } catch (saveError) {
       console.error("Error during save attempt:", saveError);
@@ -222,27 +233,86 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const cookieStore = cookies()
-  const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
-  
-  const { data: { user } } = await supabase.auth.getUser()
-  
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  try {
+    const cookieStore = cookies()
+    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+    
+    // Ensure required tables exist
+    await ensureTablesExist(supabase)
+    
+    // Get the user's saved simulations
+    const { data: simulations, error } = await supabase
+      .from("paycheck_simulations")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(5)
+    
+    if (error) {
+      console.error("Error fetching saved simulations:", error)
+      
+      // If table doesn't exist, return empty array
+      if (error.code === "42P01") {
+        return NextResponse.json([])
+      }
+      
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    
+    return NextResponse.json(simulations || [])
+  } catch (error) {
+    console.error("Error fetching paycheck simulations:", error)
+    return NextResponse.json({ error: "Error fetching paycheck simulations" }, { status: 500 })
   }
-  
-  // Get the user's saved simulations
-  const { data: simulations, error } = await supabase
-    .from("paycheck_simulations")
-    .select("*")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(5)
-  
-  if (error) {
-    console.error("Error fetching saved simulations:", error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+}
+
+// Helper function to ensure required tables exist
+async function ensureTablesExist(supabase: any) {
+  try {
+    // Check if tax_brackets table exists
+    const { error: taxBracketsError } = await supabase
+      .from("tax_brackets")
+      .select("id", { count: 'exact', head: true })
+      .limit(1)
+    
+    if (taxBracketsError && taxBracketsError.code === "42P01") {
+      // Create tax_brackets table using RPC
+      await supabase.rpc('create_tax_brackets_table')
+      console.log("Created tax_brackets table")
+      
+      // Insert default tax brackets
+      const defaultBracketsWithCountry = DEFAULT_TAX_BRACKETS.map(bracket => ({
+        ...bracket,
+        country: "US",
+        region: "Federal"
+      }));
+      
+      await supabase
+        .from("tax_brackets")
+        .insert(defaultBracketsWithCountry);
+        
+      console.log("Inserted default tax brackets into database");
+    }
+    
+    // Check if paycheck_simulations table exists
+    const { error: simulationsError } = await supabase
+      .from("paycheck_simulations")
+      .select("id", { count: 'exact', head: true })
+      .limit(1)
+    
+    if (simulationsError && simulationsError.code === "42P01") {
+      // Create paycheck_simulations table using RPC
+      await supabase.rpc('create_paycheck_simulations_table')
+      console.log("Created paycheck_simulations table")
+    }
+  } catch (error) {
+    console.error("Error ensuring tables exist:", error)
+    // Continue execution even if table creation fails
   }
-  
-  return NextResponse.json(simulations || [])
 }

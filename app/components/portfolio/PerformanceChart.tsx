@@ -24,6 +24,24 @@ export function PerformanceChart({
   startValue,
   endValue
 }: PerformanceChartProps) {
+  // Handle empty data
+  if (!performanceData || performanceData.length === 0) {
+    return (
+      <Card className="col-span-3">
+        <CardHeader>
+          <CardTitle>Portfolio Performance</CardTitle>
+          <CardDescription>
+            Track your investment performance over time
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center justify-center py-10 text-center">
+          <p className="text-muted-foreground mb-2">No performance data available.</p>
+          <p className="text-sm text-muted-foreground">Add investments to your portfolio to see performance metrics.</p>
+        </CardContent>
+      </Card>
+    )
+  }
+  
   const formattedData = performanceData.map(item => ({
     ...item,
     date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),

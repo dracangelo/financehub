@@ -44,6 +44,7 @@ interface BillsListProps {
 export function BillsList({ showCalendarView = false }: BillsListProps) {
   const router = useRouter()
   const [bills, setBills] = useState<Bill[]>([])
+  const [filteredBills, setFilteredBills] = useState<Bill[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [openDialog, setOpenDialog] = useState(false)
@@ -52,23 +53,100 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
   const [billToDelete, setBillToDelete] = useState<string | null>(null)
   const [openPayDialog, setOpenPayDialog] = useState(false)
   const [billToPay, setBillToPay] = useState<Bill | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [sortField, setSortField] = useState<'name' | 'amount' | 'next_payment_date'>('next_payment_date')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
+  const [statusFilter, setStatusFilter] = useState<string | null>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
+  // Fetch bills on component mount
   useEffect(() => {
-    const fetchBills = async () => {
-      try {
-        const data = await getBills()
-        console.log("Fetched bills:", data)
-        setBills(data)
-      } catch (err) {
-        setError("Error fetching bills")
-        console.error(err)
-      } finally {
-        setLoading(false)
-      }
-    }
-
     fetchBills()
   }, [])
+
+  // Apply filters and sorting whenever bills, search query, or filters change
+  useEffect(() => {
+    applyFiltersAndSort()
+  }, [bills, searchQuery, sortField, sortDirection, statusFilter])
+
+  const fetchBills = async () => {
+    try {
+      setLoading(true)
+      const data = await getBills()
+      
+      // Validate and sanitize the data
+      const validatedBills = data.map((bill: any) => ({
+        ...bill,
+        amount: typeof bill.amount === 'number' ? bill.amount : parseFloat(bill.amount) || 0,
+        next_payment_date: bill.next_payment_date || new Date().toISOString().split('T')[0],
+        is_recurring: !!bill.is_recurring,
+        billing_frequency: bill.billing_frequency || 'monthly',
+        auto_pay: !!bill.auto_pay
+      }))
+      
+      setBills(validatedBills)
+    } catch (err) {
+      console.error("Error fetching bills:", err)
+      setError(typeof err === 'string' ? err : "Failed to load bills. Please try again.")
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+  const refreshBills = async () => {
+    setIsRefreshing(true)
+    await fetchBills()
+    setIsRefreshing(false)
+  }
+
+  // Apply filters and sorting to bills
+  const applyFiltersAndSort = () => {
+    let result = [...bills]
+    
+    // Apply search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase()
+      result = result.filter(bill => 
+        bill.name.toLowerCase().includes(query) || 
+        (bill.billers?.name && bill.billers.name.toLowerCase().includes(query))
+      )
+    }
+    
+    // Apply status filter
+    if (statusFilter) {
+      result = result.filter(bill => getBillStatus(bill) === statusFilter)
+    }
+    
+    // Apply sorting
+    result.sort((a, b) => {
+      let comparison = 0
+      
+      switch (sortField) {
+        case 'name':
+          comparison = a.name.localeCompare(b.name)
+          break
+        case 'amount':
+          comparison = a.amount - b.amount
+          break
+        case 'next_payment_date':
+          // Handle invalid dates by treating them as latest
+          const dateA = new Date(a.next_payment_date)
+          const dateB = new Date(b.next_payment_date)
+          const validDateA = !isNaN(dateA.getTime())
+          const validDateB = !isNaN(dateB.getTime())
+          
+          if (!validDateA && !validDateB) comparison = 0
+          else if (!validDateA) comparison = 1
+          else if (!validDateB) comparison = -1
+          else comparison = dateA.getTime() - dateB.getTime()
+          break
+      }
+      
+      return sortDirection === 'asc' ? comparison : -comparison
+    })
+    
+    setFilteredBills(result)
+  }
 
   const handleAddBill = () => {
     setSelectedBill(null)
@@ -108,9 +186,7 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
 
     try {
       await markBillAsPaid(billToPay.id, new FormData())
-      // Refresh bills list
-      const data = await getBills()
-      setBills(data)
+      await refreshBills()
       setOpenPayDialog(false)
       setBillToPay(null)
     } catch (err) {
@@ -119,13 +195,18 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
   }
 
   const handleSaveBill = async () => {
-    // Refresh bills list
-    try {
-      const data = await getBills()
-      setBills(data)
-      setOpenDialog(false)
-    } catch (err) {
-      console.error("Error refreshing bills:", err)
+    await refreshBills()
+    setOpenDialog(false)
+  }
+  
+  const handleSortChange = (field: 'name' | 'amount' | 'next_payment_date') => {
+    if (field === sortField) {
+      // Toggle direction if clicking the same field
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      // Set new field and default to ascending
+      setSortField(field)
+      setSortDirection('asc')
     }
   }
 
@@ -224,50 +305,150 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h2 className="text-3xl font-bold tracking-tight">Bills</h2>
-        <Button onClick={handleAddBill}>
-          <Plus className="mr-2 h-4 w-4" /> Add Bill
-        </Button>
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Bills</h2>
+          <p className="text-muted-foreground">
+            Manage your bills and recurring payments.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {!showCalendarView && (
+            <Button variant="outline" onClick={() => router.push("/bills/calendar")}>
+              <Calendar className="mr-2 h-4 w-4" />
+              Calendar View
+            </Button>
+          )}
+          <Button onClick={handleAddBill}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Bill
+          </Button>
+        </div>
+      </div>
+      
+      {/* Search and filter controls */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="relative flex-grow">
+          <input
+            type="text"
+            placeholder="Search bills..."
+            className="w-full px-4 py-2 border rounded-md"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        <div className="flex gap-2">
+          <select
+            className="px-3 py-2 border rounded-md bg-background"
+            value={statusFilter || ''}
+            onChange={(e) => setStatusFilter(e.target.value || null)}
+          >
+            <option value="">All Statuses</option>
+            <option value="paid">Paid</option>
+            <option value="unpaid">Unpaid</option>
+            <option value="overdue">Overdue</option>
+            <option value="upcoming">Upcoming</option>
+          </select>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={refreshBills}
+            disabled={isRefreshing}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={`${isRefreshing ? 'animate-spin' : ''}`}
+            >
+              <path d="M21 12a9 9 0 0 1-9 9" />
+              <path d="M3 12a9 9 0 0 1 9-9" />
+              <path d="M21 12a9 9 0 0 0-9 9" />
+              <path d="M3 12a9 9 0 0 0 9-9" />
+            </svg>
+          </Button>
+        </div>
       </div>
 
-      {loading ? (
-        <Skeleton className="h-[400px] w-full" />
-      ) : error ? (
-        <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md">{error}</div>
-      ) : bills.length === 0 ? (
-        <Card>
-          <CardContent className="p-6">
-            <div className="text-center">
-              <h3 className="text-lg font-medium">No bills found</h3>
-              <p className="text-muted-foreground">Add your first bill to get started</p>
-              <Button onClick={handleAddBill} className="mt-4">
-                <Plus className="mr-2 h-4 w-4" /> Add Bill
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+      {showCalendarView ? (
+        <BillsCalendar bills={filteredBills} loading={loading} error={error} />
       ) : (
         <Card>
-          <CardHeader>
-            <CardTitle>Upcoming Bills</CardTitle>
-            <CardDescription>Manage your recurring and one-time bills</CardDescription>
-          </CardHeader>
-          <CardContent>
+          <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Due Date</TableHead>
+                  <TableHead onClick={() => handleSortChange('name')} className="cursor-pointer hover:bg-muted/50">
+                    <div className="flex items-center">
+                      Bill
+                      {sortField === 'name' && (
+                        <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                      )}
+                    </div>
+                  </TableHead>
+                  <TableHead onClick={() => handleSortChange('amount')} className="cursor-pointer hover:bg-muted/50">
+                    <div className="flex items-center">
+                      Amount
+                      {sortField === 'amount' && (
+                        <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                      )}
+                    </div>
+                  </TableHead>
+                  <TableHead onClick={() => handleSortChange('next_payment_date')} className="cursor-pointer hover:bg-muted/50">
+                    <div className="flex items-center">
+                      Due Date
+                      {sortField === 'next_payment_date' && (
+                        <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                      )}
+                    </div>
+                  </TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Recurring</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {bills.map((bill) => (
+                {loading ? (
+                  // Loading state
+                  Array(3).fill(0).map((_, i) => (
+                    <TableRow key={`loading-${i}`}>
+                      <TableCell><Skeleton className="h-6 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-16" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-16" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-20" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="h-6 w-24 ml-auto" /></TableCell>
+                    </TableRow>
+                  ))
+                ) : filteredBills.length === 0 ? (
+                  // Empty state
+                  <TableRow>
+                    <TableCell colSpan={6} className="h-24 text-center">
+                      <div className="flex flex-col items-center justify-center">
+                        <p className="mb-2 text-muted-foreground">
+                          {searchQuery || statusFilter 
+                            ? "No bills match your search criteria" 
+                            : "No bills found. Add your first bill to get started."}
+                        </p>
+                        {!searchQuery && !statusFilter && (
+                          <Button onClick={handleAddBill} variant="outline" size="sm">
+                            <Plus className="mr-2 h-4 w-4" />
+                            Add Your First Bill
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  // Bills list
+                  filteredBills.map((bill) => (
                   <TableRow key={bill.id}>
                     <TableCell>
                       <div className="font-medium">{bill.name}</div>
@@ -311,6 +492,12 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
               </TableBody>
             </Table>
           </CardContent>
+          {!loading && filteredBills.length > 0 && (
+            <div className="p-4 border-t text-sm text-muted-foreground">
+              Showing {filteredBills.length} of {bills.length} bills
+              {(searchQuery || statusFilter) && " (filtered)"}
+            </div>
+          )}
         </Card>
       )}
 

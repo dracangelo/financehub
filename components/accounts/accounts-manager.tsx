@@ -2,8 +2,9 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -31,16 +32,23 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { formatCurrency } from "@/lib/utils/formatting"
 import { useToast } from "@/hooks/use-toast"
 import { createAccount, updateAccount, deleteAccount } from "@/app/actions/accounts"
-import { Plus, Edit, Trash2, Loader2, Search, CreditCard, Wallet, Building, PiggyBank, DollarSign } from "lucide-react"
+import { Plus, Edit, Trash2, Loader2, Search, CreditCard, Wallet, Building, PiggyBank, DollarSign, ArrowUpDown, Filter, RefreshCw, ExternalLink, BarChart, Eye } from "lucide-react"
+
+// Define account types for better type safety
+type AccountType = 'checking' | 'savings' | 'credit' | 'investment' | 'loan' | 'cash' | 'other';
+type CurrencyCode = 'USD' | 'EUR' | 'GBP' | 'JPY' | 'CAD' | 'AUD' | 'CHF' | 'CNY' | 'INR' | 'BRL';
 
 interface Account {
   id: string
   name: string
-  type: string
+  type: AccountType | string // Using union type to support both predefined types and custom types
   balance: number
-  currency: string
+  currency: CurrencyCode | string // Using union type to support both predefined currencies and custom ones
   is_active: boolean
   institution?: string
   account_number?: string
@@ -49,10 +57,34 @@ interface Account {
   icon?: string
   created_at: string
   updated_at: string
+  // Track transaction counts for quick summary (optional)
+  transaction_count?: number
+  // Track last transaction date (optional)
+  last_transaction_date?: string
 }
 
 interface AccountsManagerProps {
   initialAccounts: Account[]
+}
+
+interface AccountFormData {
+  name: string
+  type: string
+  balance: string
+  currency: string
+  institution: string
+  account_number: string
+  is_active: boolean
+  color: string
+  notes: string
+}
+
+interface AccountSummary {
+  totalBalance: number
+  accountCount: number
+  activeAccountCount: number
+  currencyBreakdown: Record<string, number>
+  typeBreakdown: Record<string, number>
 }
 
 export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
@@ -60,14 +92,21 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
   const { toast } = useToast()
   const [accounts, setAccounts] = useState<Account[]>(initialAccounts)
   const [isLoading, setIsLoading] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
+  const [filterType, setFilterType] = useState<string | null>(null)
+  const [filterActive, setFilterActive] = useState<boolean | null>(null)
+  const [sortField, setSortField] = useState<'name' | 'balance' | 'type' | 'created_at'>('name')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [currentAccount, setCurrentAccount] = useState<Account | null>(null)
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
+  const [currentView, setCurrentView] = useState<'grid' | 'table'>('grid')
 
   // Form state
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<AccountFormData>({
     name: "",
     type: "checking",
     balance: "0.00",
@@ -79,19 +118,93 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
     notes: "",
   })
 
-  // Filter accounts based on search term
-  const filteredAccounts = accounts.filter((account) => {
-    if (!searchTerm) return true
+  // Calculate account summary statistics
+  const accountSummary = useMemo<AccountSummary>(() => {
+    const summary: AccountSummary = {
+      totalBalance: 0,
+      accountCount: accounts.length,
+      activeAccountCount: 0,
+      currencyBreakdown: {},
+      typeBreakdown: {}
+    };
+    
+    accounts.forEach(account => {
+      // Only include active accounts in financial calculations
+      if (account.is_active) {
+        summary.totalBalance += account.balance;
+        summary.activeAccountCount++;
+        
+        // Add to currency breakdown
+        if (!summary.currencyBreakdown[account.currency]) {
+          summary.currencyBreakdown[account.currency] = 0;
+        }
+        summary.currencyBreakdown[account.currency] += account.balance;
+        
+        // Add to type breakdown
+        if (!summary.typeBreakdown[account.type]) {
+          summary.typeBreakdown[account.type] = 0;
+        }
+        summary.typeBreakdown[account.type] += account.balance;
+      }
+    });
+    
+    return summary;
+  }, [accounts]);
+  
+  // Filter and sort accounts based on search term, filters, and sort options
+  const filteredAndSortedAccounts = useMemo(() => {
+    // First, filter the accounts
+    let result = accounts.filter((account) => {
+      // Apply search term filter
+      if (searchTerm) {
+        const searchLower = searchTerm.toLowerCase();
+        const matchesSearch = 
+          account.name.toLowerCase().includes(searchLower) ||
+          account.type.toLowerCase().includes(searchLower) ||
+          (account.institution && account.institution.toLowerCase().includes(searchLower));
+          
+        if (!matchesSearch) return false;
+      }
+      
+      // Apply account type filter
+      if (filterType && account.type !== filterType) {
+        return false;
+      }
+      
+      // Apply active status filter
+      if (filterActive !== null && account.is_active !== filterActive) {
+        return false;
+      }
+      
+      return true;
+    });
+    
+    // Then, sort the filtered accounts
+    return result.sort((a, b) => {
+      let comparison = 0;
+      
+      switch (sortField) {
+        case 'name':
+          comparison = a.name.localeCompare(b.name);
+          break;
+        case 'balance':
+          comparison = a.balance - b.balance;
+          break;
+        case 'type':
+          comparison = a.type.localeCompare(b.type);
+          break;
+        case 'created_at':
+          comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          break;
+        default:
+          comparison = 0;
+      }
+      
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+  }, [accounts, searchTerm, filterType, filterActive, sortField, sortDirection]);
 
-    const searchLower = searchTerm.toLowerCase()
-    return (
-      account.name.toLowerCase().includes(searchLower) ||
-      account.type.toLowerCase().includes(searchLower) ||
-      (account.institution && account.institution.toLowerCase().includes(searchLower))
-    )
-  })
-
-  // Reset form data
+  // Reset form data and validation errors
   const resetFormData = () => {
     setFormData({
       name: "",
@@ -103,8 +216,32 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
       is_active: true,
       color: "#3b82f6",
       notes: "",
-    })
+    });
+    setValidationErrors({});
   }
+  
+  // Refresh accounts data
+  const refreshAccounts = useCallback(async () => {
+    try {
+      setIsRefreshing(true);
+      // In a real implementation, this would fetch fresh data from the server
+      // For now, we'll just simulate a refresh delay
+      await new Promise(resolve => setTimeout(resolve, 800));
+      toast({
+        title: "Accounts refreshed",
+        description: "Your account data has been updated.",
+      });
+    } catch (error) {
+      console.error("Error refreshing accounts:", error);
+      toast({
+        title: "Refresh failed",
+        description: "Could not refresh account data. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [toast]);
 
   // Open edit dialog
   const openEditDialog = (account: Account) => {
@@ -151,76 +288,168 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
     setFormData({ ...formData, [name]: checked })
   }
 
+  // Validate form data
+  const validateForm = () => {
+    const errors: Record<string, string> = {};
+    
+    // Required fields
+    if (!formData.name.trim()) {
+      errors.name = "Account name is required";
+    } else if (formData.name.length > 50) {
+      errors.name = "Account name must be less than 50 characters";
+    }
+    
+    // Balance validation
+    const balanceNum = Number(formData.balance);
+    if (isNaN(balanceNum)) {
+      errors.balance = "Balance must be a valid number";
+    }
+    
+    // Account number validation (if provided)
+    if (formData.account_number && !/^\d{1,4}$/.test(formData.account_number)) {
+      errors.account_number = "Please enter up to 4 digits only";
+    }
+    
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+  
   // Create account
   const handleCreateAccount = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoading(true)
+    e.preventDefault();
+    
+    // Validate form data before submission
+    if (!validateForm()) {
+      toast({
+        title: "Validation Error",
+        description: "Please correct the errors in the form.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setIsLoading(true);
 
     try {
-      const formDataObj = new FormData()
+      const formDataObj = new FormData();
 
       Object.entries(formData).forEach(([key, value]) => {
-        formDataObj.append(key, String(value))
-      })
+        formDataObj.append(key, String(value));
+      });
 
-      const newAccount = await createAccount(formDataObj)
+      const newAccount = await createAccount(formDataObj);
 
-      setAccounts([...accounts, newAccount])
-      setIsCreateDialogOpen(false)
-      resetFormData()
+      setAccounts([...accounts, newAccount]);
+      setIsCreateDialogOpen(false);
+      resetFormData();
 
       toast({
         title: "Account created",
         description: "Your account has been added successfully.",
-      })
+      });
+      
+      // Refresh the account list to ensure we have the latest data
+      await refreshAccounts();
     } catch (error) {
-      console.error("Error creating account:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to create account. Please try again.",
-        variant: "destructive",
-      })
+      console.error("Error creating account:", error);
+      
+      // Handle specific error cases
+      if (error instanceof Error) {
+        if (error.message.includes("duplicate")) {
+          toast({
+            title: "Duplicate Account",
+            description: "An account with this name already exists.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Error",
+            description: error.message,
+            variant: "destructive",
+          });
+        }
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to create account. Please try again.",
+          variant: "destructive",
+        });
+      }
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
   }
 
   // Update account
   const handleUpdateAccount = async (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
 
-    if (!currentAccount) return
+    if (!currentAccount) return;
+    
+    // Validate form data before submission
+    if (!validateForm()) {
+      toast({
+        title: "Validation Error",
+        description: "Please correct the errors in the form.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-    setIsLoading(true)
+    setIsLoading(true);
 
     try {
-      const formDataObj = new FormData()
+      const formDataObj = new FormData();
 
       Object.entries(formData).forEach(([key, value]) => {
-        formDataObj.append(key, String(value))
-      })
+        formDataObj.append(key, String(value));
+      });
 
-      const updatedAccount = await updateAccount(currentAccount.id, formDataObj)
+      const updatedAccount = await updateAccount(currentAccount.id, formDataObj);
 
-      setAccounts(accounts.map((account) => (account.id === currentAccount.id ? updatedAccount : account)))
-
-      setIsEditDialogOpen(false)
-      setCurrentAccount(null)
-      resetFormData()
+      // Update the accounts array with the updated account
+      setAccounts(
+        accounts.map((account) => (account.id === currentAccount.id ? updatedAccount : account))
+      );
+      
+      setIsEditDialogOpen(false);
+      setCurrentAccount(null);
+      resetFormData();
 
       toast({
         title: "Account updated",
         description: "Your account has been updated successfully.",
-      })
+      });
+      
+      // Refresh accounts to ensure we have the latest data
+      await refreshAccounts();
     } catch (error) {
-      console.error("Error updating account:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to update account. Please try again.",
-        variant: "destructive",
-      })
+      console.error("Error updating account:", error);
+      
+      // Handle specific error cases
+      if (error instanceof Error) {
+        if (error.message.includes("duplicate")) {
+          toast({
+            title: "Duplicate Account",
+            description: "An account with this name already exists.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Error",
+            description: error.message,
+            variant: "destructive",
+          });
+        }
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to update account. Please try again.",
+          variant: "destructive",
+        });
+      }
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
   }
 
@@ -287,22 +516,76 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <CardTitle>Accounts</CardTitle>
-            <CardDescription>Manage your financial accounts</CardDescription>
+    <div className="space-y-6">
+      {/* Account Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Balance</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatCurrency(accountSummary.totalBalance)}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Across {accountSummary.activeAccountCount} active accounts
+            </p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Account Types</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{Object.keys(accountSummary.typeBreakdown).length}</div>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {Object.keys(accountSummary.typeBreakdown).map(type => (
+                <Badge key={type} variant="outline" className="capitalize">
+                  {type}
+                </Badge>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Currencies</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{Object.keys(accountSummary.currencyBreakdown).length}</div>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {Object.keys(accountSummary.currencyBreakdown).map(currency => (
+                <Badge key={currency} variant="secondary" className="font-mono">
+                  {currency}
+                </Badge>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+      
+      {/* Main Accounts Card */}
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <CardTitle>Accounts</CardTitle>
+              <CardDescription>Manage your financial accounts</CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="icon" onClick={refreshAccounts} disabled={isRefreshing}>
+                <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+              </Button>
+              <Button onClick={() => setIsCreateDialogOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Account
+              </Button>
+            </div>
           </div>
-          <Button onClick={() => setIsCreateDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Account
-          </Button>
-        </div>
-      </CardHeader>
+        </CardHeader>
       <CardContent>
-        <div className="mb-4">
-          <div className="relative">
+        <div className="flex flex-col md:flex-row items-start md:items-center gap-4 mb-4">
+          <div className="relative flex-1">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               type="search"
@@ -311,6 +594,55 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
+          </div>
+          
+          <div className="flex flex-wrap gap-2">
+            <Select value={filterType || "all"} onValueChange={(value) => setFilterType(value === "all" ? null : value)}>
+              <SelectTrigger className="w-[180px]">
+                <div className="flex items-center gap-2">
+                  <Filter className="h-4 w-4" />
+                  <SelectValue placeholder="Account Type" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="checking">Checking</SelectItem>
+                <SelectItem value="savings">Savings</SelectItem>
+                <SelectItem value="credit">Credit</SelectItem>
+                <SelectItem value="investment">Investment</SelectItem>
+                <SelectItem value="loan">Loan</SelectItem>
+                <SelectItem value="cash">Cash</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            <Select 
+              value={filterActive === null ? "all" : filterActive ? "active" : "inactive"}
+              onValueChange={(value) => {
+                if (value === "all") setFilterActive(null);
+                else setFilterActive(value === "active");
+              }}
+            >
+              <SelectTrigger className="w-[150px]">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => {
+                setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+              }}
+              className="relative"
+            >
+              <ArrowUpDown className="h-4 w-4" />
+              <span className="sr-only">Toggle sort direction</span>
+            </Button>
           </div>
         </div>
 
@@ -336,16 +668,16 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
                     </div>
                   </TableCell>
                 </TableRow>
-              ) : filteredAccounts.length === 0 ? (
+              ) : filteredAndSortedAccounts.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="h-24 text-center">
-                    {searchTerm
+                    {searchTerm || filterType || filterActive !== null
                       ? "No matching accounts found."
                       : "No accounts found. Add your first account to get started."}
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredAccounts.map((account) => (
+                filteredAndSortedAccounts.map((account: Account) => (
                   <TableRow key={account.id}>
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-2">
@@ -387,19 +719,19 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
       </CardContent>
       <CardFooter className="flex justify-between">
         <div className="text-sm text-muted-foreground">
-          {filteredAccounts.length} {filteredAccounts.length === 1 ? "account" : "accounts"}
+          {filteredAndSortedAccounts.length} {filteredAndSortedAccounts.length === 1 ? "account" : "accounts"} {searchTerm || filterType || filterActive !== null ? "(filtered)" : ""}
         </div>
       </CardFooter>
 
       {/* Create Account Dialog */}
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[500px] h-auto max-h-[90vh] flex flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle>Add New Account</DialogTitle>
             <DialogDescription>Enter the details of your financial account.</DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleCreateAccount}>
-            <div className="grid gap-4 py-4">
+          <form onSubmit={handleCreateAccount} className="flex flex-col h-full overflow-hidden">
+            <div className="grid gap-4 py-4 overflow-y-auto pr-4 flex-grow max-h-[calc(90vh-10rem)] scrollbar-thin scrollbar-thumb-rounded scrollbar-track-transparent scrollbar-thumb-gray-300 hover:scrollbar-thumb-gray-400">
               <div className="grid gap-2">
                 <Label htmlFor="name">
                   Account Name <span className="text-red-500">*</span>
@@ -487,7 +819,11 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
                   maxLength={4}
                   value={formData.account_number}
                   onChange={handleInputChange}
+                  className={validationErrors.account_number ? "border-red-500" : ""}
                 />
+                {validationErrors.account_number && (
+                  <p className="text-sm text-red-500 mt-1">{validationErrors.account_number}</p>
+                )}
               </div>
 
               <div className="grid gap-2">
@@ -525,7 +861,7 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
                 <Label htmlFor="is_active">Active Account</Label>
               </div>
             </div>
-            <DialogFooter>
+            <DialogFooter className="flex-shrink-0 py-2 mt-2 border-t sticky bottom-0 bg-background z-10">
               <Button
                 type="button"
                 variant="outline"
@@ -554,25 +890,27 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
 
       {/* Edit Account Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[500px] h-auto max-h-[90vh] flex flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle>Edit Account</DialogTitle>
             <DialogDescription>Update the details of your financial account.</DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleUpdateAccount}>
-            <div className="grid gap-4 py-4">
+          <form onSubmit={handleUpdateAccount} className="flex flex-col h-full overflow-hidden">
+            <div className="grid gap-4 py-4 overflow-y-auto pr-4 flex-grow max-h-[calc(90vh-10rem)] scrollbar-thin scrollbar-thumb-rounded scrollbar-track-transparent scrollbar-thumb-gray-300 hover:scrollbar-thumb-gray-400">
               <div className="grid gap-2">
-                <Label htmlFor="edit-name">
-                  Account Name <span className="text-red-500">*</span>
-                </Label>
+                <Label htmlFor="edit-name">Account Name</Label>
                 <Input
                   id="edit-name"
                   name="name"
-                  placeholder="e.g., Checking Account"
+                  placeholder="e.g., Chase Checking"
                   value={formData.name}
                   onChange={handleInputChange}
                   required
+                  className={validationErrors.name ? "border-red-500" : ""}
                 />
+                {validationErrors.name && (
+                  <p className="text-sm text-red-500 mt-1">{validationErrors.name}</p>
+                )}
               </div>
 
               <div className="grid gap-2">
@@ -596,9 +934,7 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="edit-balance">
-                  Current Balance <span className="text-red-500">*</span>
-                </Label>
+                <Label htmlFor="edit-balance">Current Balance</Label>
                 <Input
                   id="edit-balance"
                   name="balance"
@@ -608,7 +944,11 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
                   value={formData.balance}
                   onChange={handleInputChange}
                   required
+                  className={validationErrors.balance ? "border-red-500" : ""}
                 />
+                {validationErrors.balance && (
+                  <p className="text-sm text-red-500 mt-1">{validationErrors.balance}</p>
+                )}
               </div>
 
               <div className="grid gap-2">
@@ -648,7 +988,11 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
                   maxLength={4}
                   value={formData.account_number}
                   onChange={handleInputChange}
+                  className={validationErrors.account_number ? "border-red-500" : ""}
                 />
+                {validationErrors.account_number && (
+                  <p className="text-sm text-red-500 mt-1">{validationErrors.account_number}</p>
+                )}
               </div>
 
               <div className="grid gap-2">
@@ -686,7 +1030,7 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
                 <Label htmlFor="edit-is_active">Active Account</Label>
               </div>
             </div>
-            <DialogFooter>
+            <DialogFooter className="flex-shrink-0 py-2 mt-2 border-t sticky bottom-0 bg-background z-10">
               <Button
                 type="button"
                 variant="outline"
@@ -744,6 +1088,6 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
         </AlertDialogContent>
       </AlertDialog>
     </Card>
-  )
+  </div>
+)
 }
-

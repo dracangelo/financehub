@@ -1,14 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { formatCurrency, formatDate } from "@/lib/utils/formatting"
+import { formatCurrency, formatDate, formatNumber } from "@/lib/utils/formatting"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { ArrowUpRight, ArrowDownRight, Plus, Edit, Trash2 } from "lucide-react"
+import { ArrowUpRight, ArrowDownRight, Plus, Edit, Trash2, CreditCard, Wallet, Building, PiggyBank, DollarSign, Loader2, CalendarIcon, InfoIcon } from "lucide-react"
 import { deleteAccount } from "@/app/actions/accounts"
 import { useToast } from "@/hooks/use-toast"
 import {
@@ -22,6 +22,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Progress } from "@/components/ui/progress"
 
 interface Account {
   id: string
@@ -30,6 +32,11 @@ interface Account {
   balance: number
   currency: string
   is_active: boolean
+  institution?: string
+  account_number?: string
+  notes?: string
+  color?: string
+  icon?: string
   created_at: string
   updated_at: string | null
 }
@@ -60,6 +67,51 @@ export function AccountDetail({ account, transactions }: AccountDetailProps) {
   const { toast } = useToast()
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [isLoadingTransactions, setIsLoadingTransactions] = useState(false)
+  const [transactionStats, setTransactionStats] = useState({
+    totalIncome: 0,
+    totalExpenses: 0,
+    netFlow: 0,
+    monthlyAvgIncome: 0,
+    monthlyAvgExpense: 0,
+    largestTransaction: 0,
+    transactionCount: 0
+  })
+
+  useEffect(() => {
+    if (transactions && transactions.length > 0) {
+      calculateTransactionStats(transactions)
+    }
+  }, [transactions])
+
+  const calculateTransactionStats = (txns: Transaction[]) => {
+    const totalIncome = txns.filter((t) => t.is_income).reduce((sum, t) => sum + t.amount, 0)
+    const totalExpenses = txns.filter((t) => !t.is_income).reduce((sum, t) => sum + t.amount, 0)
+    const netFlow = totalIncome - totalExpenses
+    
+    // Get the largest transaction amount
+    const largestTransaction = txns.reduce((max, t) => Math.max(max, t.amount), 0)
+    
+    // Calculate monthly averages (assuming we have at least 30 days of data)
+    // If we have less data, we'll still calculate an average but it won't be as accurate
+    const oldestTxDate = new Date(Math.min(...txns.map(t => new Date(t.created_at).getTime())))
+    const newestTxDate = new Date(Math.max(...txns.map(t => new Date(t.created_at).getTime())))
+    const daysDiff = Math.max(1, Math.ceil((newestTxDate.getTime() - oldestTxDate.getTime()) / (1000 * 60 * 60 * 24)))
+    const monthsOfData = Math.max(1, daysDiff / 30)
+    
+    const monthlyAvgIncome = totalIncome / monthsOfData
+    const monthlyAvgExpense = totalExpenses / monthsOfData
+    
+    setTransactionStats({
+      totalIncome,
+      totalExpenses,
+      netFlow,
+      monthlyAvgIncome,
+      monthlyAvgExpense,
+      largestTransaction,
+      transactionCount: txns.length
+    })
+  }
 
   const handleDelete = async () => {
     setIsDeleting(true)
@@ -87,29 +139,76 @@ export function AccountDetail({ account, transactions }: AccountDetailProps) {
   const handleEdit = () => {
     router.push(`/accounts/edit/${account.id}`)
   }
-
-  // Calculate account statistics
-  const totalIncome = transactions.filter((t) => t.is_income).reduce((sum, t) => sum + t.amount, 0)
-
-  const totalExpenses = transactions.filter((t) => !t.is_income).reduce((sum, t) => sum + t.amount, 0)
-
-  const netFlow = totalIncome - totalExpenses
+  
+  const getAccountIcon = (type: string) => {
+    switch (type.toLowerCase()) {
+      case "checking":
+        return <CreditCard className="h-5 w-5" />
+      case "savings":
+        return <PiggyBank className="h-5 w-5" />
+      case "credit":
+        return <CreditCard className="h-5 w-5" />
+      case "investment":
+        return <DollarSign className="h-5 w-5" />
+      case "loan":
+        return <Building className="h-5 w-5" />
+      default:
+        return <Wallet className="h-5 w-5" />
+    }
+  }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{account.name}</h1>
-        <p className="text-muted-foreground mt-2">{account.type} Account</p>
+      <div className="flex justify-between items-start">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">{account.name}</h1>
+          <div className="flex items-center gap-2 mt-2">
+            <Badge variant={account.is_active ? "default" : "outline"} className="capitalize">
+              {account.is_active ? "Active" : "Inactive"}
+            </Badge>
+            <p className="text-muted-foreground flex items-center gap-1">
+              {getAccountIcon(account.type)}
+              <span className="capitalize">{account.type} Account</span>
+            </p>
+            {account.institution && (
+              <p className="text-muted-foreground text-sm">
+                at {account.institution}
+                {account.account_number && <span> (••••{account.account_number})</span>}
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={handleEdit}>
+            <Edit className="h-4 w-4 mr-2" />
+            Edit
+          </Button>
+          <Button variant="destructive" size="sm" onClick={() => setIsDeleteDialogOpen(true)}>
+            <Trash2 className="h-4 w-4 mr-2" />
+            Delete
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
+        <Card className="overflow-hidden">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Current Balance</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(account.balance, { currency: account.currency })}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Last updated: {formatDate(new Date(account.updated_at || account.created_at))}
+            </p>
           </CardContent>
+          {account.notes && (
+            <CardFooter className="bg-muted/50 text-sm pt-2 pb-3 px-6 border-t">
+              <div className="flex gap-2 items-start">
+                <InfoIcon className="h-4 w-4 text-muted-foreground mt-0.5" />
+                <p className="text-muted-foreground">{account.notes}</p>
+              </div>
+            </CardFooter>
+          )}
         </Card>
 
         <Card>
@@ -117,9 +216,18 @@ export function AccountDetail({ account, transactions }: AccountDetailProps) {
             <CardTitle className="text-sm font-medium text-muted-foreground">Income</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {formatCurrency(totalIncome, { currency: account.currency })}
-            </div>
+            {isLoadingTransactions ? (
+              <Skeleton className="h-8 w-32" />
+            ) : (
+              <div>
+                <div className="text-2xl font-bold text-green-600">
+                  {formatCurrency(transactionStats.totalIncome, { currency: account.currency })}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Monthly avg: {formatCurrency(transactionStats.monthlyAvgIncome, { currency: account.currency })}
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -128,9 +236,18 @@ export function AccountDetail({ account, transactions }: AccountDetailProps) {
             <CardTitle className="text-sm font-medium text-muted-foreground">Expenses</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">
-              {formatCurrency(totalExpenses, { currency: account.currency })}
-            </div>
+            {isLoadingTransactions ? (
+              <Skeleton className="h-8 w-32" />
+            ) : (
+              <div>
+                <div className="text-2xl font-bold text-red-600">
+                  {formatCurrency(transactionStats.totalExpenses, { currency: account.currency })}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Monthly avg: {formatCurrency(transactionStats.monthlyAvgExpense, { currency: account.currency })}
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -169,8 +286,8 @@ export function AccountDetail({ account, transactions }: AccountDetailProps) {
             </div>
             <div>
               <dt className="text-sm font-medium text-muted-foreground">Net Cash Flow</dt>
-              <dd className={`mt-1 text-base font-medium ${netFlow >= 0 ? "text-green-600" : "text-red-600"}`}>
-                {formatCurrency(netFlow, { currency: account.currency })}
+              <dd className={`mt-1 text-base font-medium ${transactionStats.netFlow >= 0 ? "text-green-600" : "text-red-600"}`}>
+                {formatCurrency(transactionStats.netFlow, { currency: account.currency })}
               </dd>
             </div>
           </dl>
@@ -258,6 +375,11 @@ export function AccountDetail({ account, transactions }: AccountDetailProps) {
 }
 
 function TransactionTable({ transactions }: { transactions: Transaction[] }) {
+  // Sort transactions by date (newest first)
+  const sortedTransactions = [...transactions].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )
+
   return (
     <div className="rounded-md border">
       <Table>
@@ -271,24 +393,31 @@ function TransactionTable({ transactions }: { transactions: Transaction[] }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {transactions.length === 0 ? (
+          {sortedTransactions.length === 0 ? (
             <TableRow>
               <TableCell colSpan={5} className="h-24 text-center">
-                No transactions found.
+                <div className="flex flex-col items-center justify-center text-muted-foreground">
+                  <p>No transactions found.</p>
+                  <Button variant="link" size="sm" asChild className="mt-2">
+                    <Link href={`/transactions/new`}>Add your first transaction</Link>
+                  </Button>
+                </div>
               </TableCell>
             </TableRow>
           ) : (
-            transactions.map((transaction) => (
+            sortedTransactions.map((transaction) => (
               <TableRow key={transaction.id}>
                 <TableCell>{formatDate(new Date(transaction.created_at))}</TableCell>
-                <TableCell>{transaction.description}</TableCell>
+                <TableCell>
+                  <div className="font-medium">{transaction.description}</div>
+                </TableCell>
                 <TableCell>
                   <div className="flex items-center">
                     <div
                       className="h-3 w-3 rounded-full mr-2"
                       style={{ backgroundColor: transaction.category.color }}
                     />
-                    {transaction.category.name}
+                    <span className="whitespace-nowrap">{transaction.category.name}</span>
                   </div>
                 </TableCell>
                 <TableCell>
@@ -304,9 +433,16 @@ function TransactionTable({ transactions }: { transactions: Transaction[] }) {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Button variant="ghost" size="sm" asChild>
-                    <Link href={`/transactions/${transaction.id}`}>View</Link>
-                  </Button>
+                  <div className="flex items-center space-x-1">
+                    <Button variant="ghost" size="sm" asChild>
+                      <Link href={`/transactions/${transaction.id}`}>View</Link>
+                    </Button>
+                    <Button variant="ghost" size="sm" asChild>
+                      <Link href={`/transactions/edit/${transaction.id}`}>
+                        <Edit className="h-3.5 w-3.5" />
+                      </Link>
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))

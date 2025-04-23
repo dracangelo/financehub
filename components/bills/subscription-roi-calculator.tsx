@@ -50,51 +50,97 @@ export function SubscriptionROICalculator() {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
   const [roiAnalysis, setRoiAnalysis] = useState<ROIAnalysis[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState("overview")
   const [totalMonthlyCost, setTotalMonthlyCost] = useState(0)
   const [totalValueScore, setTotalValueScore] = useState(0)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
 
   useEffect(() => {
     fetchSubscriptions()
-  }, [])
+  }, [refreshTrigger])
 
   const fetchSubscriptions = async () => {
     try {
       setLoading(true)
+      setError(null)
+      
+      // Get authenticated user
       const { data: { user } } = await getClientAuthenticatedUser()
       if (!user) {
         throw new Error("Not authenticated")
       }
 
       const supabase = getClientSupabaseClient()
-      const { data: subscriptions, error } = await supabase
-        .from("subscriptions")
+      
+      // Fetch user subscriptions with proper table name and error handling
+      const { data: subscriptionsData, error: subscriptionsError } = await supabase
+        .from("user_subscriptions")
         .select("*")
         .eq("user_id", user.id)
+        .eq("is_active", true)
         .order("cost", { ascending: false })
 
-      if (error) throw error
+      if (subscriptionsError) {
+        console.error("Error fetching subscriptions:", subscriptionsError)
+        throw new Error("Failed to load subscription data. Please try again.")
+      }
+      
+      if (!subscriptionsData || subscriptionsData.length === 0) {
+        setSubscriptions([])
+        setRoiAnalysis([])
+        setTotalMonthlyCost(0)
+        setTotalValueScore(0)
+        return
+      }
+
+      // Normalize and validate subscription data
+      const normalizedSubscriptions = subscriptionsData.map(sub => ({
+        id: sub.id,
+        name: sub.name || 'Unnamed Subscription',
+        category: sub.category || 'Other',
+        cost: typeof sub.cost === 'number' ? sub.cost : parseFloat(sub.cost || sub.amount) || 0,
+        usage: typeof sub.usage_score === 'number' ? sub.usage_score : 50, // Default to 50% if not set
+        value: typeof sub.value_score === 'number' ? sub.value_score : 50, // Default to 50% if not set
+        billing_cycle: sub.billing_cycle || 'monthly',
+        next_billing_date: sub.next_billing_date || new Date().toISOString().split('T')[0]
+      }))
 
       // Calculate ROI analysis for each subscription
-      const analysis = subscriptions.map(sub => calculateROIAnalysis(sub))
-      setSubscriptions(subscriptions)
+      const analysis = normalizedSubscriptions.map(sub => calculateROIAnalysis(sub))
+      setSubscriptions(normalizedSubscriptions)
       setRoiAnalysis(analysis)
 
-      // Calculate totals
-      const totalCost = subscriptions.reduce((sum, sub) => {
-        const monthlyCost = sub.billing_cycle === "monthly" ? sub.cost :
-          sub.billing_cycle === "quarterly" ? sub.cost / 3 :
-          sub.billing_cycle === "annually" ? sub.cost / 12 : sub.cost
+      // Calculate totals with proper error handling
+      const totalCost = normalizedSubscriptions.reduce((sum, sub) => {
+        let monthlyCost = sub.cost
+        try {
+          if (sub.billing_cycle === "quarterly") {
+            monthlyCost = sub.cost / 3
+          } else if (sub.billing_cycle === "annually" || sub.billing_cycle === "yearly") {
+            monthlyCost = sub.cost / 12
+          } else if (sub.billing_cycle === "semi-annually") {
+            monthlyCost = sub.cost / 6
+          } else if (sub.billing_cycle === "weekly") {
+            monthlyCost = sub.cost * 4.33 // Average weeks per month
+          } else if (sub.billing_cycle === "biweekly") {
+            monthlyCost = sub.cost * 2.17 // Average bi-weeks per month
+          }
+        } catch (e) {
+          console.error("Error calculating monthly cost for subscription:", sub.name, e)
+          monthlyCost = sub.cost // Default to original cost if calculation fails
+        }
         return sum + monthlyCost
       }, 0)
 
       const totalValue = analysis.reduce((sum, a) => sum + a.valueScore, 0)
-      const avgValue = totalValue / analysis.length
+      const avgValue = analysis.length > 0 ? totalValue / analysis.length : 0
 
       setTotalMonthlyCost(totalCost)
       setTotalValueScore(avgValue)
     } catch (error) {
       console.error("Error fetching subscriptions:", error)
+      setError(typeof error === 'string' ? error : error instanceof Error ? error.message : 'Failed to load subscriptions')
     } finally {
       setLoading(false)
     }
@@ -239,6 +285,12 @@ export function SubscriptionROICalculator() {
           <div className="flex justify-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
           </div>
+        ) : error ? (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -493,6 +545,34 @@ export function SubscriptionROICalculator() {
             </Tabs>
           </>
         )}
+        
+        {/* Add a refresh button */}
+        <div className="mt-4 flex justify-end">
+          <button
+            onClick={() => setRefreshTrigger(prev => prev + 1)}
+            className="text-sm text-muted-foreground hover:text-primary flex items-center gap-1"
+            disabled={loading}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={`${loading ? 'animate-spin' : ''}`}
+            >
+              <path d="M21 12a9 9 0 0 1-9 9" />
+              <path d="M3 12a9 9 0 0 1 9-9" />
+              <path d="M21 12a9 9 0 0 0-9 9" />
+              <path d="M3 12a9 9 0 0 0 9-9" />
+            </svg>
+            Refresh Data
+          </button>
+        </div>
       </CardContent>
     </Card>
   )

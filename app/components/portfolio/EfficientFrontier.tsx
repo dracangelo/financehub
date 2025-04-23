@@ -19,6 +19,23 @@ interface EfficientFrontierProps {
 }
 
 export function EfficientFrontier({ frontierPoints, currentPortfolio }: EfficientFrontierProps) {
+  // Handle empty data
+  if (!frontierPoints || frontierPoints.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Efficient Frontier</CardTitle>
+          <CardDescription>
+            Visualize risk vs. return for optimal portfolio allocation
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center justify-center py-10 text-center">
+          <p className="text-muted-foreground mb-2">No portfolio optimization data available.</p>
+          <p className="text-sm text-muted-foreground">Add diverse investments to your portfolio to see optimization recommendations.</p>
+        </CardContent>
+      </Card>
+    )
+  }
   // Transform data for the chart
   const frontierData = frontierPoints.map(point => ({
     x: point.risk,

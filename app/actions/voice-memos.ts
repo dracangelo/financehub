@@ -184,19 +184,51 @@ export async function deleteVoiceMemo(memoId: string) {
   }
 }
 
-// Process voice memo with transcription (placeholder for integration with transcription service)
+// Process voice memo with transcription using a third-party service
 export async function transcribeVoiceMemo(audioUrl: string) {
   try {
-    // This would be integrated with a third-party transcription service
-    // For now, we'll return a placeholder
-    
-    // Mock transcription result
-    const mockTranscription = "This is a sample transcription of a voice memo for an expense."
-    
-    return mockTranscription
+    if (!audioUrl) {
+      throw new Error("Audio URL is required for transcription")
+    }
+
+    // Check if we have the OpenAI API key in environment variables
+    const openaiApiKey = process.env.OPENAI_API_KEY
+    if (!openaiApiKey) {
+      console.error("OpenAI API key not found in environment variables")
+      throw new Error("Transcription service configuration is missing")
+    }
+
+    // Fetch the audio file
+    const audioResponse = await fetch(audioUrl)
+    if (!audioResponse.ok) {
+      throw new Error(`Failed to fetch audio file: ${audioResponse.statusText}`)
+    }
+
+    const audioBlob = await audioResponse.blob()
+    const formData = new FormData()
+    formData.append('file', audioBlob, 'audio.mp3')
+    formData.append('model', 'whisper-1')
+
+    // Call OpenAI's Whisper API for transcription
+    const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openaiApiKey}`
+      },
+      body: formData
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      console.error("Transcription API error:", errorData)
+      throw new Error(`Transcription service error: ${response.statusText}`)
+    }
+
+    const result = await response.json()
+    return result.text
   } catch (error) {
     console.error("Error in transcribeVoiceMemo:", error)
-    throw new Error("Failed to transcribe voice memo")
+    throw error instanceof Error ? error : new Error(String(error))
   }
 }
 

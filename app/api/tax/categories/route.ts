@@ -1,102 +1,404 @@
 import { NextResponse } from "next/server"
-import { createServerSupabaseClient } from "@/lib/supabase/server"
-import { getCurrentUser } from "@/lib/auth"
+import { z } from "zod"
+import { supabaseAdmin, getCurrentUserId } from "@/lib/supabase"
 
-export async function GET(request: Request) {
+// Schema for tax category validation
+const categorySchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  type: z.string().min(1, "Type is required"),
+  color: z.string().min(1, "Color is required"),
+  description: z.string().optional(),
+  isDefault: z.boolean().default(false),
+})
+
+// GET /api/tax/categories - Get all tax categories
+export async function GET() {
   try {
-    const user = await getCurrentUser()
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    const userId = await getCurrentUserId()
+    
+    if (!userId) {
+      return new NextResponse("Unauthorized", { status: 401 })
     }
-
-    const supabase = await createServerSupabaseClient()
-
-    // Get all tax categories
-    const { data, error } = await supabase
-      .from("tax_categories")
-      .select("*")
-      .order("name", { ascending: true })
-
-    // If there's an error or no data, return dummy data
-    if (error || !data || data.length === 0) {
-      console.error("Error fetching tax categories or table doesn't exist:", error)
+    
+    // Ensure tax categories table exists
+    await ensureTaxCategoriesTableExists()
+    
+    // Get all categories (both default and user-created)
+    const { data: categories, error } = await supabaseAdmin
+      .from('tax_categories')
+      .select('*')
+      .order('name', { ascending: true })
+    
+    if (error) {
+      console.error("[TAX_CATEGORIES_GET]", error)
       
-      // Return dummy data
-      const dummyCategories = [
-        { id: "1", name: "Business Expenses", type: "deduction", color: "#4CAF50" },
-        { id: "2", name: "Charitable Donations", type: "deduction", color: "#2196F3" },
-        { id: "3", name: "Medical Expenses", type: "deduction", color: "#F44336" },
-        { id: "4", name: "Education Expenses", type: "deduction", color: "#9C27B0" },
-        { id: "5", name: "Retirement Contributions", type: "deduction", color: "#FF9800" },
-        { id: "6", name: "Mortgage Interest", type: "deduction", color: "#607D8B" },
-        { id: "7", name: "State and Local Taxes", type: "deduction", color: "#795548" },
-        { id: "8", name: "Home Office", type: "deduction", color: "#8BC34A" }
-      ]
+      // If table doesn't exist despite our attempt to create it, return empty array
+      if (error.code === "42P01") {
+        return NextResponse.json([])
+      }
       
-      return NextResponse.json(dummyCategories)
+      return new NextResponse(`Database error: ${error.message}`, { status: 500 })
     }
-
-    return NextResponse.json(data)
+    
+    return NextResponse.json(categories || [])
   } catch (error) {
-    console.error("Error in GET /api/tax/categories:", error)
-    
-    // Even if there's an error, return dummy data to ensure the frontend works
-    const dummyCategories = [
-      { id: "1", name: "Business Expenses", type: "deduction", color: "#4CAF50" },
-      { id: "2", name: "Charitable Donations", type: "deduction", color: "#2196F3" },
-      { id: "3", name: "Medical Expenses", type: "deduction", color: "#F44336" },
-      { id: "4", name: "Education Expenses", type: "deduction", color: "#9C27B0" },
-      { id: "5", name: "Retirement Contributions", type: "deduction", color: "#FF9800" },
-      { id: "6", name: "Mortgage Interest", type: "deduction", color: "#607D8B" },
-      { id: "7", name: "State and Local Taxes", type: "deduction", color: "#795548" },
-      { id: "8", name: "Home Office", type: "deduction", color: "#8BC34A" }
-    ]
-    
-    return NextResponse.json(dummyCategories)
+    console.error("[TAX_CATEGORIES_GET]", error)
+    return new NextResponse("Internal error", { status: 500 })
   }
 }
 
-// POST endpoint to create a new category
-export async function POST(request: Request) {
+// POST /api/tax/categories - Create a new tax category
+export async function POST(req: Request) {
   try {
-    const user = await getCurrentUser()
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    const userId = await getCurrentUserId()
+    
+    if (!userId) {
+      return new NextResponse("Unauthorized", { status: 401 })
     }
-
-    const supabase = await createServerSupabaseClient()
-    const body = await request.json()
-
-    // Validate request body
-    if (!body.name || !body.type) {
-      return NextResponse.json({ error: "Name and type are required" }, { status: 400 })
+    
+    // Ensure tax categories table exists
+    await ensureTaxCategoriesTableExists()
+    
+    const body = await req.json()
+    const validatedData = categorySchema.parse(body)
+    
+    // Check if category with same name already exists
+    const { data: existingCategory, error: checkError } = await supabaseAdmin
+      .from('tax_categories')
+      .select('id')
+      .ilike('name', validatedData.name)
+      .maybeSingle()
+    
+    if (checkError && checkError.code !== "42P01") {
+      console.error("[TAX_CATEGORIES_POST_CHECK]", checkError)
+      return new NextResponse(`Database error: ${checkError.message}`, { status: 500 })
     }
+    
+    if (existingCategory) {
+      return new NextResponse("Category with this name already exists", { status: 409 })
+    }
+    
+    // Create the category
+    const categoryData = {
+      name: validatedData.name,
+      type: validatedData.type,
+      color: validatedData.color,
+      description: validatedData.description,
+      is_default: validatedData.isDefault,
+      user_id: userId, // Track who created the category
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+    
+    const { data: category, error } = await supabaseAdmin
+      .from('tax_categories')
+      .insert(categoryData)
+      .select()
+      .single()
+    
+    if (error) {
+      console.error("[TAX_CATEGORIES_POST]", error)
+      return new NextResponse(`Database error: ${error.message}`, { status: 500 })
+    }
+    
+    return NextResponse.json(category)
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return new NextResponse(JSON.stringify(error.errors), { status: 400 })
+    }
+    
+    console.error("[TAX_CATEGORIES_POST]", error)
+    return new NextResponse("Internal error", { status: 500 })
+  }
+}
 
-    try {
-      // Create the category
-      const { data, error } = await supabase
-        .from("tax_categories")
-        .insert({
-          name: body.name,
-          type: body.type,
-          color: body.color || "#000000",
-          user_id: user.id
-        })
-        .select()
-        .single()
-
-      if (error) {
-        console.error("Error creating tax category:", error)
-        return NextResponse.json({ error: "Failed to create tax category" }, { status: 500 })
+// PATCH /api/tax/categories - Update a tax category
+export async function PATCH(req: Request) {
+  try {
+    const userId = await getCurrentUserId()
+    
+    if (!userId) {
+      return new NextResponse("Unauthorized", { status: 401 })
+    }
+    
+    const body = await req.json()
+    
+    if (!body.id) {
+      return new NextResponse("Category ID is required", { status: 400 })
+    }
+    
+    const validatedData = categorySchema.parse(body)
+    
+    // Check if category exists
+    const { data: existingCategory, error: checkError } = await supabaseAdmin
+      .from('tax_categories')
+      .select('id, is_default')
+      .eq('id', body.id)
+      .single()
+    
+    if (checkError) {
+      console.error("[TAX_CATEGORIES_PATCH_CHECK]", checkError)
+      
+      if (checkError.code === "PGRST116") {
+        return new NextResponse("Category not found", { status: 404 })
       }
+      
+      return new NextResponse(`Database error: ${checkError.message}`, { status: 500 })
+    }
+    
+    // Don't allow editing default categories
+    if (existingCategory.is_default) {
+      return new NextResponse("Cannot modify default categories", { status: 403 })
+    }
+    
+    // Update the category
+    const categoryData = {
+      name: validatedData.name,
+      type: validatedData.type,
+      color: validatedData.color,
+      description: validatedData.description,
+      updated_at: new Date().toISOString()
+    }
+    
+    const { data: category, error } = await supabaseAdmin
+      .from('tax_categories')
+      .update(categoryData)
+      .eq('id', body.id)
+      .select()
+      .single()
+    
+    if (error) {
+      console.error("[TAX_CATEGORIES_PATCH]", error)
+      return new NextResponse(`Database error: ${error.message}`, { status: 500 })
+    }
+    
+    return NextResponse.json(category)
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return new NextResponse(JSON.stringify(error.errors), { status: 400 })
+    }
+    
+    console.error("[TAX_CATEGORIES_PATCH]", error)
+    return new NextResponse("Internal error", { status: 500 })
+  }
+}
 
-      return NextResponse.json(data)
-    } catch (err) {
-      console.error("Error with tax_categories table:", err)
-      return NextResponse.json({ error: "Database error" }, { status: 500 })
+// DELETE /api/tax/categories - Delete a tax category
+export async function DELETE(req: Request) {
+  try {
+    const userId = await getCurrentUserId()
+    
+    if (!userId) {
+      return new NextResponse("Unauthorized", { status: 401 })
+    }
+    
+    const { searchParams } = new URL(req.url)
+    const id = searchParams.get("id")
+    
+    if (!id) {
+      return new NextResponse("Category ID is required", { status: 400 })
+    }
+    
+    // Check if category exists and is not a default category
+    const { data: existingCategory, error: checkError } = await supabaseAdmin
+      .from('tax_categories')
+      .select('id, is_default')
+      .eq('id', id)
+      .single()
+    
+    if (checkError) {
+      console.error("[TAX_CATEGORIES_DELETE_CHECK]", checkError)
+      
+      if (checkError.code === "PGRST116") {
+        return new NextResponse("Category not found", { status: 404 })
+      }
+      
+      return new NextResponse(`Database error: ${checkError.message}`, { status: 500 })
+    }
+    
+    // Don't allow deleting default categories
+    if (existingCategory.is_default) {
+      return new NextResponse("Cannot delete default categories", { status: 403 })
+    }
+    
+    // Check if category is in use
+    const { count, error: countError } = await supabaseAdmin
+      .from('tax_entries')
+      .select('id', { count: 'exact', head: true })
+      .eq('category_id', existingCategory.id)
+    
+    if (countError && countError.code !== "42P01") {
+      console.error("[TAX_CATEGORIES_DELETE_COUNT]", countError)
+      return new NextResponse(`Database error: ${countError.message}`, { status: 500 })
+    }
+    
+    if (count && count > 0) {
+      return new NextResponse("Cannot delete category that is in use by tax entries", { status: 409 })
+    }
+    
+    // Delete the category
+    const { error } = await supabaseAdmin
+      .from('tax_categories')
+      .delete()
+      .eq('id', id)
+    
+    if (error) {
+      console.error("[TAX_CATEGORIES_DELETE]", error)
+      return new NextResponse(`Database error: ${error.message}`, { status: 500 })
+    }
+    
+    return new NextResponse(null, { status: 204 })
+  } catch (error) {
+    console.error("[TAX_CATEGORIES_DELETE]", error)
+    return new NextResponse("Internal error", { status: 500 })
+  }
+}
+
+// Helper function to ensure tax categories table exists
+async function ensureTaxCategoriesTableExists() {
+  try {
+    // Check if tax_categories table exists
+    const { error } = await supabaseAdmin
+      .from('tax_categories')
+      .select('id', { count: 'exact', head: true })
+      .limit(1)
+    
+    if (error && error.code === "42P01") {
+      console.log("tax_categories table doesn't exist, creating it...")
+      
+      // Create tax_categories table using RPC
+      const { error: createError } = await supabaseAdmin.rpc('create_tax_categories_table')
+      
+      if (createError) {
+        console.error("Error creating tax_categories table:", createError)
+        
+        // If RPC doesn't exist, create the table directly
+        try {
+          const createTableSQL = `
+            CREATE TABLE tax_categories (
+              id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+              name TEXT NOT NULL,
+              type TEXT NOT NULL,
+              color TEXT NOT NULL,
+              description TEXT,
+              is_default BOOLEAN DEFAULT FALSE,
+              user_id UUID REFERENCES auth.users(id),
+              created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+              updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            );
+            
+            ALTER TABLE tax_categories ENABLE ROW LEVEL SECURITY;
+            
+            CREATE POLICY "Users can view default tax categories and their own"
+              ON tax_categories FOR SELECT
+              USING (is_default = true OR auth.uid() = user_id);
+            
+            CREATE POLICY "Users can insert their own tax categories"
+              ON tax_categories FOR INSERT
+              WITH CHECK (auth.uid() = user_id);
+            
+            CREATE POLICY "Users can update their own tax categories"
+              ON tax_categories FOR UPDATE
+              USING (auth.uid() = user_id AND is_default = false);
+            
+            CREATE POLICY "Users can delete their own tax categories"
+              ON tax_categories FOR DELETE
+              USING (auth.uid() = user_id AND is_default = false);
+          `
+          
+          await supabaseAdmin.rpc('exec_sql', { sql: createTableSQL })
+          console.log("Created tax_categories table directly")
+        } catch (directCreateError) {
+          console.error("Error creating tax_categories table directly:", directCreateError)
+          return
+        }
+      }
+      
+      console.log("Successfully created tax_categories table")
+      
+      // Insert default categories
+      const defaultCategories = [
+        { name: "Business Expenses", type: "deduction", color: "#4CAF50", is_default: true, description: "Expenses related to running a business" },
+        { name: "Charitable Donations", type: "deduction", color: "#2196F3", is_default: true, description: "Donations to qualified charitable organizations" },
+        { name: "Medical Expenses", type: "deduction", color: "#F44336", is_default: true, description: "Qualifying medical and dental expenses" },
+        { name: "Education Expenses", type: "deduction", color: "#9C27B0", is_default: true, description: "Tuition, fees, and other education costs" },
+        { name: "Retirement Contributions", type: "deduction", color: "#FF9800", is_default: true, description: "Contributions to qualified retirement accounts" },
+        { name: "Mortgage Interest", type: "deduction", color: "#607D8B", is_default: true, description: "Interest paid on home mortgages" },
+        { name: "State and Local Taxes", type: "deduction", color: "#795548", is_default: true, description: "State income, sales, and property taxes" },
+        { name: "Home Office", type: "deduction", color: "#8BC34A", is_default: true, description: "Expenses for using part of your home for business" },
+        { name: "Investment Income", type: "income", color: "#3F51B5", is_default: true, description: "Income from investments like dividends and capital gains" },
+        { name: "Rental Income", type: "income", color: "#009688", is_default: true, description: "Income from rental properties" },
+        { name: "Self-Employment Income", type: "income", color: "#FF5722", is_default: true, description: "Income from self-employment or freelance work" },
+        { name: "Wages and Salary", type: "income", color: "#673AB7", is_default: true, description: "Income from employment" }
+      ]
+      
+      // Add created_at and updated_at to each category
+      const now = new Date().toISOString()
+      const categoriesWithTimestamps = defaultCategories.map(category => ({
+        ...category,
+        created_at: now,
+        updated_at: now
+      }))
+      
+      // Insert default categories
+      await supabaseAdmin
+        .from('tax_categories')
+        .insert(categoriesWithTimestamps)
+      
+      console.log("Created default tax categories")
     }
   } catch (error) {
-    console.error("Error in POST /api/tax/categories:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error("Error ensuring tax_categories table exists:", error)
+    // Continue execution even if table creation fails
+  }
+}
+
+// Helper function to create the stored procedure for creating tax categories table
+async function createTaxCategoriesTableFunction() {
+  try {
+    const createFunctionSQL = `
+      CREATE OR REPLACE FUNCTION create_tax_categories_table()
+      RETURNS void
+      LANGUAGE plpgsql
+      SECURITY DEFINER
+      AS $$
+      BEGIN
+        CREATE TABLE IF NOT EXISTS tax_categories (
+          id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+          name TEXT NOT NULL,
+          type TEXT NOT NULL,
+          color TEXT NOT NULL,
+          description TEXT,
+          is_default BOOLEAN DEFAULT FALSE,
+          user_id UUID REFERENCES auth.users(id),
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+        
+        ALTER TABLE tax_categories ENABLE ROW LEVEL SECURITY;
+        
+        CREATE POLICY "Users can view default tax categories and their own"
+          ON tax_categories FOR SELECT
+          USING (is_default = true OR auth.uid() = user_id);
+        
+        CREATE POLICY "Users can insert their own tax categories"
+          ON tax_categories FOR INSERT
+          WITH CHECK (auth.uid() = user_id);
+        
+        CREATE POLICY "Users can update their own tax categories"
+          ON tax_categories FOR UPDATE
+          USING (auth.uid() = user_id AND is_default = false);
+        
+        CREATE POLICY "Users can delete their own tax categories"
+          ON tax_categories FOR DELETE
+          USING (auth.uid() = user_id AND is_default = false);
+      END;
+      $$;
+    `
+    
+    await supabaseAdmin.rpc('exec_sql', { sql: createFunctionSQL })
+    console.log("Created create_tax_categories_table function")
+  } catch (error) {
+    console.error("Error creating create_tax_categories_table function:", error)
   }
 }

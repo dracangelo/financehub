@@ -14,105 +14,18 @@ async function getCurrentUserId() {
     const { data: { user } } = await supabase.auth.getUser()
     
     if (user?.id) {
-      // Check if this user exists in our users table
-      const { data: existingUser, error: checkError } = await supabase
-        .from("users")
-        .select("id")
-        .eq("id", user.id)
-        .single()
-      
-      if (checkError && checkError.code !== "PGRST116") {
-        // PGRST116 is "Results contain 0 rows" - that's expected if user doesn't exist
-        console.error("Error checking for existing user:", checkError)
-      }
-      
-      if (existingUser) {
-        return user.id
-      }
-      
-      // Try to create a user with minimal fields
-      try {
-        const { data: newUser, error: insertError } = await supabase
-          .from("users")
-          .insert({ id: user.id, email: user.email || "user@example.com" })
-          .select("id")
-          .single()
-        
-        if (insertError) {
-          console.error("Error creating user with email:", insertError)
-          // Try with just ID as a last resort
-          const { data: minimalUser, error: minimalError } = await supabase
-            .from("users")
-            .insert({ id: user.id })
-            .select("id")
-            .single()
-          
-          if (minimalError) {
-            console.error("Error creating user with just ID:", minimalError)
-            throw new Error("Failed to create user record")
-          }
-          
-          return minimalUser.id
-        }
-        
-        return newUser.id
-      } catch (insertError) {
-        console.error("Error creating user:", insertError)
-        throw new Error("Failed to create user record")
-      }
+      // Simply return the authenticated user ID
+      // The RLS policies will handle access control
+      return user.id
     }
     
-    // For demo purposes, use a fixed ID
-    const demoUserId = "00000000-0000-0000-0000-000000000000"
-    
-    // Check if demo user exists
-    const { data: existingDemoUser, error: checkDemoError } = await supabase
-      .from("users")
-      .select("id")
-      .eq("id", demoUserId)
-      .single()
-    
-    if (checkDemoError && checkDemoError.code !== "PGRST116") {
-      console.error("Error checking for demo user:", checkDemoError)
-    }
-    
-    if (existingDemoUser) {
-      return demoUserId
-    }
-    
-    // Create demo user with minimal fields
-    try {
-      const { data: newDemoUser, error: demoError } = await supabase
-        .from("users")
-        .insert({ id: demoUserId, email: "demo@example.com" })
-        .select("id")
-        .single()
-      
-      if (demoError) {
-        console.error("Error creating demo user:", demoError)
-        // Try with just ID as a last resort
-        const { data: minimalDemoUser, error: minimalDemoError } = await supabase
-          .from("users")
-          .insert({ id: demoUserId })
-          .select("id")
-          .single()
-        
-        if (minimalDemoError) {
-          console.error("Error creating demo user with just ID:", minimalDemoError)
-          throw new Error("Failed to create demo user record")
-        }
-        
-        return minimalDemoUser.id
-      }
-      
-      return newDemoUser.id
-    } catch (demoError) {
-      console.error("Error creating demo user:", demoError)
-      throw new Error("Failed to create demo user record")
-    }
+    // For demo purposes, use a fixed ID when no user is authenticated
+    // This should only happen in development
+    console.warn("No authenticated user found, using demo user ID")
+    return "00000000-0000-0000-0000-000000000000"
   } catch (error) {
     console.error("Error getting current user:", error)
-    throw new Error("Failed to get or create user")
+    throw new Error("Failed to get current user")
   }
 }
 

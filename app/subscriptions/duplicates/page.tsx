@@ -11,8 +11,69 @@ export const metadata: Metadata = {
   description: "Find overlapping subscriptions and reduce unnecessary costs",
 }
 
+// Define subscription interface
+interface Subscription {
+  id: string;
+  name: string;
+  amount: number;
+  billing_cycle?: string;
+  [key: string]: any; // Allow other properties
+}
+
+// Helper function to convert subscription amount to monthly equivalent
+function getMonthlyAmount(sub: Subscription): number {
+  const amount = sub.amount
+  
+  // Handle case where billing_cycle might be undefined
+  const billingCycle = sub.billing_cycle || 
+                      sub.billing_frequency || 
+                      sub.payment_cycle || 
+                      'monthly' // Default to monthly if no cycle info
+  
+  switch (billingCycle.toLowerCase()) {
+    case "weekly":
+      return amount * 4.33 // Average weeks in a month
+    case "biweekly":
+      return amount * 2.17 // Average bi-weeks in a month
+    case "quarterly":
+      return amount / 3
+    case "semiannually":
+    case "semi-annually":
+      return amount / 6
+    case "annually":
+    case "yearly":
+      return amount / 12
+    default:
+      return amount // Default is monthly
+  }
+}
+
 export default async function DuplicateServicesPage() {
   const potentialDuplicates = await findDuplicateServices()
+  
+  // Handle error or empty data case
+  if (!potentialDuplicates || potentialDuplicates.length === 0) {
+    return (
+      <div className="container mx-auto py-6 space-y-8">
+        <div className="flex flex-col space-y-2">
+          <h1 className="text-3xl font-bold tracking-tight">Duplicate Service Detection</h1>
+          <p className="text-muted-foreground">Find overlapping subscriptions and reduce unnecessary costs</p>
+        </div>
+        
+        <Card>
+          <CardContent className="p-6 text-center">
+            <h3 className="text-xl font-medium mb-2">No Duplicate Services Found</h3>
+            <p className="text-muted-foreground mb-4">
+              We didn't detect any potentially overlapping subscriptions. Add more subscriptions or check back later.
+            </p>
+            <Button variant="outline" asChild>
+              <Link href="/subscriptions">View All Subscriptions</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   // Calculate potential savings
   const totalPotentialSavings = potentialDuplicates.reduce((total, group) => {
@@ -22,23 +83,6 @@ export default async function DuplicateServicesPage() {
 
     // Sort by monthly amount (convert to monthly first)
     const sortedSubs = [...subscriptions].sort((a, b) => {
-      const getMonthlyAmount = (sub) => {
-        const amount = sub.amount
-        switch (sub.billing_cycle) {
-          case "weekly":
-            return amount * 4.33
-          case "biweekly":
-            return amount * 2.17
-          case "quarterly":
-            return amount / 3
-          case "semiannually":
-            return amount / 6
-          case "annually":
-            return amount / 12
-          default:
-            return amount
-        }
-      }
       return getMonthlyAmount(b) - getMonthlyAmount(a)
     })
 

@@ -1,19 +1,19 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Loader2 } from "lucide-react"
 
 export default function VerifyLoading() {
   return (
-    <Card className="w-full">
+    <Card className="w-full max-w-md">
       <CardHeader>
-        <CardTitle className="text-2xl">Verify your email</CardTitle>
-        <CardDescription>We've sent a verification code to your email.</CardDescription>
+        <CardTitle className="text-2xl">FinanceHub Verification</CardTitle>
+        <CardDescription>Loading email verification services...</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <Skeleton className="h-5 w-20" />
-          <Skeleton className="h-10 w-full" />
-        </div>
-        <Skeleton className="h-10 w-full" />
+      <CardContent className="flex flex-col items-center py-8 space-y-4">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground text-center">
+          Preparing to verify your account for access to ESG investment screening, 
+          net worth tracking, and watchlist functionality.
+        </p>
       </CardContent>
     </Card>
   )

@@ -23,6 +23,23 @@ interface FeeAnalysisProps {
 }
 
 export function FeeAnalysis({ feeImpact, feesByType, totalAnnualFees, potentialSavings }: FeeAnalysisProps) {
+  // Handle empty data
+  if (!feeImpact || feeImpact.length === 0 || !feesByType || Object.keys(feesByType).length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Investment Fee Analysis</CardTitle>
+          <CardDescription>
+            Understand how fees impact your investment returns
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center justify-center py-10 text-center">
+          <p className="text-muted-foreground mb-2">No fee data available.</p>
+          <p className="text-sm text-muted-foreground">Add investments to your portfolio to analyze fee impact.</p>
+        </CardContent>
+      </Card>
+    )
+  }
   // Format fee type labels
   const formatFeeType = (type: string) => {
     return type
@@ -88,8 +105,8 @@ export function FeeAnalysis({ feeImpact, feesByType, totalAnnualFees, potentialS
                 </div>
               </div>
 
-              <Alert variant="warning">
-                <AlertCircle className="h-4 w-4" />
+              <Alert variant="default" className="bg-amber-50 border-amber-200">
+                <AlertCircle className="h-4 w-4 text-amber-500" />
                 <AlertTitle>Fee Impact</AlertTitle>
                 <AlertDescription>
                   Over 30 years, you could lose approximately {formatCurrency(totalAnnualFees * 30)} to fees, 

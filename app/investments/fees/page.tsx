@@ -4,6 +4,7 @@ import { FeeComparisonChart } from "@/components/investments/fee-comparison-char
 import { LowerCostAlternatives } from "@/components/investments/lower-cost-alternatives"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DollarSign } from "lucide-react"
 
@@ -14,6 +15,37 @@ export const metadata: Metadata = {
 
 export default async function InvestmentFeesPage() {
   const feeAnalysis = await getInvestmentFeeAnalysis()
+  
+  // Handle empty data case
+  if (!feeAnalysis.investments || feeAnalysis.investments.length === 0) {
+    return (
+      <div className="container mx-auto py-6 space-y-8">
+        <div className="flex flex-col space-y-2">
+          <h1 className="text-3xl font-bold tracking-tight">Investment Fee Analyzer</h1>
+          <p className="text-muted-foreground">Analyze your investment fees and find lower-cost alternatives</p>
+        </div>
+        
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <div className="rounded-full bg-muted p-3 mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M12 8v4"/>
+                <path d="M12 16h.01"/>
+              </svg>
+            </div>
+            <h3 className="text-xl font-semibold mb-2">No Investment Data Found</h3>
+            <p className="text-muted-foreground mb-6 text-center max-w-md">
+              Add investments to your portfolio to analyze fees and find potential savings opportunities.
+            </p>
+            <Button asChild>
+              <a href="/investments">Manage Investments</a>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="container mx-auto py-6 space-y-8">

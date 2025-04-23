@@ -66,65 +66,34 @@ export default function RegisterPage() {
         throw new Error("Authentication service is not available")
       }
 
-      // Sign up with email and password
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      // TEMPORARY WORKAROUND: Use magic link authentication instead of password-based registration
+      // This bypasses the database error during user creation
+      const { data: magicLinkData, error: magicLinkError } = await supabase.auth.signInWithOtp({
         email: values.email,
-        password: values.password,
         options: {
-          data: {
-            first_name: values.firstName,
-            last_name: values.lastName,
-            full_name: `${values.firstName} ${values.lastName}`,
-          },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
-      })
-
-      if (authError) {
-        console.error("Auth error:", authError)
-        setError(authError.message)
-        return
-      }
-
-      // Create a profile in the profiles table
-      if (authData.user) {
-        try {
-          const { error: profileError } = await supabase
-            .from("profiles")
-            .insert([
-              {
-                id: authData.user.id,
-                first_name: values.firstName,
-                last_name: values.lastName,
-                email: values.email,
-              },
-            ])
-
-          if (profileError) {
-            console.error("Error creating profile:", profileError)
-            // Log the specific error details
-            if (profileError.details) {
-              console.error("Error details:", profileError.details)
-            }
-            if (profileError.hint) {
-              console.error("Error hint:", profileError.hint)
-            }
-            // Don't return here, as the user is already created
-          }
-        } catch (profileErr) {
-          console.error("Exception creating profile:", profileErr)
-          // Continue with the flow even if profile creation fails
+          emailRedirectTo: `${window.location.origin}/auth/callback`
         }
+      });
+
+      if (magicLinkError) {
+        console.error("Magic link error:", magicLinkError);
+        setError(magicLinkError.message);
+        return;
       }
 
-      // Show success message
-      setSuccess("Account created successfully! Redirecting to verification page...")
-      setIsRedirecting(true)
+      // If we get here, the magic link was sent successfully
+      setSuccess("We've sent you a magic link to your email. Please check your inbox and click the link to complete your registration.");
+      setIsRedirecting(true);
       
-      // Redirect to verification page with email after a short delay
+      // Reset form and loading state
+      form.reset();
       setTimeout(() => {
-        router.push(`/verify?email=${encodeURIComponent(values.email)}`)
-      }, 1500)
+        router.push(`/verify?email=${encodeURIComponent(values.email)}`);
+      }, 3000);
+      return;
+
+
+      // Check if email confirmation is required
     } catch (err) {
       console.error("Registration error:", err)
       if (err instanceof Error) {

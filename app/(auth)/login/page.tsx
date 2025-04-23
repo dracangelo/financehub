@@ -45,28 +45,69 @@ export default function LoginPage() {
     },
   })
 
-  const onSubmit = async (values: LoginFormValues) => {
+  const handleSubmit = async (values: LoginFormValues) => {
     setIsLoading(true)
     setError(null)
-    setSuccess(null)
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      // Check if Supabase client is properly initialized
+      if (!supabase) {
+        throw new Error("Authentication service is not available")
+      }
+
+      // Sign in with email and password
+      const { error, data } = await supabase.auth.signInWithPassword({
         email: values.email,
         password: values.password,
       })
 
       if (error) {
-        setError(error.message)
+        console.error("Auth error:", error)
+        
+        // Provide more user-friendly error messages
+        if (error.message.includes("Invalid login") || error.message.includes("credentials")) {
+          setError("Invalid email or password. Please try again.")
+        } else if (error.message.includes("Email not confirmed")) {
+          setError("Please verify your email before logging in.")
+          // Redirect to verification page after a short delay
+          setTimeout(() => {
+            router.push(`/verify?email=${encodeURIComponent(values.email)}`)
+          }, 3000)
+        } else if (error.message.includes("rate limit")) {
+          setError("Too many login attempts. Please try again later.")
+        } else {
+          setError(error.message)
+        }
         return
       }
 
-      // Redirect to the dashboard on successful login
-      router.push("/dashboard")
+      // Log successful login with user metadata for debugging
+      console.log("Login successful", {
+        userId: data.user?.id,
+        email: data.user?.email,
+        lastSignIn: data.user?.last_sign_in_at,
+      })
+
+      // Redirect to dashboard with appropriate parameters
+      // Check if this is the first login after email verification
+      const isFirstLogin = !data.user?.last_sign_in_at || 
+                          new Date(data.user.last_sign_in_at).getTime() === new Date(data.user.created_at || 0).getTime();
+      
+      if (isFirstLogin) {
+        // First login - show welcome experience with feature highlights
+        router.push("/dashboard?welcome=true&features=esg,networth,watchlist")
+      } else {
+        // Regular login
+        router.push("/dashboard")
+      }
       router.refresh()
     } catch (err) {
-      setError("An unexpected error occurred. Please try again.")
-      console.error(err)
+      console.error("Login error:", err)
+      if (err instanceof Error) {
+        setError(err.message)
+      } else {
+        setError("An unexpected error occurred during login")
+      }
     } finally {
       setIsLoading(false)
     }
@@ -130,7 +171,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input

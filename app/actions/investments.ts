@@ -8,7 +8,7 @@ import { createServerClient } from "@supabase/ssr"
 
 // Helper function to get the current user
 async function getCurrentUser() {
-  const cookieStore = cookies()
+  const cookieStore = await cookies()
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -26,13 +26,13 @@ async function getCurrentUser() {
       },
     }
   )
-  const { data: { session } } = await supabase.auth.getSession()
-  return session?.user || null
+  const { data } = await supabase.auth.getUser()
+  return data?.user || null
 }
 
 // Helper function to create a server-side Supabase client
 async function createServerSupabaseClient() {
-  const cookieStore = cookies()
+  const cookieStore = await cookies()
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -135,6 +135,41 @@ const investmentTypes = [
   "Crypto",
   "Real Estate"
 ];
+
+// Define interfaces for investment data
+interface ESGScore {
+  environmental: number;
+  social: number;
+  governance: number;
+  total: number;
+}
+
+interface Investment {
+  id: string;
+  name: string;
+  ticker?: string;
+  type?: string;
+  asset_type?: string;
+  risk_level?: string;
+  sector?: string;
+  sector_id?: string;
+  esg_categories?: string[];
+  esgScore?: ESGScore;
+  price?: number;
+  value?: number;
+  change?: number;
+  marketCap?: string;
+  description?: string;
+  expenseRatio?: number;
+  current_price?: number;
+}
+
+interface PriceData {
+  [ticker: string]: {
+    price: number;
+    change: number;
+  };
+}
 
 // Interface for asset class expected by the rebalancing table
 interface AssetClass {
@@ -574,63 +609,112 @@ export async function getPortfolioCorrelation() {
     }
 
     const supabase = createClientComponentClient()
+    const investments = await getInvestments()
 
-    // Skip the advanced schema approach that's causing problems and go straight to the fallback
-    // This will generate synthetic correlation data based on investment types
-    const { data: investments } = await supabase
-      .from('investments')
-      .select('*')
-      .eq('user_id', user.id)
-
-    if (investments && investments.length > 0) {
-      const assets = investments.map(inv => inv.ticker || inv.name)
-      const correlationMatrix: number[][] = Array(assets.length).fill(0).map(() => Array(assets.length).fill(0))
-      
-      // Generate synthetic correlations
-      for (let i = 0; i < assets.length; i++) {
-        for (let j = 0; j < assets.length; j++) {
-          if (i === j) {
-            correlationMatrix[i][j] = 1 // Self-correlation is always 1
-          } else if (i < j) {
-            // Generate a realistic correlation based on investment types
-            const type1 = investments[i].type
-            const type2 = investments[j].type
-            
-            let correlation = 0.5 // Default moderate correlation
-            
-            if (type1 === type2) {
-              // Same type assets tend to be more correlated
-              correlation = 0.7 + Math.random() * 0.3
-            } else if ((type1 === 'bond' && type2 === 'stock') || (type1 === 'stock' && type2 === 'bond')) {
-              // Stocks and bonds tend to have negative or low correlation
-              correlation = -0.2 + Math.random() * 0.4
-            } else if ((type1 === 'real_estate' || type2 === 'real_estate')) {
-              // Real estate has moderate correlation with other assets
-              correlation = 0.3 + Math.random() * 0.4
-            }
-            
-            correlationMatrix[i][j] = parseFloat(correlation.toFixed(2))
-            correlationMatrix[j][i] = correlationMatrix[i][j] // Mirror the matrix
-          }
-        }
-      }
-      
+    if (!investments || investments.length === 0) {
       return {
-        assets,
-        correlationMatrix
+        investments: [],
+        correlationMatrix: [],
+        diversificationScore: 0,
+        averageCorrelations: []
       }
     }
 
-    // Return empty data if no investments found
+    // Create a list of investment objects with necessary properties
+    const investmentObjects = investments.map((inv, index) => ({
+      id: inv.id || `inv-${index}`,
+      name: inv.name || `Investment ${index + 1}`,
+      ticker: inv.ticker || null,
+      investment_type: inv.type || 'other',
+      index // Keep track of the index for the correlation matrix
+    }))
+
+    // Initialize correlation matrix
+    const correlationMatrix: number[][] = Array(investmentObjects.length)
+      .fill(0)
+      .map(() => Array(investmentObjects.length).fill(0))
+      
+    // Generate correlations based on investment types
+    for (let i = 0; i < investmentObjects.length; i++) {
+      for (let j = 0; j < investmentObjects.length; j++) {
+        if (i === j) {
+          correlationMatrix[i][j] = 1 // Self-correlation is always 1
+        } else if (i < j) {
+          // Generate a realistic correlation based on investment types
+          const type1 = investmentObjects[i].investment_type
+          const type2 = investmentObjects[j].investment_type
+          
+          let correlation = 0.5 // Default moderate correlation
+          
+          if (type1 === type2) {
+            // Same type assets tend to be more correlated
+            correlation = 0.7 + (Math.random() * 0.3)
+          } else if ((type1 === 'bond' && type2 === 'stock') || (type1 === 'stock' && type2 === 'bond')) {
+            // Stocks and bonds tend to have negative or low correlation
+            correlation = -0.2 + (Math.random() * 0.4)
+          } else if ((type1 === 'real_estate' && type2 !== 'real_estate') || (type1 !== 'real_estate' && type2 === 'real_estate')) {
+            // Real estate has moderate correlation with other assets
+            correlation = 0.3 + (Math.random() * 0.4)
+          } else if ((type1 === 'crypto' || type2 === 'crypto')) {
+            // Crypto tends to have low correlation with traditional assets
+            correlation = 0.1 + (Math.random() * 0.3)
+          }
+          
+          correlationMatrix[i][j] = parseFloat(correlation.toFixed(2))
+          correlationMatrix[j][i] = correlationMatrix[i][j] // Mirror the matrix
+        }
+      }
+    }
+
+    // Calculate average correlation for each investment
+    const averageCorrelations = investmentObjects.map((investment, i) => {
+      // Calculate average correlation with all other investments
+      let sum = 0
+      let count = 0
+      
+      for (let j = 0; j < investmentObjects.length; j++) {
+        if (i !== j) { // Skip self-correlation
+          sum += correlationMatrix[i][j]
+          count++
+        }
+      }
+      
+      const avgCorrelation = count > 0 ? sum / count : 0
+      
+      return {
+        ...investment,
+        average_correlation: parseFloat(avgCorrelation.toFixed(2))
+      }
+    })
+
+    // Calculate overall diversification score (1 - average of all correlations)
+    // Higher score means better diversification
+    let totalCorrelation = 0
+    let totalPairs = 0
+    
+    for (let i = 0; i < investmentObjects.length; i++) {
+      for (let j = i + 1; j < investmentObjects.length; j++) {
+        totalCorrelation += correlationMatrix[i][j]
+        totalPairs++
+      }
+    }
+    
+    const avgCorrelation = totalPairs > 0 ? totalCorrelation / totalPairs : 0
+    const diversificationScore = parseFloat((1 - avgCorrelation).toFixed(2))
+    
     return {
-      assets: [],
-      correlationMatrix: []
+      investments: investmentObjects,
+      correlationMatrix,
+      diversificationScore,
+      averageCorrelations
     }
   } catch (error) {
     console.error("Error in getPortfolioCorrelation:", error)
     return {
-      assets: [],
-      correlationMatrix: []
+      investments: [],
+      correlationMatrix: [],
+      diversificationScore: 0,
+      averageCorrelations: []
     }
   }
 }
@@ -1217,6 +1301,118 @@ export async function getInvestments() {
   }
 }
 
+// Get investment fee analysis
+export async function getInvestmentFeeAnalysis() {
+  try {
+    const user = await getCurrentUser()
+    if (!user) {
+      redirect("/login")
+    }
+
+    const supabase = await createServerSupabaseClient()
+    const investments = await getInvestments()
+
+    if (!investments || investments.length === 0) {
+      return {
+        investments: [],
+        totalAnnualFees: 0,
+        totalPortfolioValue: 0,
+        maxPotentialSavings: 0,
+        tenYearImpact: 0,
+        highFeeInvestments: []
+      }
+    }
+
+    // Calculate total portfolio value
+    const totalPortfolioValue = investments.reduce((sum, inv) => sum + (inv.value || 0), 0)
+
+    // Enhanced investments with fee data
+    const enhancedInvestments = investments.map(inv => {
+      // Calculate fee percentage based on investment type
+      let feePercentage = 0
+      
+      if (inv.type === 'etf') {
+        feePercentage = inv.fee_percentage || 0.15 // Default ETF expense ratio if not specified
+      } else if (inv.type === 'mutual_fund') {
+        feePercentage = inv.fee_percentage || 0.65 // Default mutual fund expense ratio
+      } else if (inv.type === 'stock') {
+        feePercentage = 0.05 // Typical trading fees annualized
+      } else if (inv.type === 'bond') {
+        feePercentage = inv.fee_percentage || 0.35 // Default bond fund expense ratio
+      } else {
+        feePercentage = 0.25 // Default for other investment types
+      }
+
+      // Calculate annual fee
+      const annualFee = (inv.value || 0) * (feePercentage / 100)
+
+      return {
+        ...inv,
+        fee_percentage: feePercentage,
+        annual_fee: annualFee
+      }
+    })
+
+    // Calculate total annual fees
+    const totalAnnualFees = enhancedInvestments.reduce((sum, inv) => sum + inv.annual_fee, 0)
+
+    // Identify high-fee investments (above industry average for their type)
+    const highFeeInvestments = enhancedInvestments.filter(inv => {
+      const industryAverage = 
+        inv.type === 'etf' ? 0.15 : 
+        inv.type === 'mutual_fund' ? 0.50 : 
+        inv.type === 'bond' ? 0.25 : 
+        inv.type === 'stock' ? 0.03 : 0.20
+
+      return inv.fee_percentage > industryAverage * 1.5 && inv.annual_fee > 50 // Only include if significantly higher and material
+    }).map(inv => {
+      // Find lower-cost alternatives
+      const alternatives = []
+      
+      if (inv.type === 'etf' || inv.type === 'mutual_fund') {
+        alternatives.push({
+          name: `Low-Cost ${inv.type === 'etf' ? 'ETF' : 'Index Fund'} Alternative`,
+          ticker: inv.type === 'etf' ? 'VTI' : 'VTSAX',
+          fee_percentage: inv.type === 'etf' ? 0.03 : 0.04,
+          potential_savings: inv.annual_fee - ((inv.value || 0) * (inv.type === 'etf' ? 0.03 : 0.04) / 100)
+        })
+      }
+
+      return {
+        ...inv,
+        alternatives,
+        potential_savings: alternatives.reduce((max, alt) => Math.max(max, alt.potential_savings), 0)
+      }
+    }).sort((a, b) => b.potential_savings - a.potential_savings)
+
+    // Calculate maximum potential savings
+    const maxPotentialSavings = highFeeInvestments.reduce((sum, inv) => sum + inv.potential_savings, 0)
+
+    // Calculate 10-year fee impact (simple, no compounding)
+    const tenYearImpact = totalAnnualFees * 10
+
+    return {
+      investments: enhancedInvestments,
+      totalAnnualFees,
+      totalPortfolioValue,
+      maxPotentialSavings,
+      tenYearImpact,
+      highFeeInvestments
+    }
+  } catch (error) {
+    console.error("Error in getInvestmentFeeAnalysis:", error)
+    // Return safe default values
+    return {
+      investments: [],
+      totalAnnualFees: 0,
+      totalPortfolioValue: 0,
+      maxPotentialSavings: 0,
+      tenYearImpact: 0,
+      highFeeInvestments: []
+    }
+  }
+}
+
 // Get rebalancing recommendations
 export async function getRebalancingRecommendations(targetAllocation?: Record<string, number>) {
   try {
@@ -1668,44 +1864,71 @@ export async function getAssetClasses(): Promise<string[]> {
 }
 
 // ESG-related functions
-export async function fetchInvestments({ type }: { type: 'portfolio' | 'universe' }) {
+export async function fetchInvestments({ type = 'portfolio' }: { type?: 'portfolio' | 'universe' } = {}): Promise<Investment[]> {
   try {
+    console.log(`Fetching ${type} investments...`)
     const supabase = await createServerSupabaseClient()
     
-    let query;
+    // For portfolio type, we need an authenticated user
     if (type === 'portfolio') {
-      // Fetch user's portfolio investments
-      const user = await getCurrentUser()
-      if (!user) throw new Error('User not authenticated')
-      
-      query = supabase
-        .from('investments')
-        .select('*')
-        .eq('user_id', user.id)
+      try {
+        // Fetch user's portfolio investments
+        const user = await getCurrentUser()
+        
+        if (!user) {
+          console.warn('No authenticated user found. Falling back to mock data.')
+          return enrichInvestmentData(getMockInvestments())
+        }
+        
+        console.log(`Authenticated user found: ${user.id}. Querying investments table...`)
+        
+        const { data, error } = await supabase
+          .from('investments')
+          .select('*')
+          .eq('user_id', user.id)
+        
+        if (error) {
+          console.error(`Error fetching portfolio investments:`, error)
+          
+          // If the table doesn't exist yet, return mock data
+          if (error.code === "42P01") {
+            console.log(`Investments table doesn't exist yet. Using mock data.`)
+            return enrichInvestmentData(getMockInvestments())
+          }
+          
+          return enrichInvestmentData(getMockInvestments())
+        }
+        
+        console.log(`Successfully fetched ${data?.length || 0} portfolio investments`)
+        return enrichInvestmentData(data as Investment[] || getMockInvestments())
+      } catch (authError) {
+        console.error('Authentication error in fetchInvestments:', authError)
+        return enrichInvestmentData(getMockInvestments())
+      }
     } else {
-      // Fetch all available investments for screening
-      query = supabase
+      // For universe type, no authentication needed
+      console.log('Querying investment_universe table...')
+      const { data, error } = await supabase
         .from('investment_universe')
         .select('*')
-    }
-    
-    const { data, error } = await query
-    
-    if (error) {
-      console.error(`Error fetching ${type} investments:`, error)
       
-      // If the table doesn't exist yet, return mock data
-      if (error.code === "42P01") { // PostgreSQL code for undefined_table
-        console.log(`${type === 'portfolio' ? 'Investments' : 'Investment universe'} table doesn't exist yet. Using mock data.`)
+      if (error) {
+        console.error(`Error fetching investment universe:`, error)
+        
+        // If the table doesn't exist yet, return mock data
+        if (error.code === "42P01") {
+          console.log(`Investment universe table doesn't exist yet. Using mock data.`)
+          return enrichInvestmentData(getMockInvestments())
+        }
+        
         return enrichInvestmentData(getMockInvestments())
       }
       
-      return enrichInvestmentData(getMockInvestments())
+      console.log(`Successfully fetched ${data?.length || 0} investment universe items`)
+      return enrichInvestmentData(data as Investment[] || getMockInvestments())
     }
-    
-    return enrichInvestmentData(data || getMockInvestments())
   } catch (error) {
-    console.error('Error in fetchInvestments:', error)
+    console.error('Unexpected error in fetchInvestments:', error)
     return enrichInvestmentData(getMockInvestments())
   }
 }
@@ -1717,14 +1940,38 @@ export async function fetchESGCategories() {
     const { data, error } = await supabase
       .from('esg_categories')
       .select('*')
+      .order('category')
+      .order('name')
     
     if (error) {
       console.error('Error fetching ESG categories:', error)
       
-      // If the table doesn't exist yet, return mock data
+      // If the table doesn't exist yet, use the SQL migration script
       if (error.code === "42P01") { // PostgreSQL code for undefined_table
-        console.log("ESG categories table doesn't exist yet. Using mock data.")
-        return getMockESGCategories()
+        console.log('ESG categories table doesn\'t exist yet. Attempting to create it...')
+        
+        // Try to create the table using the migration script
+        const { error: createError } = await supabase.rpc('create_esg_tables')
+        
+        if (createError) {
+          console.error('Failed to create ESG tables:', createError)
+          // Fall back to mock data if table creation fails
+          return getMockESGCategories()
+        }
+        
+        // Try fetching again after creating the table
+        const { data: newData, error: newError } = await supabase
+          .from('esg_categories')
+          .select('*')
+          .order('category')
+          .order('name')
+        
+        if (newError) {
+          console.error('Error fetching ESG categories after table creation:', newError)
+          return getMockESGCategories()
+        }
+        
+        return newData || getMockESGCategories()
       }
       
       return getMockESGCategories()
@@ -1744,14 +1991,36 @@ export async function fetchExcludedSectors() {
     const { data, error } = await supabase
       .from('excluded_sectors')
       .select('*')
+      .order('name')
     
     if (error) {
       console.error('Error fetching excluded sectors:', error)
       
-      // If the table doesn't exist yet, return mock data
+      // If the table doesn't exist yet, use the SQL migration script
       if (error.code === "42P01") { // PostgreSQL code for undefined_table
-        console.log("Excluded sectors table doesn't exist yet. Using mock data.")
-        return getMockExcludedSectors()
+        console.log('Excluded sectors table doesn\'t exist yet. Attempting to create it...')
+        
+        // Try to create the table using the migration script
+        const { error: createError } = await supabase.rpc('create_esg_tables')
+        
+        if (createError) {
+          console.error('Failed to create excluded sectors table:', createError)
+          // Fall back to mock data if table creation fails
+          return getMockExcludedSectors()
+        }
+        
+        // Try fetching again after creating the table
+        const { data: newData, error: newError } = await supabase
+          .from('excluded_sectors')
+          .select('*')
+          .order('name')
+        
+        if (newError) {
+          console.error('Error fetching excluded sectors after table creation:', newError)
+          return getMockExcludedSectors()
+        }
+        
+        return newData || getMockExcludedSectors()
       }
       
       return getMockExcludedSectors()
@@ -1765,16 +2034,22 @@ export async function fetchExcludedSectors() {
 }
 
 // Helper functions for mock data
-function getMockInvestments() {
+function getMockInvestments(): Investment[] {
   return [
     {
       id: '1',
       name: 'Sustainable Energy Fund',
       ticker: 'SESG',
+      type: 'etf',
+      asset_type: 'Stocks',
+      risk_level: 'medium',
+      sector: 'Energy',
       esgScore: { environmental: 9.2, social: 8.5, governance: 8.8, total: 8.8 },
       sector_id: 'renewable_energy',
       esg_categories: ['climate_action', 'clean_energy'],
       price: 78.45,
+      current_price: 78.45,
+      value: 10000,
       change: 2.3,
       marketCap: '45B',
       description: 'Focuses on companies leading in renewable energy and sustainability.'
@@ -1783,10 +2058,16 @@ function getMockInvestments() {
       id: '2',
       name: 'Social Impact ETF',
       ticker: 'SIMP',
+      type: 'etf',
+      asset_type: 'Stocks',
+      risk_level: 'medium',
+      sector: 'Healthcare',
       esgScore: { environmental: 7.5, social: 9.3, governance: 8.2, total: 8.3 },
       sector_id: 'healthcare',
       esg_categories: ['social_equity', 'healthcare_access'],
       price: 65.21,
+      current_price: 65.21,
+      value: 8000,
       change: 1.1,
       marketCap: '12B',
       description: 'Invests in companies making positive social impacts in healthcare and education.'
@@ -1795,10 +2076,16 @@ function getMockInvestments() {
       id: '3',
       name: 'Clean Water Fund',
       ticker: 'WATR',
+      type: 'mutual',
+      asset_type: 'Bonds',
+      risk_level: 'low',
+      sector: 'Utilities',
       esgScore: { environmental: 9.5, social: 8.0, governance: 7.8, total: 8.4 },
       sector_id: 'utilities',
       esg_categories: ['water_conservation', 'pollution_reduction'],
       price: 45.67,
+      current_price: 45.67,
+      value: 5000,
       change: -0.5,
       marketCap: '8B',
       description: 'Focuses on companies involved in water purification and conservation.'
@@ -1807,10 +2094,16 @@ function getMockInvestments() {
       id: '4',
       name: 'Fossil Fuel Free Index',
       ticker: 'NFFL',
+      type: 'index',
+      asset_type: 'Stocks',
+      risk_level: 'medium',
+      sector: 'Diversified',
       esgScore: { environmental: 8.9, social: 7.2, governance: 8.0, total: 8.0 },
       sector_id: 'diversified',
       esg_categories: ['climate_action', 'renewable_energy'],
       price: 112.34,
+      current_price: 112.34,
+      value: 15000,
       change: 3.2,
       marketCap: '30B',
       description: 'Broad market exposure excluding fossil fuel companies.'
@@ -1819,10 +2112,16 @@ function getMockInvestments() {
       id: '5',
       name: 'Weapons Free Defense ETF',
       ticker: 'PEACE',
+      type: 'etf',
+      asset_type: 'Shares',
+      risk_level: 'high',
+      sector: 'Defense',
       esgScore: { environmental: 6.8, social: 9.5, governance: 8.5, total: 8.3 },
       sector_id: 'defense',
       esg_categories: ['peace', 'human_rights'],
       price: 89.45,
+      current_price: 89.45,
+      value: 12000,
       change: 0.7,
       marketCap: '15B',
       description: 'Defense sector companies that do not manufacture weapons.'
@@ -1861,10 +2160,10 @@ function getMockExcludedSectors() {
 }
 
 // Enrich investment data with real-time prices and calculated metrics
-async function enrichInvestmentData(investments) {
+async function enrichInvestmentData(investments: Investment[]): Promise<Investment[]> {
   try {
     // Create a map of tickers to fetch prices efficiently
-    const tickers = investments.filter(inv => inv.ticker).map(inv => inv.ticker)
+    const tickers = investments.filter(inv => inv.ticker).map(inv => inv.ticker as string)
     
     // Fetch real-time prices for all tickers (in a real app, this would call an external API)
     const priceData = await fetchPricesForTickers(tickers)
@@ -1886,12 +2185,17 @@ async function enrichInvestmentData(investments) {
         esgScore = calculateEstimatedESGScore(investment)
       }
       
+      // Ensure sector is available for components that need it
+      const sector = investment.sector || investment.sector_id || 'Uncategorized'
+      
       return {
         ...investment,
-        price: priceInfo?.price || investment.price,
-        change: priceInfo?.change || investment.change,
+        price: priceInfo?.price || investment.price || 0,
+        current_price: priceInfo?.price || investment.current_price || investment.price || 0,
+        change: priceInfo?.change || investment.change || 0,
         expenseRatio,
         esgScore,
+        sector,
         // Add any other enriched data here
       }
     })
@@ -1901,29 +2205,69 @@ async function enrichInvestmentData(investments) {
   }
 }
 
-// Mock function to simulate fetching real-time prices
-async function fetchPricesForTickers(tickers) {
-  // In a real app, this would call an external API like Finnhub
-  // For now, we'll generate random prices
-  const priceData = {}
+// Fetch real-time prices using Finnhub API
+async function fetchPricesForTickers(tickers: string[]): Promise<PriceData> {
+  if (!tickers || tickers.length === 0) return {}
   
-  tickers.forEach(ticker => {
-    // Generate a random price between 50 and 200
-    const basePrice = Math.floor(Math.random() * 150) + 50
-    // Generate a random change between -5% and +5%
-    const changePercent = (Math.random() * 10 - 5) / 100
+  try {
+    // Use the Finnhub API endpoint we've set up
+    const apiUrl = '/api/finnhub'
+    const priceData: PriceData = {}
     
-    priceData[ticker] = {
-      price: parseFloat(basePrice.toFixed(2)),
-      change: parseFloat((changePercent * 100).toFixed(2))
+    // Process in batches to avoid overwhelming the API
+    const batchSize = 10
+    const batches: string[][] = []
+    
+    for (let i = 0; i < tickers.length; i += batchSize) {
+      batches.push(tickers.slice(i, i + batchSize))
     }
-  })
-  
-  return priceData
+    
+    // Process each batch
+    for (const batch of batches) {
+      const promises = batch.map(async (ticker: string) => {
+        try {
+          const response = await fetch(`${apiUrl}?symbol=${ticker}`)
+          if (!response.ok) throw new Error(`Failed to fetch price for ${ticker}`)
+          
+          const data = await response.json()
+          if (data && data.c) { // 'c' is current price in Finnhub API
+            priceData[ticker] = {
+              price: parseFloat(data.c.toFixed(2)),
+              change: parseFloat(((data.c - data.pc) / data.pc * 100).toFixed(2)) // Calculate % change
+            }
+          }
+        } catch (err) {
+          console.error(`Error fetching price for ${ticker}:`, err)
+          // Provide fallback data if API call fails
+          priceData[ticker] = {
+            price: 0,
+            change: 0
+          }
+        }
+      })
+      
+      await Promise.all(promises)
+      
+      // Add a small delay between batches to avoid rate limits
+      if (batches.length > 1) {
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
+    }
+    
+    return priceData
+  } catch (error) {
+    console.error('Error in fetchPricesForTickers:', error)
+    
+    // Return empty price data on error
+    return tickers.reduce((acc: PriceData, ticker: string) => {
+      acc[ticker] = { price: 0, change: 0 }
+      return acc
+    }, {})
+  }
 }
 
 // Calculate estimated expense ratio based on investment type
-function calculateEstimatedExpenseRatio(investment) {
+function calculateEstimatedExpenseRatio(investment: Investment): number {
   // In a real app, this would use more sophisticated logic
   // For now, we'll use typical ranges based on investment type
   const type = investment.type?.toLowerCase() || ''
@@ -1938,12 +2282,12 @@ function calculateEstimatedExpenseRatio(investment) {
 }
 
 // Calculate estimated ESG score if not available
-function calculateEstimatedESGScore(investment) {
+function calculateEstimatedESGScore(investment: Investment): ESGScore {
   // In a real app, this would use more sophisticated logic or external data
   // For now, we'll generate reasonable ESG scores
   
   // Check if the investment has sector information that could inform ESG scores
-  const sector = (investment.sector_id || '').toLowerCase()
+  const sector = ((investment.sector_id || investment.sector || '')).toLowerCase()
   
   let environmental = 0, social = 0, governance = 0
   
