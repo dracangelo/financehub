@@ -8,6 +8,8 @@ import { EXPENSE_CATEGORIES } from "@/lib/constants/categories"
 
 // Force static rendering to prevent switching between static and dynamic
 export const dynamic = 'force-static';
+export const fetchCache = 'force-no-store';
+export const revalidate = 0;
 
 export default function NewExpensePage() {
   return (

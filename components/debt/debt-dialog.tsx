@@ -28,7 +28,7 @@ export function DebtDialog({ open, onOpenChange, debt, onSave }: DebtDialogProps
   const [formData, setFormData] = useState<Debt>({
     id: crypto.randomUUID(),
     name: "",
-    type: "credit_card",
+    type: "credit-card",
     principal: 0,
     interest_rate: 0,
     minimum_payment: 0,
@@ -48,7 +48,7 @@ export function DebtDialog({ open, onOpenChange, debt, onSave }: DebtDialogProps
       setFormData({
         id: crypto.randomUUID(),
         name: "",
-        type: "credit_card",
+        type: "credit-card",
         principal: 0,
         interest_rate: 0,
         minimum_payment: 0,
@@ -97,16 +97,16 @@ export function DebtDialog({ open, onOpenChange, debt, onSave }: DebtDialogProps
               <Label htmlFor="type" className="text-right">
                 Type
               </Label>
-              <Select value={formData.type || "credit_card"} onValueChange={(value) => handleChange("type", value)}>
+              <Select value={formData.type || "credit-card"} onValueChange={(value) => handleChange("type", value)}>
                 <SelectTrigger id="type" className="col-span-3">
                   <SelectValue placeholder="Select debt type" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="credit_card">Credit Card</SelectItem>
+                  <SelectItem value="credit-card">Credit Card</SelectItem>
                   <SelectItem value="mortgage">Mortgage</SelectItem>
-                  <SelectItem value="auto_loan">Auto Loan</SelectItem>
-                  <SelectItem value="student_loan">Student Loan</SelectItem>
-                  <SelectItem value="personal_loan">Personal Loan</SelectItem>
+                  <SelectItem value="auto">Auto Loan</SelectItem>
+                  <SelectItem value="student">Student Loan</SelectItem>
+                  <SelectItem value="personal">Personal Loan</SelectItem>
                   <SelectItem value="medical">Medical Debt</SelectItem>
                   <SelectItem value="other">Other</SelectItem>
                 </SelectContent>

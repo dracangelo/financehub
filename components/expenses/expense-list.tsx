@@ -105,7 +105,7 @@ const ExpenseItem = ({ expense, onDelete }: { expense: any; onDelete: (id: strin
       <CardContent className="p-4 pl-6">
         <div className="flex items-start justify-between">
           <div className="space-y-1">
-            <h3 className="font-medium">{expense.description}</h3>
+            <h3 className={`font-medium ${expense.is_impulse ? 'text-red-500' : ''}`}>{expense.description}</h3>
             <div className="text-sm text-muted-foreground flex flex-wrap gap-2">
               {expense.merchant_name && (
                 <span className="inline-flex items-center">

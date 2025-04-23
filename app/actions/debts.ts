@@ -127,12 +127,19 @@ export async function createDebt(formData: FormData) {
     const termMonthsStr = formData.get("term_months") as string
     const termMonths = termMonthsStr ? parseInt(termMonthsStr) : null
 
+    // Validate that type is one of the allowed values
+    const validTypes = ['credit-card', 'mortgage', 'auto', 'student', 'personal', 'medical', 'other'];
+    if (!validTypes.includes(type)) {
+      console.error("createDebt: Invalid debt type", type);
+      throw new Error(`Invalid debt type. Must be one of: ${validTypes.join(', ')}`);
+    }
+
     // Create debt object matching the database schema
     const debtData = {
       id: formData.get("id") as string || crypto.randomUUID(),
       user_id: userId,
       name,
-      type: type.replace('-', '_'), // Ensure format matches schema CHECK constraint
+      type, // Use type as-is to match the database constraint
       principal,
       interest_rate: interestRate,
       minimum_payment: minimumPayment,

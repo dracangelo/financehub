@@ -65,9 +65,57 @@ export async function getExpenses(locationSearch?: LocationSearchParams) {
   }
 }
 
-// Search expenses by location
+// Search expenses by location with enhanced capabilities
 export async function searchExpensesByLocation(params: LocationSearchParams) {
-  return getExpenses(params);
+  try {
+    const supabase = await createServerSupabaseClient()
+    const user = await getAuthenticatedUser()
+
+    if (!user) {
+      console.log("No authenticated user found")
+      return []
+    }
+
+    // Build the query
+    let query = supabase
+      .from("expenses")
+      .select("*")
+      .eq("user_id", user.id)
+    
+    // Add location filter if provided
+    if (params && params.latitude && params.longitude) {
+      const radius = params.radiusMeters || 1000; // Default to 1km if not specified
+      const point = `POINT(${params.longitude} ${params.latitude})`;
+      
+      // Use PostGIS ST_DWithin to find expenses within the radius
+      query = query.filter(
+        'location', 
+        'st_dwithin', 
+        `CAST(ST_SetSRID(ST_GeomFromText('${point}'), 4326) AS geography),${radius}`
+      );
+    }
+    
+    // Add location name filter if provided
+    if (params && params.locationName) {
+      // Try to match against merchant_name or notes fields that might contain location info
+      query = query.or(`merchant_name.ilike.%${params.locationName}%,notes.ilike.%${params.locationName}%,description.ilike.%${params.locationName}%`);
+    }
+    
+    // Execute the query
+    const { data, error } = await query
+      .order("spent_at", { ascending: false })
+      .limit(100)
+
+    if (error) {
+      console.error("Error searching expenses by location:", error)
+      return []
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error("Unexpected error in searchExpensesByLocation:", error)
+    return []
+  }
 }
 
 // Get expense by ID
@@ -130,8 +178,7 @@ export async function createExpense(expenseData: {
     // Prepare the expense data for insertion
     const insertData = {
       user_id: user.id,
-      // Remove merchant_name from the insert data to avoid schema errors
-      // merchant_name: expenseData.merchant_name || null,
+      merchant_name: expenseData.merchant_name || null,
       amount: expenseData.amount,
       category: expenseData.category_id,
       description: expenseData.description,
@@ -140,9 +187,12 @@ export async function createExpense(expenseData: {
         `POINT(${expenseData.location.longitude} ${expenseData.location.latitude})` : 
         null,
       is_recurring: expenseData.is_recurring || false,
+      is_impulse: expenseData.is_impulse || false,
       notes: expenseData.notes || null,
       receipt_url: expenseData.receipt_url || null,
-      warranty_expiry: expenseData.warranty_expiry?.toISOString() || null
+      warranty_expiry: expenseData.warranty_expiry?.toISOString() || null,
+      split_with_name: expenseData.split_with_name || null,
+      split_amount: expenseData.split_amount || null,
     }
 
     // Create merchant if needed
@@ -396,7 +446,13 @@ export async function updateExpense(id: string, expenseData: any) {
       location,
       spent_at: new Date(spent_at).toISOString(),
       is_recurring,
-      merchant_id
+      is_impulse,
+      merchant_id,
+      merchant_name,
+      notes,
+      split_with_name,
+      split_amount,
+      warranty_expiry: warranty_expiry ? new Date(warranty_expiry).toISOString() : null
     }
     const { data, error } = await supabase
       .from("expenses")

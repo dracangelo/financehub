@@ -48,10 +48,10 @@ export async function createSplitExpense(
  * rather than creating separate records in the database
  */
 export async function createSplitExpenseFromForm(data: {
-  sharedWithName: string;
-  amount: number;
+  expenseId?: string;
+  splitWithName: string;
+  splitAmount: number;
   description: string;
-  date: string;
 }) {
   try {
     const supabase = await createServerSupabaseClient()
@@ -62,39 +62,75 @@ export async function createSplitExpenseFromForm(data: {
     }
     
     // Validate input data
-    if (!data.sharedWithName || !data.amount || !data.description) {
+    if (!data.splitWithName || !data.splitAmount || !data.description) {
       throw new Error("Missing required fields for split expense")
     }
     
-    // Create an expense record with split information in the notes
-    const splitNote = `Split with ${data.sharedWithName} for ${data.amount.toFixed(2)}`;
-    const fullDescription = `${data.description} (${splitNote})`;
+    // Create split information for the notes
+    const splitNote = `Split with ${data.splitWithName} for $${data.splitAmount.toFixed(2)}`;
     
-    // First check if the expenses table has a notes column
-    const { data: tableInfo, error: tableError } = await supabase
-      .from('expenses')
-      .select('*')
-      .limit(1);
+    // Check if we're updating an existing expense or creating a new one
+    if (data.expenseId) {
+      // First, verify that the expense exists and belongs to the user
+      const { data: existingExpense, error: getError } = await supabase
+        .from('expenses')
+        .select('*')
+        .eq('id', data.expenseId)
+        .eq('user_id', user.id)
+        .single();
+        
+      if (getError) {
+        console.error("Error fetching expense for split:", getError);
+        throw new Error(`Error fetching expense: ${getError.message}`);
+      }
       
-    if (tableError) {
-      console.error("Error checking expenses table schema:", tableError);
-      throw new Error(`Error checking expenses table schema: ${tableError.message}`);
+      // Update the expense with split information
+      const updateData = {
+        notes: splitNote,
+        split_with_name: data.splitWithName,
+        split_amount: data.splitAmount
+      };
+      
+      const { error: updateError } = await supabase
+        .from('expenses')
+        .update(updateData)
+        .eq('id', data.expenseId);
+        
+      if (updateError) {
+        // Check if the error is related to missing columns
+        if (updateError.message && updateError.message.includes("column")) {
+          console.error("Column error when updating expense with split info:", updateError);
+          
+          // Try updating just the notes field as a fallback
+          const { error: notesUpdateError } = await supabase
+            .from('expenses')
+            .update({ notes: splitNote })
+            .eq('id', data.expenseId);
+            
+          if (notesUpdateError) {
+            throw new Error(`Error updating expense notes: ${notesUpdateError.message}`);
+          }
+        } else {
+          throw new Error(`Error updating expense with split info: ${updateError.message}`);
+        }
+      }
+      
+      return data.expenseId;
     }
     
-    // Create the expense record
-    const expenseData = {
+    // If no expenseId provided, create a new expense record
+    const expenseData: any = {
       user_id: user.id,
-      amount: data.amount,
-      description: fullDescription,
+      amount: data.splitAmount,
+      description: `${data.description} (Split)`,
       spent_at: new Date().toISOString(),
-      category: 'Split'
+      category: 'Split',
+      notes: splitNote
     };
     
-    // Only add notes if the column exists in the table
-    // This is a workaround for the schema issue
-    if ('notes' in (tableInfo?.[0] || {})) {
-      (expenseData as any).notes = splitNote;
-    }
+    // Try to add split-specific fields if they exist in the schema
+    expenseData.split_with_name = data.splitWithName;
+    expenseData.split_amount = data.splitAmount;
     
     const { data: createdExpense, error: expenseError } = await supabase
       .from('expenses')

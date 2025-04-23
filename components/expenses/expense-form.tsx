@@ -51,6 +51,7 @@ const expenseFormSchema = z.object({
   latitude: z.number().optional().nullable(),
   longitude: z.number().optional().nullable(),
   is_recurring: z.boolean().default(false),
+  is_impulse: z.boolean().default(false),
   notes: z.string().optional().nullable(),
   receipt_image: z.any().optional().nullable(),
   warranty_expiry: z.date().optional().nullable(),
@@ -110,14 +111,15 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
       category_id: expense?.category || "",
       description: expense?.description || "",
       spent_at: expense?.spent_at ? new Date(expense.spent_at) : new Date(),
-      latitude: expense?.latitude || undefined,
-      longitude: expense?.longitude || undefined,
+      latitude: expense?.latitude || null,
+      longitude: expense?.longitude || null,
       is_recurring: expense?.is_recurring || false,
+      is_impulse: expense?.is_impulse || false,
       notes: expense?.notes || "",
-      receipt_image: undefined,
-      warranty_expiry: expense?.warranty_expiry ? new Date(expense.warranty_expiry) : undefined,
+      receipt_image: null,
+      warranty_expiry: expense?.warranty_expiry ? new Date(expense.warranty_expiry) : null,
       split_with_name: expense?.split_with_name || "",
-      split_amount: expense?.split_amount || undefined,
+      split_amount: expense?.split_amount || null,
     },
   });
 
@@ -284,39 +286,14 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
   };
 
   // Handle form submission
-  const onSubmit = async (data: ExpenseFormValues) => {
-    // Prevent multiple submissions
-    if (isSubmitting) {
-      return;
-    }
-    
+  async function onSubmit(data: ExpenseFormValues) {
+    if (isSubmitting) return; // Prevent multiple submissions
     setIsSubmitting(true);
+
     try {
-      // Validate amount
-      if (Number(data.amount) <= 0) {
-        toast({
-          title: "Invalid Amount",
-          description: "Amount must be greater than zero",
-          variant: "destructive",
-        });
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Validate category
-      if (!data.category_id) {
-        toast({
-          title: "Missing Category",
-          description: "Please select a category for this expense",
-          variant: "destructive",
-        });
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Prepare form data
+      // Prepare the expense data
       const expenseData = {
-        merchant_name: data.merchant_name,
+        merchant_name: data.merchant_name || null,
         amount: Number(data.amount),
         category_id: data.category_id,
         description: data.description,
@@ -326,115 +303,95 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
           : null,
         is_recurring: data.is_recurring,
         is_impulse: data.is_impulse,
-        notes: data.notes,
-        warranty_expiry: data.warranty_expiry,
-        split_with_name: data.split_with_name,
-        split_amount: data.split_amount ? Number(data.split_amount) : null,
+        notes: data.notes || null,
+        warranty_expiry: data.warranty_expiry || null,
+        // Add split expense data if applicable
+        split_with_name: showSplitOptions ? data.split_with_name : null,
+        split_amount: showSplitOptions && data.split_amount ? Number(data.split_amount) : null,
       };
 
-      // Upload receipt if provided
-      if (data.receipt_image) {
-        try {
-          // Create the expense first if we're not editing
-          let expenseId = isEditing && expense ? expense.id : null;
-          
-          if (!expenseId) {
-            // For new expenses, we need to create the expense first to get an ID
-            const result = await createExpense(expenseData);
-            if (result && result.id) {
-              expenseId = result.id;
-              // Update our local reference to avoid creating duplicate expenses
-              expenseData.id = expenseId;
-            } else {
-              throw new Error("Failed to create expense before uploading receipt");
-            }
-          }
-          
-          // Now upload the receipt with the valid expense ID
-          const receiptResult = await uploadReceipt(data.receipt_image, expenseId);
-          expenseData.receipt_url = receiptResult.publicUrl;
-          
-          // If we're editing, we need to update the expense with the receipt URL
-          if (isEditing && expense) {
-            await updateExpense(expense.id, { receipt_url: receiptResult.publicUrl });
-          }
-        } catch (error) {
-          console.error("Error uploading receipt:", error);
-          toast({
-            title: "Warning",
-            description: "Failed to upload receipt, but continuing with expense creation.",
-            variant: "default",
-          });
-        }
-      }
-      
-      // Handle split expense
-      if (data.split_with_name && data.split_amount) {
-        try {
-          // Create a proper split expense object with the correct date format
-          const splitExpenseData = {
-            sharedWithName: data.split_with_name,
-            amount: Number(data.split_amount),
-            description: data.description,
-            date: data.spent_at.toISOString() // Ensure we pass a valid ISO string date
-          };
-          
-          await createSplitExpenseFromForm(splitExpenseData);
-          toast({
-            title: "Split Expense Created",
-            description: `Successfully created split expense with ${data.split_with_name}`,
-            variant: "default",
-          });
-        } catch (error) {
-          console.error("Error creating split expense:", error);
-          toast({
-            title: "Warning",
-            description: "Failed to create split expense record, but continuing with main expense creation.",
-            variant: "default",
-          });
-        }
-      }
-      
-      // Submit the expense
-      if (isEditing && expense) {
-        // Show confirmation dialog before updating
-        const confirmEdit = window.confirm(
-          `Are you sure you want to update "${data.description}"? This will change how this expense appears in your reports and analytics.`
-        );
-        
-        if (!confirmEdit) {
-          setIsSubmitting(false);
-          return;
-        }
-        
+      let expenseId;
+
+      // Create or update the expense
+      if (isEditing && expense?.id) {
         await updateExpense(expense.id, expenseData);
-        toast({
-          title: "Expense Updated",
-          description: `Successfully updated "${data.description}"`,
-          variant: "success",
-        });
-      } else if (!expenseData.id) {
-        // Only create the expense if we haven't already created it for the receipt upload
-        await createExpense(expenseData);
-        toast({
-          title: "Expense Created",
-          description: `Successfully created "${data.description}"`,
-          variant: "success",
-        });
+        expenseId = expense.id;
+      } else {
+        const result = await createExpense(expenseData);
+        expenseId = result?.id;
       }
 
-      // Use Next.js router for navigation and prevent the form from being submitted again
-      // This should stop the continuous POST requests
-      window.location.href = "/expenses";
-      return;
-    } catch (error: any) {
-      console.error("Error submitting form:", error);
+      if (!expenseId) {
+        throw new Error("Failed to get expense ID");
+      }
+
+      // Handle receipt upload if there's a receipt image
+      if (fileInputRef.current?.files?.[0] && expenseId) {
+        try {
+          await uploadReceipt(fileInputRef.current.files[0], expenseId);
+        } catch (uploadError) {
+          console.error("Error uploading receipt:", uploadError);
+          toast({
+            title: "Receipt Upload Failed",
+            description: "The expense was saved, but we couldn't upload the receipt.",
+            variant: "destructive",
+          });
+        }
+      }
+
+      // Handle split expense creation if applicable
+      // Note: We've already included split_with_name and split_amount in the main expense data
+      // This is a fallback in case the direct approach didn't work
+      if (showSplitOptions && data.split_with_name && data.split_amount && expenseId) {
+        try {
+          // Check if the split information was successfully saved with the expense
+          const { data: updatedExpense } = await supabase
+            .from("expenses")
+            .select("split_with_name, split_amount")
+            .eq("id", expenseId)
+            .single();
+            
+          // If split information is missing, use the createSplitExpenseFromForm function
+          if (!updatedExpense?.split_with_name || updatedExpense?.split_amount === null) {
+            console.log("Split expense columns not found, using alternative approach");
+            await createSplitExpenseFromForm({
+              expenseId,
+              splitWithName: data.split_with_name,
+              splitAmount: Number(data.split_amount),
+              description: data.description,
+            });
+          } else {
+            console.log("Split expense saved successfully");
+          }
+        } catch (splitError) {
+          console.error("Error creating split expense:", splitError);
+          toast({
+            title: "Split Expense Failed",
+            description: "The expense was saved, but we couldn't create the split record. Please run the add_split_expense_columns.sql migration.",
+            variant: "destructive",
+          });
+        }
+      }
+
+      // Show success message
+      toast({
+        title: isEditing ? "Expense Updated" : "Expense Created",
+        description: `Successfully ${isEditing ? "updated" : "created"} expense: ${data.description}`,
+      });
+
+      // Use a small timeout to ensure the toast is shown before navigation
+      setTimeout(() => {
+        // Use window.location for a full page navigation instead of router.push
+        // This avoids client-side routing issues with server actions
+        window.location.href = "/expenses";
+      }, 100);
+    } catch (error) {
+      console.error("Error submitting expense:", error);
       toast({
         title: "Error",
-        description: `Failed to ${isEditing ? 'update' : 'create'} expense: ${error.message || 'Unknown error'}`,
+        description: `Failed to ${isEditing ? "update" : "create"} expense. Please try again.`,
         variant: "destructive",
       });
-    } finally {
       setIsSubmitting(false);
     }
   };
