@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -15,7 +15,7 @@ import {
   SelectValue 
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { X } from "lucide-react"
+import { X, ChevronDown } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 
 interface SubscriptionFormProps {
@@ -25,6 +25,8 @@ interface SubscriptionFormProps {
 }
 
 export function SubscriptionForm({ onClose, onSave, initialData }: SubscriptionFormProps) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [showScrollIndicator, setShowScrollIndicator] = useState(true);
   const [formData, setFormData] = useState(initialData || {
     name: "",
     category: "Uncategorized",
@@ -37,6 +39,33 @@ export function SubscriptionForm({ onClose, onSave, initialData }: SubscriptionF
     autoRenew: true,
     notes: ""
   })
+  
+  useEffect(() => {
+    const checkScroll = () => {
+      if (!contentRef.current) return;
+      const { scrollHeight, clientHeight, scrollTop } = contentRef.current;
+      
+      // If scrolled to the bottom or content doesn't need scrolling
+      if (scrollTop + clientHeight >= scrollHeight - 20 || scrollHeight <= clientHeight) {
+        setShowScrollIndicator(false);
+      } else {
+        setShowScrollIndicator(true);
+      }
+    };
+    
+    const contentElement = contentRef.current;
+    if (contentElement) {
+      contentElement.addEventListener('scroll', checkScroll);
+      // Initial check
+      checkScroll();
+    }
+    
+    return () => {
+      if (contentElement) {
+        contentElement.removeEventListener('scroll', checkScroll);
+      }
+    };
+  }, [])
   
   const handleChange = (field: string, value: any) => {
     setFormData((prev: any) => ({
@@ -60,8 +89,26 @@ export function SubscriptionForm({ onClose, onSave, initialData }: SubscriptionF
   }
   
   return (
-    <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-2xl">
+    <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-y-auto" style={{ maxHeight: '100vh' }}>
+      <Card className="w-full max-w-2xl my-8 max-h-[90vh] flex flex-col shadow-lg">
+        <style jsx global>{`
+          .scroll-smooth {
+            scroll-behavior: smooth;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(155, 155, 155, 0.5) transparent;
+          }
+          .scroll-smooth::-webkit-scrollbar {
+            width: 8px;
+          }
+          .scroll-smooth::-webkit-scrollbar-track {
+            background: transparent;
+          }
+          .scroll-smooth::-webkit-scrollbar-thumb {
+            background-color: rgba(155, 155, 155, 0.5);
+            border-radius: 20px;
+            border: transparent;
+          }
+        `}</style>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle>{initialData ? "Edit Subscription" : "Add New Subscription"}</CardTitle>
@@ -74,8 +121,8 @@ export function SubscriptionForm({ onClose, onSave, initialData }: SubscriptionF
           </Button>
         </CardHeader>
         
-        <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-4">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden relative">
+          <CardContent ref={contentRef} className="space-y-4 overflow-y-auto pr-2 flex-1 scroll-smooth">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="name">Subscription Name</Label>
@@ -247,7 +294,13 @@ export function SubscriptionForm({ onClose, onSave, initialData }: SubscriptionF
             </div>
           </CardContent>
           
-          <CardFooter className="flex justify-end space-x-2">
+          {showScrollIndicator && (
+            <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 animate-bounce bg-primary/10 rounded-full p-1 cursor-pointer z-10" 
+                 onClick={() => contentRef.current?.scrollBy({ top: 100, behavior: 'smooth' })}>
+              <ChevronDown className="h-5 w-5 text-primary" />
+            </div>
+          )}
+          <CardFooter className="flex justify-end space-x-2 border-t pt-4 mt-2 relative">
             <Button variant="outline" onClick={onClose}>
               Cancel
             </Button>

@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { createSubscription, updateSubscription } from "@/app/actions/subscriptions"
+import { X, ChevronDown } from "lucide-react"
 
 interface Subscription {
   id: string
@@ -61,6 +62,8 @@ interface SubscriptionDialogProps {
 }
 
 export function SubscriptionDialog({ open, onOpenChange, subscription, onSave }: SubscriptionDialogProps) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [showScrollIndicator, setShowScrollIndicator] = useState(true);
   const [isAutoRenew, setIsAutoRenew] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -72,6 +75,33 @@ export function SubscriptionDialog({ open, onOpenChange, subscription, onSave }:
       setIsAutoRenew(true)
     }
   }, [subscription, open])
+  
+  useEffect(() => {
+    const checkScroll = () => {
+      if (!contentRef.current) return;
+      const { scrollHeight, clientHeight, scrollTop } = contentRef.current;
+      
+      // If scrolled to the bottom or content doesn't need scrolling
+      if (scrollTop + clientHeight >= scrollHeight - 20 || scrollHeight <= clientHeight) {
+        setShowScrollIndicator(false);
+      } else {
+        setShowScrollIndicator(true);
+      }
+    };
+    
+    const contentElement = contentRef.current;
+    if (contentElement) {
+      contentElement.addEventListener('scroll', checkScroll);
+      // Initial check
+      checkScroll();
+    }
+    
+    return () => {
+      if (contentElement) {
+        contentElement.removeEventListener('scroll', checkScroll);
+      }
+    };
+  }, [open])
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -98,8 +128,26 @@ export function SubscriptionDialog({ open, onOpenChange, subscription, onSave }:
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
-        <form onSubmit={handleSubmit}>
+      <DialogContent className="sm:max-w-[500px] max-h-[90vh] flex flex-col">
+        <style jsx global>{`
+          .scroll-smooth {
+            scroll-behavior: smooth;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(155, 155, 155, 0.5) transparent;
+          }
+          .scroll-smooth::-webkit-scrollbar {
+            width: 8px;
+          }
+          .scroll-smooth::-webkit-scrollbar-track {
+            background: transparent;
+          }
+          .scroll-smooth::-webkit-scrollbar-thumb {
+            background-color: rgba(155, 155, 155, 0.5);
+            border-radius: 20px;
+            border: transparent;
+          }
+        `}</style>
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden relative">
           <DialogHeader>
             <DialogTitle>{subscription ? "Edit Subscription" : "Add New Subscription"}</DialogTitle>
             <DialogDescription>
@@ -109,7 +157,7 @@ export function SubscriptionDialog({ open, onOpenChange, subscription, onSave }:
 
           {error && <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md mb-4">{error}</div>}
 
-          <div className="grid gap-4 py-4">
+          <div ref={contentRef} className="grid gap-4 py-4 overflow-y-auto pr-2 scroll-smooth max-h-[60vh]">
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="name" className="text-right">
                 Name
@@ -295,7 +343,13 @@ export function SubscriptionDialog({ open, onOpenChange, subscription, onSave }:
             </div>
           </div>
 
-          <DialogFooter>
+          {showScrollIndicator && (
+            <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 animate-bounce bg-primary/10 rounded-full p-1 cursor-pointer z-10" 
+                 onClick={() => contentRef.current?.scrollBy({ top: 100, behavior: 'smooth' })}>
+              <ChevronDown className="h-5 w-5 text-primary" />
+            </div>
+          )}
+          <DialogFooter className="border-t pt-4 mt-2">
             <Button type="submit" disabled={loading}>
               {loading ? "Saving..." : subscription ? "Update Subscription" : "Add Subscription"}
             </Button>
