@@ -28,6 +28,7 @@ export async function getSubscriptions() {
       `)
       .eq("user_id", user.id)
       .eq("is_active", true)
+      .eq("type", "subscription")
       .order("next_payment_date", { ascending: true })
 
     if (error) {

@@ -29,12 +29,11 @@ interface Bill {
   name: string
   amount: number
   next_payment_date: string
-  is_recurring: boolean
-  billing_frequency: string
-  auto_pay: boolean
   payment_schedule?: { status: string; scheduled_date: string }[]
   billers?: { name: string; category: string }
   is_paid?: boolean
+  status?: string
+  scheduled_date?: string
 }
 
 interface BillsListProps {
@@ -78,10 +77,7 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
       const validatedBills = data.map((bill: any) => ({
         ...bill,
         amount: typeof bill.amount === 'number' ? bill.amount : parseFloat(bill.amount) || 0,
-        next_payment_date: bill.next_payment_date || new Date().toISOString().split('T')[0],
-        is_recurring: !!bill.is_recurring,
-        billing_frequency: bill.billing_frequency || 'monthly',
-        auto_pay: !!bill.auto_pay
+        next_payment_date: bill.next_payment_date || new Date().toISOString().split('T')[0]
       }))
       
       setBills(validatedBills)
@@ -173,6 +169,8 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
       setBillToDelete(null)
     } catch (err) {
       console.error("Error deleting bill:", err)
+      setError(typeof err === 'string' ? err : "Failed to delete bill. Please try again.")
+      setOpenDeleteDialog(false)
     }
   }
 
@@ -185,12 +183,17 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
     if (!billToPay) return
 
     try {
-      await markBillAsPaid(billToPay.id, new FormData())
+      // Create a proper FormData object with any necessary fields
+      const formData = new FormData()
+      formData.append('payment_method', 'manual')
+      
+      await markBillAsPaid(billToPay.id, formData)
       await refreshBills()
       setOpenPayDialog(false)
       setBillToPay(null)
     } catch (err) {
       console.error("Error marking bill as paid:", err)
+      setError(typeof err === 'string' ? err : "Failed to mark bill as paid. Please try again.")
     }
   }
 
@@ -247,7 +250,20 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
       }
     }
     
-    // If no payment_schedule or status not determined, check due date
+    // Check if there are any bill payments
+    if (bill.bill_payments && bill.bill_payments.length > 0) {
+      // Sort payments by date, most recent first
+      const sortedPayments = [...bill.bill_payments].sort((a, b) => 
+        new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime()
+      );
+      
+      // If the most recent payment has a completed status, the bill is paid
+      if (sortedPayments[0].payment_status === "completed") {
+        return "paid";
+      }
+    }
+    
+    // If status not determined yet, check due date
     try {
       const dueDate = new Date(bill.next_payment_date);
       const today = new Date();
@@ -260,9 +276,26 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
         return "unpaid"; // Default to unpaid if date is invalid
       }
       
-      if (dueDate < today) {
+      // Calculate the difference in days
+      const diffTime = dueDate.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      // If due date has passed, it's overdue
+      if (diffDays < 0) {
+        // If auto_pay is enabled, mark as paid
+        if (bill.auto_pay) {
+          return "paid";
+        }
         return "overdue";
       }
+      
+      // If due date is within 7 days, it's upcoming
+      if (diffDays <= 7) {
+        return "upcoming";
+      }
+      
+      // More than 7 days away
+      return "unpaid";
     } catch (e) {
       console.error("Error determining bill status:", e);
     }
@@ -291,6 +324,15 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
       );
     }
     
+    if (status === "upcoming") {
+      return (
+        <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
+          <Clock className="mr-1 h-3 w-3" />
+          Due Soon
+        </Badge>
+      );
+    }
+    
     // Default unpaid
     return (
       <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
@@ -301,7 +343,7 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
   };
 
   if (showCalendarView) {
-    return <BillsCalendar bills={bills} loading={loading} error={error} />;
+    return <BillsCalendar initialBills={bills} />;
   }
 
   return (
@@ -310,7 +352,7 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Bills</h2>
           <p className="text-muted-foreground">
-            Manage your bills and recurring payments.
+            Manage your bills and payments.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -378,7 +420,7 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
       </div>
 
       {showCalendarView ? (
-        <BillsCalendar bills={filteredBills} loading={loading} error={error} />
+        <BillsCalendar initialBills={filteredBills} />
       ) : (
         <Card>
           <CardContent className="p-0">
@@ -410,7 +452,6 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
                     </div>
                   </TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Recurring</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -423,14 +464,13 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
                       <TableCell><Skeleton className="h-6 w-16" /></TableCell>
                       <TableCell><Skeleton className="h-6 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-6 w-16" /></TableCell>
-                      <TableCell><Skeleton className="h-6 w-20" /></TableCell>
                       <TableCell className="text-right"><Skeleton className="h-6 w-24 ml-auto" /></TableCell>
                     </TableRow>
                   ))
                 ) : filteredBills.length === 0 ? (
                   // Empty state
                   <TableRow>
-                    <TableCell colSpan={6} className="h-24 text-center">
+                    <TableCell colSpan={5} className="h-24 text-center">
                       <div className="flex flex-col items-center justify-center">
                         <p className="mb-2 text-muted-foreground">
                           {searchQuery || statusFilter 
@@ -464,16 +504,6 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
                         </div>
                       </TableCell>
                       <TableCell>{getBillStatusBadge(bill)}</TableCell>
-                      <TableCell>
-                        {bill.is_recurring ? (
-                          <div className="flex items-center">
-                            <Clock className="mr-2 h-4 w-4 text-muted-foreground" />
-                            <span className="capitalize">{bill.billing_frequency}</span>
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground">One-time</span>
-                        )}
-                      </TableCell>
                       <TableCell className="text-right">
                         {getBillStatus(bill) !== "paid" && (
                           <Button variant="ghost" size="icon" onClick={() => handlePayBill(bill)} title="Mark as paid">
@@ -489,7 +519,7 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
                       </TableCell>
                     </TableRow>
                   ))
-                )
+                )}
               </TableBody>
             </Table>
           </CardContent>
@@ -527,7 +557,6 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
             <AlertDialogTitle>Mark bill as paid?</AlertDialogTitle>
             <AlertDialogDescription>
               This will mark the bill as paid and update your payment records.
-              {billToPay?.is_recurring && " A new recurring bill will be created for the next cycle."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

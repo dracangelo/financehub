@@ -12,12 +12,18 @@ interface Bill {
   name: string
   amount: number
   next_payment_date: string
-  is_recurring: boolean
-  billing_frequency: string
-  auto_pay: boolean
+  billing_frequency?: string
+  auto_pay?: boolean
   payment_schedule?: { status: string; scheduled_date: string }[]
   billers?: { name: string; category: string }
   is_paid?: boolean
+  bill_payments?: {
+    id: string
+    payment_date: string
+    payment_status: string
+    amount_paid: number
+    payment_method: string
+  }[]
 }
 
 export function BillsSummary() {
@@ -29,6 +35,10 @@ export function BillsSummary() {
     dueSoon: 0,
     overdue: 0,
     upcoming: 0,
+    overdueBillsCount: 0,
+    dueSoonBillsCount: 0,
+    upcomingBillsCount: 0,
+    totalBillsCount: 0
   })
 
   useEffect(() => {
@@ -57,7 +67,25 @@ export function BillsSummary() {
     let overdue = 0
     let upcoming = 0
 
+    // Count for each category
+    let overdueBillsCount = 0
+    let dueSoonBillsCount = 0
+    let upcomingBillsCount = 0
+
     bills.forEach((bill) => {
+      // Check for bill payments
+      if (bill.bill_payments && bill.bill_payments.length > 0) {
+        // Sort payments by date, most recent first
+        const sortedPayments = [...bill.bill_payments].sort((a, b) => 
+          new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime()
+        );
+        
+        // If the most recent payment has a completed status, the bill is paid
+        if (sortedPayments[0].payment_status === "completed") {
+          return; // Skip paid bills
+        }
+      }
+      
       // Skip bills that are explicitly marked as paid
       if (bill.is_paid) return;
       
@@ -72,6 +100,11 @@ export function BillsSummary() {
         const dueDate = new Date(bill.next_payment_date)
         if (isNaN(dueDate.getTime())) return; // Skip invalid dates
         
+        // If auto_pay is enabled and due date has passed, consider it paid
+        if (bill.auto_pay && dueDate < today) {
+          return; // Skip auto-paid bills
+        }
+        
         const diffTime = dueDate.getTime() - today.getTime()
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
 
@@ -79,10 +112,13 @@ export function BillsSummary() {
 
         if (diffDays < 0) {
           overdue += bill.amount
+          overdueBillsCount++
         } else if (diffDays <= 7) {
           dueSoon += bill.amount
+          dueSoonBillsCount++
         } else {
           upcoming += bill.amount
+          upcomingBillsCount++
         }
       } catch (e) {
         console.error("Error processing bill date:", e);
@@ -94,6 +130,10 @@ export function BillsSummary() {
       dueSoon: Math.round(dueSoon * 100) / 100,
       overdue: Math.round(overdue * 100) / 100,
       upcoming: Math.round(upcoming * 100) / 100,
+      overdueBillsCount,
+      dueSoonBillsCount,
+      upcomingBillsCount,
+      totalBillsCount: overdueBillsCount + dueSoonBillsCount + upcomingBillsCount
     })
   }
 
@@ -135,7 +175,7 @@ export function BillsSummary() {
         <CardContent>
           <div className="text-2xl font-bold">{formatCurrency(summary.totalDue)}</div>
           <p className="text-xs text-muted-foreground mt-1">
-            {unpaidCount} unpaid bills
+            {summary.totalBillsCount} unpaid bills
           </p>
         </CardContent>
       </Card>
@@ -147,29 +187,35 @@ export function BillsSummary() {
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">{formatCurrency(summary.overdue)}</div>
-          <p className="text-xs text-muted-foreground mt-1">Requires immediate attention</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {summary.overdueBillsCount} {summary.overdueBillsCount === 1 ? 'bill' : 'bills'} require immediate attention
+          </p>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-amber-500">Due Soon</CardTitle>
-          <CardDescription>Due in the next 7 days</CardDescription>
+          <CardTitle className="text-yellow-600">Due Soon</CardTitle>
+          <CardDescription>Due within 7 days</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">{formatCurrency(summary.dueSoon)}</div>
-          <p className="text-xs text-muted-foreground mt-1">Plan to pay these bills soon</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {summary.dueSoonBillsCount} {summary.dueSoonBillsCount === 1 ? 'bill' : 'bills'} need attention soon
+          </p>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle>Upcoming</CardTitle>
-          <CardDescription>Due later this month</CardDescription>
+          <CardTitle className="text-blue-600">Upcoming</CardTitle>
+          <CardDescription>Future bills</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">{formatCurrency(summary.upcoming)}</div>
-          <p className="text-xs text-muted-foreground mt-1">Plan ahead for these expenses</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {summary.upcomingBillsCount} {summary.upcomingBillsCount === 1 ? 'bill' : 'bills'} coming up
+          </p>
         </CardContent>
       </Card>
     </div>

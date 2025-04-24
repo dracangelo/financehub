@@ -8,31 +8,71 @@ import { AlertCircle, ChevronLeft, ChevronRight, CheckCircle2, Clock, X } from "
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
+import { getBills } from "@/app/actions/bills"
 
 interface Bill {
   id: string
   name: string
   amount: number
   next_payment_date: string
-  is_recurring: boolean
-  billing_frequency: string
-  auto_pay: boolean
   payment_schedule?: { status: string; scheduled_date: string }[]
   billers?: { name: string; category: string }
   is_paid?: boolean
   notes?: string
+  status?: string
+  scheduled_date?: string
+  auto_pay?: boolean
+  bill_payments?: {
+    id: string
+    payment_date: string
+    payment_status: string
+    amount_paid: number
+    payment_method: string
+  }[]
 }
 
 interface BillsCalendarProps {
-  bills: Bill[]
-  loading: boolean
-  error: string | null
+  initialBills?: Bill[]
 }
 
-export function BillsCalendar({ bills, loading, error }: BillsCalendarProps) {
+export function BillsCalendar({ initialBills = [] }: BillsCalendarProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date())
-  const [calendarDays, setCalendarDays] = useState<Array<{ date: Date; bills: Bill[] }>>([])
+  const [calendarDays, setCalendarDays] = useState<Array<{ date: Date; bills: Bill[] }>>([])  
   const [hoveredDayIndex, setHoveredDayIndex] = useState<number | null>(null)
+  const [bills, setBills] = useState<Bill[]>(initialBills)
+  const [loading, setLoading] = useState(initialBills.length === 0)
+  const [error, setError] = useState<string | null>(null)
+
+  // Fetch bills data directly
+  useEffect(() => {
+    const fetchBillsData = async () => {
+      if (initialBills.length > 0) {
+        // Use initial bills if provided
+        return
+      }
+      
+      try {
+        setLoading(true)
+        const data = await getBills()
+        
+        // Validate and sanitize the data
+        const validatedBills = data.map((bill: any) => ({
+          ...bill,
+          amount: typeof bill.amount === 'number' ? bill.amount : parseFloat(bill.amount) || 0,
+          next_payment_date: bill.next_payment_date || new Date().toISOString().split('T')[0]
+        }))
+        
+        setBills(validatedBills)
+      } catch (err) {
+        console.error("Error fetching bills:", err)
+        setError(typeof err === 'string' ? err : "Failed to load bills. Please try again.")
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    fetchBillsData()
+  }, [])
 
   useEffect(() => {
     generateCalendarDays(currentMonth)
@@ -128,6 +168,19 @@ export function BillsCalendar({ bills, loading, error }: BillsCalendarProps) {
       return "paid";
     }
     
+    // Check for bill payments
+    if (bill.bill_payments && bill.bill_payments.length > 0) {
+      // Sort payments by date, most recent first
+      const sortedPayments = [...bill.bill_payments].sort((a, b) => 
+        new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime()
+      );
+      
+      // If the most recent payment has a completed status, the bill is paid
+      if (sortedPayments[0].payment_status === "completed") {
+        return "paid";
+      }
+    }
+    
     // Then check payment_schedule if available
     if (bill.payment_schedule && bill.payment_schedule.length > 0) {
       const latestSchedule = bill.payment_schedule[0];
@@ -139,7 +192,7 @@ export function BillsCalendar({ bills, loading, error }: BillsCalendarProps) {
       }
     }
     
-    // If no payment_schedule or status not determined, check due date
+    // If status not determined yet, check due date
     try {
       const dueDate = new Date(bill.next_payment_date);
       const today = new Date();
@@ -152,9 +205,27 @@ export function BillsCalendar({ bills, loading, error }: BillsCalendarProps) {
         return "unpaid"; // Default to unpaid if date is invalid
       }
       
-      if (dueDate < today) {
+      // If auto_pay is enabled and due date has passed, consider it paid
+      if (bill.auto_pay && dueDate < today) {
+        return "paid";
+      }
+      
+      // Calculate the difference in days
+      const diffTime = dueDate.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      // If due date has passed, it's overdue
+      if (diffDays < 0) {
         return "overdue";
       }
+      
+      // If due date is within 7 days, it's upcoming
+      if (diffDays <= 7) {
+        return "upcoming";
+      }
+      
+      // More than 7 days away
+      return "unpaid";
     } catch (e) {
       console.error("Error determining bill status:", e);
     }
@@ -180,6 +251,14 @@ export function BillsCalendar({ bills, loading, error }: BillsCalendarProps) {
         borderColor: "border-red-200",
         icon: AlertCircle,
         iconColor: "text-red-500"
+      };
+    } else if (status === "upcoming") {
+      return {
+        bgColor: "bg-yellow-100",
+        textColor: "text-yellow-800",
+        borderColor: "border-yellow-200",
+        icon: Clock,
+        iconColor: "text-yellow-500"
       };
     } else {
       return {
@@ -337,16 +416,9 @@ export function BillsCalendar({ bills, loading, error }: BillsCalendarProps) {
                               <div className="font-medium text-sm">{bill.name}</div>
                               <div className="font-bold text-base mt-1">{formatCurrency(bill.amount)}</div>
                               <div className="flex flex-wrap gap-2 mt-2">
-                                {bill.is_recurring && (
-                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800 border border-purple-200">
-                                    {bill.billing_frequency}
-                                  </span>
-                                )}
-                                {bill.auto_pay && (
-                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800 border border-green-200">
-                                    Auto-pay
-                                  </span>
-                                )}
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800 border border-blue-200">
+                                  {format(new Date(bill.next_payment_date), "MMM d")}
+                                </span>
                               </div>
                               {bill.notes && (
                                 <div className="text-xs mt-2 opacity-80">{bill.notes}</div>
