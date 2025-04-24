@@ -14,15 +14,45 @@ export const metadata: Metadata = {
 }
 
 export default async function GoalsPage() {
-  const { goals, error: goalsError } = await getGoals()
-  const { stats, error: statsError } = await getGoalStatistics()
+  // Provide fallback data in case of database errors
+  const fallbackStats = {
+    totalGoals: 0,
+    activeGoals: 0,
+    completedGoals: 0,
+    totalMilestones: 0,
+    completedMilestones: 0,
+    totalSavings: 0,
+    totalTargets: 0,
+    progressPercentage: 0
+  };
+  
+  // Wrap data fetching in try/catch to handle potential errors
+  let goals: any[] = [];
+  let stats = fallbackStats;
+  
+  try {
+    const result = await getGoals();
+    goals = result.goals || [];
+  } catch (error) {
+    console.error("Error fetching goals:", error);
+    // Use empty array as fallback
+  }
+
+  try {
+    const result = await getGoalStatistics();
+    stats = result.stats || fallbackStats;
+  } catch (error) {
+    console.error("Error fetching goal statistics:", error);
+    // Use fallback stats
+  }
+
+  // We've already extracted goals and stats in the try/catch blocks above
 
   return (
     <DashboardShell>
       <DashboardHeader
         heading="Financial Goals"
         text="Set, track, and achieve your financial objectives."
-        icon={<Target className="h-6 w-6" />}
       >
         <Button asChild>
           <Link href="/goals/new">

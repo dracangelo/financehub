@@ -107,41 +107,52 @@ export async function getGoals() {
 
     const supabase = await createClient()
 
-    const { data: goals, error } = await supabase
-      .from("user_goals")
-      .select(`
-        *,
-        template:goal_templates(*),
-        milestones:goal_milestones(*),
-        priority_matrix:goal_priority_matrix(*),
-        parent_relationships:goal_relationships!goal_relationships_child_goal_id_fkey(*),
-        child_relationships:goal_relationships!goal_relationships_parent_goal_id_fkey(*),
-        shares:goal_shares(*),
-        achievements:goal_achievements(*)
-      `)
-      .eq("user_id", user.id)
-      .order("priority", { ascending: true })
-      .order("target_date", { ascending: true })
+    try {
+      const { data: goals, error } = await supabase
+        .from("user_goals")
+        .select(`
+          *,
+          template:goal_templates(*),
+          milestones:goal_milestones(*),
+          priority_matrix:goal_priority_matrix(*),
+          parent_relationships:goal_relationships!goal_relationships_child_goal_id_fkey(*),
+          child_relationships:goal_relationships!goal_relationships_parent_goal_id_fkey(*),
+          shares:goal_shares(*),
+          achievements:goal_achievements(*)
+        `)
+        .eq("user_id", user.id)
+        .order("priority", { ascending: true })
+        .order("target_date", { ascending: true })
 
-    if (error) {
-      console.error("Error fetching goals:", error)
-      return { error: error.message, goals: [] }
-    }
-
-    // Calculate status for each goal
-    const goalsWithStatus = goals?.map((goal) => {
-      let status: "not_started" | "in_progress" | "completed" | "on_hold" = "not_started"
-
-      if (goal.is_achieved) {
-        status = "completed"
-      } else if (goal.current_savings > 0) {
-        status = "in_progress"
+      if (error) {
+        // Check if the error is due to missing tables (common during development)
+        if (error.code === "42P01") { // undefined_table
+          console.log("Goals tables not yet created, returning empty array")
+          return { error: null, goals: [] }
+        }
+        
+        console.error("Error fetching goals:", error)
+        return { error: error.message, goals: [] }
       }
 
-      return { ...goal, status }
-    })
+      // Calculate status for each goal
+      const goalsWithStatus = goals?.map((goal) => {
+        let status: "not_started" | "in_progress" | "completed" | "on_hold" = "not_started"
 
-    return { goals: goalsWithStatus, error: null }
+        if (goal.is_achieved) {
+          status = "completed"
+        } else if (goal.current_savings > 0) {
+          status = "in_progress"
+        }
+
+        return { ...goal, status }
+      })
+
+      return { goals: goalsWithStatus, error: null }
+    } catch (innerError) {
+      console.error("Error in getGoals inner try/catch:", innerError)
+      return { error: "Failed to fetch goals", goals: [] }
+    }
   } catch (error) {
     console.error("Error in getGoals:", error)
     return { error: "Failed to fetch goals", goals: [] }
@@ -158,16 +169,35 @@ export async function getGoalStatistics() {
 
     const supabase = await createClient()
 
-    // Get all goals
-    const { data: goals, error: goalsError } = await supabase
-      .from("user_goals")
-      .select("*")
-      .eq("user_id", user.id)
-
-    if (goalsError) {
-      console.error("Error fetching goals for stats:", goalsError)
-      return { error: goalsError.message, stats: null }
+    // Default stats in case of errors
+    const defaultStats = {
+      totalGoals: 0,
+      activeGoals: 0,
+      completedGoals: 0,
+      totalMilestones: 0,
+      completedMilestones: 0,
+      totalSavings: 0,
+      totalTargets: 0,
+      progressPercentage: 0,
     }
+
+    try {
+      // Get all goals
+      const { data: goals, error: goalsError } = await supabase
+        .from("user_goals")
+        .select("*")
+        .eq("user_id", user.id)
+
+      if (goalsError) {
+        // Check if the error is due to missing tables (common during development)
+        if (goalsError.code === "42P01") { // undefined_table
+          console.log("Goals tables not yet created, returning default stats")
+          return { error: null, stats: defaultStats }
+        }
+        
+        console.error("Error fetching goals for stats:", goalsError)
+        return { error: goalsError.message, stats: defaultStats }
+      }
 
     // Get all milestones
     const { data: milestones, error: milestonesError } = await supabase
@@ -179,8 +209,25 @@ export async function getGoalStatistics() {
       )
 
     if (milestonesError) {
+      // Check if the error is due to missing tables
+      if (milestonesError.code === "42P01") { // undefined_table
+        console.log("Milestone table not yet created, continuing with empty milestones")
+        return { 
+          stats: {
+            ...defaultStats,
+            totalGoals: goals?.length || 0,
+            activeGoals: goals?.filter((g) => !g.is_achieved).length || 0,
+            completedGoals: goals?.filter((g) => g.is_achieved).length || 0,
+            totalSavings: goals?.reduce((sum, g) => sum + (g.current_savings || 0), 0) || 0,
+            totalTargets: goals?.reduce((sum, g) => sum + (g.target_amount || 0), 0) || 0,
+            progressPercentage: calculateProgressPercentage(goals || [])
+          }, 
+          error: null 
+        }
+      }
+      
       console.error("Error fetching milestones for stats:", milestonesError)
-      return { error: milestonesError.message, stats: null }
+      return { error: milestonesError.message, stats: defaultStats }
     }
 
     // Calculate statistics
@@ -191,21 +238,39 @@ export async function getGoalStatistics() {
       totalMilestones: milestones?.length || 0,
       completedMilestones: milestones?.filter((m) => m.achieved).length || 0,
       totalSavings: goals?.reduce((sum, g) => sum + (g.current_savings || 0), 0) || 0,
-      totalTargets: goals?.reduce((sum, g) => sum + g.target_amount, 0) || 0,
-      progressPercentage:
-        goals && goals.length > 0
-          ? Math.round(
-              (goals.reduce((sum, g) => sum + (g.current_savings || 0), 0) /
-                goals.reduce((sum, g) => sum + g.target_amount, 0)) *
-                100
-            )
-          : 0,
+      totalTargets: goals?.reduce((sum, g) => sum + (g.target_amount || 0), 0) || 0,
+      progressPercentage: calculateProgressPercentage(goals || []),
+    }
+    
+    // Helper function to safely calculate progress percentage
+    function calculateProgressPercentage(goals: any[]) {
+      if (!goals || goals.length === 0) return 0;
+      
+      const totalSavings = goals.reduce((sum, g) => sum + (g.current_savings || 0), 0);
+      const totalTargets = goals.reduce((sum, g) => sum + (g.target_amount || 0), 0);
+      
+      if (totalTargets === 0) return 0;
+      
+      return Math.round((totalSavings / totalTargets) * 100);
     }
 
     return { stats, error: null }
+    } catch (error) {
+      console.error("Error in getGoalStatistics inner try/catch:", error)
+      return { error: "Failed to fetch goal statistics", stats: defaultStats }
+    }
   } catch (error) {
-    console.error("Error in getGoalStatistics:", error)
-    return { error: "Failed to fetch goal statistics", stats: null }
+    console.error("Error in getGoalStatistics outer try/catch:", error)
+    return { error: "Failed to fetch goal statistics", stats: {
+      totalGoals: 0,
+      activeGoals: 0,
+      completedGoals: 0,
+      totalMilestones: 0,
+      completedMilestones: 0,
+      totalSavings: 0,
+      totalTargets: 0,
+      progressPercentage: 0,
+    } }
   }
 }
 
@@ -920,75 +985,120 @@ export async function createAchievement(goalId: string, formData: FormData) {
   }
 }
 
-// Update an existing goal
+// Add a contribution to a goal
 export async function addGoalContribution(goalId: string, formData: FormData) {
   try {
+    // Get the authenticated user
     const user = await getCurrentUser()
     if (!user) {
       return { error: "Not authenticated", success: false }
     }
 
-    const supabase = await createClient()
+    // Parse and validate contribution amount
+    const amountStr = formData.get("amount") as string
+    console.log("Amount from form:", amountStr)
+    const amount = Number.parseFloat(amountStr)
+    
+    if (!amount || isNaN(amount) || amount <= 0) {
+      console.error("Invalid amount:", amountStr)
+      return { error: "Invalid contribution amount", success: false }
+    }
 
-    // Check if goal belongs to user
+    // Get source with default value if empty
+    const source = formData.get("source") as string
+    const sourceValue = source || "Manual Contribution";
+    
+    console.log("Processing contribution:", { goalId, amount, source: sourceValue });
+
+    // Initialize Supabase client
+    const supabase = await createClient()
+    
+    // Get the goal to update
     const { data: goal, error: goalError } = await supabase
       .from("user_goals")
-      .select("user_id, current_savings, target_amount")
+      .select("*")
       .eq("id", goalId)
       .single()
 
     if (goalError || !goal) {
+      console.error("Goal not found:", goalError)
       return { error: "Goal not found", success: false }
     }
 
-    if (goal.user_id !== user.id) {
-      return { error: "Not authorized", success: false }
+    // Add the contribution directly to the goal
+    console.log("Adding contribution directly:", { goalId, amount, source: sourceValue });
+    
+    const result = await addContributionDirectly(
+      supabase, 
+      goalId, 
+      amount, 
+      sourceValue, 
+      user.id
+    );
+    
+    if (!result.success) {
+      console.error("Error adding contribution:", result.error);
+      return { 
+        error: `Failed to add contribution: ${result.error?.message || 'Unknown error'}`, 
+        success: false 
+      };
     }
+    
+    console.log("Contribution added successfully");
 
-    const amount = Number.parseFloat(formData.get("amount") as string)
-    const source = formData.get("source") as string
-    const note = formData.get("note") as string
+    // Force revalidation of the goals pages
+    revalidatePath('/goals')
+    revalidatePath(`/goals/${goalId}`)
+    
+    return { success: true, data: { amount, source: sourceValue } }
+  } catch (error) {
+    console.error("Error in addGoalContribution:", error)
+    return { error: "Failed to process contribution", success: false }
+  }
+}
 
-    if (!amount || amount <= 0) {
-      return { error: "Invalid contribution amount", success: false }
+// Helper function to handle goal contributions directly without needing a separate table
+async function addContributionDirectly(supabase: any, goalId: string, amount: number, source: string, userId: string) {
+  try {
+    console.log("Adding contribution directly to goal...");
+    
+    // Get the current goal data
+    const { data: goal, error: goalError } = await supabase
+      .from("user_goals")
+      .select("current_savings, target_amount")
+      .eq("id", goalId)
+      .single();
+    
+    if (goalError) {
+      console.error("Error fetching goal:", goalError);
+      return { success: false, error: goalError };
     }
-
-    // Start a transaction
-    const { data: contribution, error: contribError } = await supabase
-      .from("goal_funding")
-      .insert({
-        goal_id: goalId,
-        amount,
-        source
-      })
-      .select()
-      .single()
-
-    if (contribError) {
-      console.error("Error adding contribution:", contribError)
-      return { error: contribError.message, success: false }
-    }
-
-    // Update goal's current savings
-    const newSavings = (goal.current_savings || 0) + amount
+    
+    // Calculate new savings amount
+    const currentSavings = goal.current_savings || 0;
+    const newSavings = currentSavings + amount;
+    console.log("Updating goal savings:", { currentSavings, newSavings });
+    
+    // Update the goal with the new savings amount
     const { error: updateError } = await supabase
       .from("user_goals")
       .update({
         current_savings: newSavings,
-        is_achieved: newSavings >= goal.target_amount
+        is_achieved: newSavings >= goal.target_amount,
+        updated_at: new Date().toISOString()
       })
-      .eq("id", goalId)
-
+      .eq("id", goalId);
+    
     if (updateError) {
-      console.error("Error updating goal savings:", updateError)
-      return { error: updateError.message, success: false }
+      console.error("Error updating goal savings:", updateError);
+      return { success: false, error: updateError };
     }
-
-    revalidatePath(`/goals/${goalId}`)
-    return { success: true, contribution }
+    
+    console.log("Successfully updated goal savings");
+    return { success: true, data: { amount, source } };
   } catch (error) {
-    console.error("Error in addGoalContribution:", error)
-    return { error: "Failed to add contribution", success: false }
+    console.error("Error in addContributionDirectly:", error);
+    return { success: false, error };
   }
 }
 

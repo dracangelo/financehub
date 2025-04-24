@@ -4,9 +4,9 @@ import { GetServerSidePropsContext, NextApiRequest, NextApiResponse } from "next
 
 // Universal cookie handler that works in both App Router and Pages Router
 type UniversalCookieHandler = {
-  get(name: string): string | undefined
-  set(name: string, value: string, options?: CookieOptions): void
-  remove(name: string, options?: CookieOptions): void
+  get(name: string): string | undefined | Promise<string | undefined>
+  set(name: string, value: string, options?: CookieOptions): void | Promise<void>
+  remove(name: string, options?: CookieOptions): void | Promise<void>
 }
 
 // Create a cookie handler based on the available APIs
@@ -41,21 +41,23 @@ function createCookieHandler(): UniversalCookieHandler {
   try {
     // This will throw an error if not in App Router
     const { cookies } = require('next/headers')
-    const cookieStore = cookies()
     
     return {
-      get(name: string) {
+      async get(name: string) {
+        const cookieStore = cookies()
         return cookieStore.get(name)?.value
       },
-      set(name: string, value: string, options?: CookieOptions) {
+      async set(name: string, value: string, options?: CookieOptions) {
         try {
+          const cookieStore = cookies()
           cookieStore.set(name, value, options as any)
         } catch (error) {
           console.error("Error setting cookie:", error)
         }
       },
-      remove(name: string, options?: CookieOptions) {
+      async remove(name: string, options?: CookieOptions) {
         try {
+          const cookieStore = cookies()
           cookieStore.set(name, "", { ...options as any, maxAge: 0 })
         } catch (error) {
           console.error("Error removing cookie:", error)

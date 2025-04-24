@@ -279,7 +279,7 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
           <CheckCircle className="mr-1 h-3 w-3" />
           Paid
         </Badge>
-      )
+      );
     }
     
     if (status === "overdue") {
@@ -288,7 +288,7 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
           <AlertCircle className="mr-1 h-3 w-3" />
           Overdue
         </Badge>
-      )
+      );
     }
     
     // Default unpaid
@@ -297,8 +297,8 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
         <Clock className="mr-1 h-3 w-3" />
         Unpaid
       </Badge>
-    )
-  }
+    );
+  };
 
   if (showCalendarView) {
     return <BillsCalendar bills={bills} loading={loading} error={error} />;
@@ -449,46 +449,47 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
                 ) : (
                   // Bills list
                   filteredBills.map((bill) => (
-                  <TableRow key={bill.id}>
-                    <TableCell>
-                      <div className="font-medium">{bill.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {bill.billers?.name || "Uncategorized"}
-                      </div>
-                    </TableCell>
-                    <TableCell>{formatCurrency(bill.amount)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center">
-                        <Calendar className="mr-2 h-4 w-4 text-muted-foreground" />
-                        {formatDate(bill.next_payment_date)}
-                      </div>
-                    </TableCell>
-                    <TableCell>{getBillStatusBadge(bill)}</TableCell>
-                    <TableCell>
-                      {bill.is_recurring ? (
-                        <div className="flex items-center">
-                          <Clock className="mr-2 h-4 w-4 text-muted-foreground" />
-                          <span className="capitalize">{bill.billing_frequency}</span>
+                    <TableRow key={bill.id}>
+                      <TableCell>
+                        <div className="font-medium">{bill.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {bill.billers?.name || "Uncategorized"}
                         </div>
-                      ) : (
-                        <span className="text-muted-foreground">One-time</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {getBillStatus(bill) !== "paid" && (
-                        <Button variant="ghost" size="icon" onClick={() => handlePayBill(bill)} title="Mark as paid">
-                          <CheckCircle className="h-4 w-4" />
+                      </TableCell>
+                      <TableCell>{formatCurrency(bill.amount)}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center">
+                          <Calendar className="mr-2 h-4 w-4 text-muted-foreground" />
+                          {formatDate(bill.next_payment_date)}
+                        </div>
+                      </TableCell>
+                      <TableCell>{getBillStatusBadge(bill)}</TableCell>
+                      <TableCell>
+                        {bill.is_recurring ? (
+                          <div className="flex items-center">
+                            <Clock className="mr-2 h-4 w-4 text-muted-foreground" />
+                            <span className="capitalize">{bill.billing_frequency}</span>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">One-time</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {getBillStatus(bill) !== "paid" && (
+                          <Button variant="ghost" size="icon" onClick={() => handlePayBill(bill)} title="Mark as paid">
+                            <CheckCircle className="h-4 w-4" />
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="icon" onClick={() => handleEditBill(bill)} title="Edit bill">
+                          <Edit className="h-4 w-4" />
                         </Button>
-                      )}
-                      <Button variant="ghost" size="icon" onClick={() => handleEditBill(bill)} title="Edit bill">
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDeleteBill(bill.id)} title="Delete bill">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                        <Button variant="ghost" size="icon" onClick={() => handleDeleteBill(bill.id)} title="Delete bill">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )
               </TableBody>
             </Table>
           </CardContent>

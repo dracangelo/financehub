@@ -1,7 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { format } from "date-fns"
 import { Calendar, DollarSign, Edit, Trash2, Plus, Pencil, MoreHorizontal } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
@@ -31,6 +31,7 @@ import { GoalForecastChart } from "./goal-forecast-chart"
 import { AddMilestoneForm } from "./add-milestone-form"
 import { EditMilestoneForm } from "./edit-milestone-form"
 import { AddContributionForm } from "./add-contribution-form"
+import { GoalCelebration } from "./goal-celebration"
 import { updateMilestoneStatus, deleteGoal, deleteMilestone } from "@/app/actions/goals"
 import { toast } from "@/components/ui/use-toast"
 import { cn } from "@/lib/utils"
@@ -74,11 +75,16 @@ export function GoalDetails({ goal }: GoalDetailsProps) {
   const [isAddingContribution, setIsAddingContribution] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [editingMilestoneId, setEditingMilestoneId] = useState<string | null>(null)
+  const [showCelebration, setShowCelebration] = useState(false)
+  const [hasShownCelebration, setHasShownCelebration] = useState(false)
 
   // Calculate progress percentage
   const progressPercentage = 
     goal.target_amount && goal.target_amount > 0 ? 
       Math.min(100, ((goal.current_savings || 0) / goal.target_amount) * 100) : 0
+      
+  // Check if goal is completed
+  const isGoalCompleted = goal.status === "completed" || progressPercentage >= 100
 
   // Format dates with validation
   const formattedStartDate = goal.start_date && goal.start_date !== "null" && goal.start_date !== "undefined"
@@ -103,6 +109,14 @@ export function GoalDetails({ goal }: GoalDetailsProps) {
   const handleMilestoneToggle = async (milestoneId: string, isCompleted: boolean) => {
     await updateMilestoneStatus(milestoneId, isCompleted)
   }
+  
+  // Effect to show celebration when goal is completed
+  useEffect(() => {
+    if (isGoalCompleted && !hasShownCelebration) {
+      setShowCelebration(true)
+      setHasShownCelebration(true)
+    }
+  }, [isGoalCompleted, hasShownCelebration])
 
   const handleDeleteGoal = async () => {
     setIsDeleting(true)
@@ -127,6 +141,12 @@ export function GoalDetails({ goal }: GoalDetailsProps) {
 
   return (
     <div className="space-y-6">
+      {/* Goal completion celebration */}
+      <GoalCelebration 
+        isCompleted={showCelebration} 
+        goalName={goal.name} 
+        onCelebrationEnd={() => setShowCelebration(false)}
+      />
       <div className="flex flex-col space-y-6">
         <div className="flex justify-between items-center">
           <div>

@@ -124,6 +124,10 @@ const config: Config = {
           "0%, 100%": { opacity: "1" },
           "50%": { opacity: "0.8" },
         },
+        "bounce-slow": {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-20px)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -135,6 +139,7 @@ const config: Config = {
         "slide-in-bottom": "slide-in-bottom 0.3s ease-out",
         "slide-out-bottom": "slide-out-bottom 0.3s ease-out",
         "pulse-gentle": "pulse-gentle 2s infinite ease-in-out",
+        "bounce-slow": "bounce-slow 2s infinite ease-in-out",
       },
       boxShadow: {
         "card-hover": "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
