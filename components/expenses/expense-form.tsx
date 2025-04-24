@@ -803,7 +803,7 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
                   name="split_amount"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Their Share</FormLabel>
+                      <FormLabel>Their Share (Amount They Owe)</FormLabel>
                       <FormControl>
                         <div className="relative">
                           <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
@@ -819,7 +819,7 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
                         </div>
                       </FormControl>
                       <FormDescription>
-                        Amount the other person owes you
+                        Amount the other person owes you for this expense
                       </FormDescription>
                       <FormMessage />
                     </FormItem>

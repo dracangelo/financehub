@@ -1,11 +1,14 @@
 "use client"
 
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { formatCurrency, formatDate } from "@/lib/utils/formatting"
-import { Check, Clock, Receipt, Send } from "lucide-react"
+import { Check, Clock, Receipt, Send, Loader2 } from "lucide-react"
+import { settleSplitExpense, sendSplitExpenseReminder } from "@/app/actions/split-expenses"
+import { useToast } from "@/components/ui/use-toast"
 
 interface Participant {
   id: string
@@ -30,19 +33,65 @@ interface SplitExpenseDetailProps {
 }
 
 export function SplitExpenseDetail({ expense }: SplitExpenseDetailProps) {
-  // Calculate your share
-  const yourShare = expense.participants.find(p => p.name === "You")?.amount || 0
+  const [isSettling, setIsSettling] = useState(false)
+  const [isSendingReminder, setIsSendingReminder] = useState(false)
+  const { toast } = useToast()
+
+  // Calculate their share (the amount owed by the other person)
+  const theirShare = expense.participants.find((p: { name: string }) => p.name !== "You")?.amount || 0
   
   // Calculate pending amount
   const pendingAmount = expense.participants
-    .filter(p => p.status === "pending")
-    .reduce((sum, p) => sum + p.amount, 0)
+    .filter((p: { status: string }) => p.status === "pending")
+    .reduce((sum: number, p: { amount: number }) => sum + p.amount, 0)
   
   // Get pending participants count
-  const pendingParticipants = expense.participants.filter(p => p.status === "pending").length
+  const pendingParticipants = expense.participants.filter((p: { status: string }) => p.status === "pending").length
   
   // Check if you paid
-  const youPaid = expense.participants.find(p => p.name === "You")?.status === "paid"
+  const youPaid = expense.participants.find((p: { name: string }) => p.name === "You")?.status === "paid"
+  
+  // Handle settling a split expense
+  const handleSettleExpense = async (splitId: string) => {
+    setIsSettling(true)
+    try {
+      await settleSplitExpense(splitId)
+      toast({
+        title: "Success",
+        description: "Split expense has been settled.",
+      })
+    } catch (error) {
+      console.error("Error settling split expense:", error)
+      toast({
+        title: "Error",
+        description: "Failed to settle the split expense. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSettling(false)
+    }
+  }
+  
+  // Handle sending a reminder for a split expense
+  const handleSendReminder = async (splitId: string) => {
+    setIsSendingReminder(true)
+    try {
+      const result = await sendSplitExpenseReminder(splitId)
+      toast({
+        title: "Success",
+        description: result.message || "Reminder sent successfully.",
+      })
+    } catch (error) {
+      console.error("Error sending reminder:", error)
+      toast({
+        title: "Error",
+        description: "Failed to send reminder. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSendingReminder(false)
+    }
+  }
   
   return (
     <Card>
@@ -55,7 +104,7 @@ export function SplitExpenseDetail({ expense }: SplitExpenseDetailProps) {
           <div className="text-right">
             <div className="text-2xl font-bold">{formatCurrency(expense.amount)}</div>
             <div className="text-sm text-muted-foreground">
-              Your share: {formatCurrency(yourShare)}
+              Their share: {formatCurrency(theirShare)}
             </div>
           </div>
         </div>
@@ -142,10 +191,43 @@ export function SplitExpenseDetail({ expense }: SplitExpenseDetailProps) {
         )}
         
         {expense.status === "active" && pendingParticipants > 0 && (
-          <Button variant="outline" className="w-full">
-            <Send className="mr-2 h-4 w-4" />
-            Send Reminder
-          </Button>
+          <div className="flex gap-2 w-full">
+            {/* Find a pending participant to send reminder to */}
+            {expense.participants.find((p: { status: string }) => p.status === "pending") && (
+              <Button 
+                variant="outline" 
+                className="flex-1"
+                onClick={() => {
+                  // Get the ID of the first pending participant
+                  const pendingParticipant = expense.participants.find((p: { status: string }) => p.status === "pending");
+                  if (pendingParticipant) {
+                    handleSendReminder(pendingParticipant.id);
+                  }
+                }}
+                disabled={isSendingReminder}
+              >
+                {isSendingReminder ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="mr-2 h-4 w-4" />
+                )}
+                Send Reminder
+              </Button>
+            )}
+            
+            <Button 
+              className="flex-1"
+              onClick={() => handleSettleExpense(expense.id)}
+              disabled={isSettling}
+            >
+              {isSettling ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Check className="mr-2 h-4 w-4" />
+              )}
+              Mark as Settled
+            </Button>
+          </div>
         )}
         
         {expense.status === "settled" && (

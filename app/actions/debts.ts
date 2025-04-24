@@ -106,7 +106,24 @@ export async function createDebt(formData: FormData) {
       throw new Error("Name is required")
     }
 
-    const type = formData.get("type") as string
+    let type = formData.get("type") as string
+    console.log("createDebt: Original type value:", type)
+    
+    // Ensure type matches one of the allowed values in the database constraint
+    // The database expects: credit-card, mortgage, auto, student, personal, medical, other
+    const typeMapping: Record<string, string> = {
+      "credit_card": "credit-card",
+      "auto_loan": "auto",
+      "student_loan": "student",
+      "personal_loan": "personal"
+    }
+    
+    // If the type contains underscores, map it to the hyphenated version
+    if (type.includes('_')) {
+      type = typeMapping[type] || type;
+      console.log("createDebt: Mapped type value:", type)
+    }
+    
     const principal = Number.parseFloat(formData.get("principal") as string || formData.get("balance") as string)
     if (isNaN(principal) || principal < 0) {
       console.error("createDebt: Invalid principal value", formData.get("principal"))
@@ -130,9 +147,10 @@ export async function createDebt(formData: FormData) {
     // Validate that type is one of the allowed values
     const validTypes = ['credit-card', 'mortgage', 'auto', 'student', 'personal', 'medical', 'other'];
     if (!validTypes.includes(type)) {
-      console.error("createDebt: Invalid debt type", type);
+      console.error("createDebt: Invalid debt type after mapping", type);
       throw new Error(`Invalid debt type. Must be one of: ${validTypes.join(', ')}`);
     }
+    console.log("createDebt: Validated type value:", type);
 
     // Create debt object matching the database schema
     const debtData = {
@@ -140,12 +158,19 @@ export async function createDebt(formData: FormData) {
       user_id: userId,
       name,
       type, // Use type as-is to match the database constraint
-      principal,
+      balance: principal,
+      original_balance: principal, // Set original balance to match current balance for new debt
       interest_rate: interestRate,
       minimum_payment: minimumPayment,
-      due_date: dueDateStr,
-      start_date: startDateStr,
-      term_months: termMonths,
+      actual_payment: minimumPayment, // Default actual payment to minimum payment
+      due_date: dueDateStr ? parseInt(dueDateStr.split('-')[2]) : 1, // Extract day from date string or default to 1
+      start_date: startDateStr || new Date().toISOString().split('T')[0], // Default to today if not provided
+      estimated_payoff_date: null,
+      lender: formData.get("lender") as string || null,
+      account_number: formData.get("account_number") as string || null,
+      notes: formData.get("notes") as string || null,
+      payment_method_id: null, // Default to null for now
+      autopay: false, // Default to false
     }
 
     console.log("createDebt: Prepared debt data for insertion", debtData)
