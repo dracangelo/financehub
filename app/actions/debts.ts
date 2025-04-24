@@ -110,17 +110,17 @@ export async function createDebt(formData: FormData) {
     console.log("createDebt: Original type value:", type)
     
     // Ensure type matches one of the allowed values in the database constraint
-    // The database expects: credit-card, mortgage, auto, student, personal, medical, other
+    // The database expects: credit_card, mortgage, auto, student, personal, medical, other
     const typeMapping: Record<string, string> = {
-      "credit_card": "credit-card",
-      "auto_loan": "auto",
-      "student_loan": "student",
-      "personal_loan": "personal"
+      "credit-card": "credit_card",
+      "auto-loan": "auto",
+      "student-loan": "student",
+      "personal-loan": "personal"
     }
     
-    // If the type contains underscores, map it to the hyphenated version
-    if (type.includes('_')) {
-      type = typeMapping[type] || type;
+    // If the type contains hyphens, map it to the underscore version
+    if (type.includes('-')) {
+      type = typeMapping[type] || type.replace('-', '_');
       console.log("createDebt: Mapped type value:", type)
     }
     
@@ -145,7 +145,7 @@ export async function createDebt(formData: FormData) {
     const termMonths = termMonthsStr ? parseInt(termMonthsStr) : null
 
     // Validate that type is one of the allowed values
-    const validTypes = ['credit-card', 'mortgage', 'auto', 'student', 'personal', 'medical', 'other'];
+    const validTypes = ['credit_card', 'mortgage', 'auto', 'student', 'personal', 'medical', 'other'];
     if (!validTypes.includes(type)) {
       console.error("createDebt: Invalid debt type after mapping", type);
       throw new Error(`Invalid debt type. Must be one of: ${validTypes.join(', ')}`);
@@ -158,12 +158,13 @@ export async function createDebt(formData: FormData) {
       user_id: userId,
       name,
       type, // Use type as-is to match the database constraint
-      balance: principal,
+      principal: principal, // Use principal to match the database column name
+      balance: principal, // Keep balance for backward compatibility
       original_balance: principal, // Set original balance to match current balance for new debt
       interest_rate: interestRate,
       minimum_payment: minimumPayment,
       actual_payment: minimumPayment, // Default actual payment to minimum payment
-      due_date: dueDateStr ? parseInt(dueDateStr.split('-')[2]) : 1, // Extract day from date string or default to 1
+      due_date: dueDateStr || null, // Use the full date string instead of just the day
       start_date: startDateStr || new Date().toISOString().split('T')[0], // Default to today if not provided
       estimated_payoff_date: null,
       lender: formData.get("lender") as string || null,
