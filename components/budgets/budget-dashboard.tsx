@@ -13,7 +13,7 @@ import { BudgetSharingDialog } from "./shared/budget-sharing-dialog"
 import { LIFE_EVENT_TEMPLATES } from "@/lib/budget/templates/life-events"
 import { LIFESTYLE_TEMPLATES } from "@/lib/budget/templates/lifestyle"
 import { AlertCircle, BarChart3, LineChart, PieChart, Share2, Target, TrendingUp, TrendingDown, Percent, DollarSign, ArrowUpRight, ArrowDownRight, Info, Plus, Check } from "lucide-react"
-import { getBudgetById, createBudget } from "@/app/actions/budgets"
+import { getBudgetById, createBudget, getBudgets } from "@/app/actions/budgets"
 import { formatCurrency } from "@/lib/utils/formatting"
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -53,58 +53,105 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
   useEffect(() => {
     async function fetchAvailableBudgets() {
       try {
+        console.log('BudgetDashboard: Fetching all available budgets');
         // This would typically be a server action to get all budgets
-        // For now, we'll just use the current budget if it exists
-        if (budget) {
-          setAvailableBudgets([budget])
+        // For now, we'll use the getBudgets function to fetch all budgets
+        const allBudgets = await getBudgets();
+        console.log('BudgetDashboard: Fetched all budgets:', allBudgets);
+        
+        if (allBudgets && allBudgets.length > 0) {
+          setAvailableBudgets(allBudgets);
+          
+          // If we have a budgetId but no budget loaded yet, find it in the fetched budgets
+          if (selectedBudgetId && !budget) {
+            const selectedBudget = allBudgets.find(b => b.id === selectedBudgetId);
+            if (selectedBudget) {
+              console.log('BudgetDashboard: Found selected budget in fetched budgets:', selectedBudget);
+              setBudget(selectedBudget);
+            }
+          }
+        } else if (budget && allBudgets && !allBudgets.some(b => b.id === budget.id)) {
+          // If we have a current budget but it's not in the list, add it
+          setAvailableBudgets([budget]);
         }
       } catch (err) {
-        console.error("Error fetching available budgets:", err)
+        console.error("Error fetching available budgets:", err);
+        // Fallback to using the current budget if available
+        if (budget) {
+          setAvailableBudgets([budget]);
+        }
       }
     }
     
-    fetchAvailableBudgets()
-  }, [budget])
+    fetchAvailableBudgets();
+  }, [selectedBudgetId, budget])
 
-  // Load budget data when budgetId changes
+  // Initial load of budget data when component mounts or budgetId prop changes
   useEffect(() => {
-    async function loadBudgetData() {
-      if (!selectedBudgetId) {
-        setLoading(false)
-        return
-      }
-
-      try {
-        setLoading(true)
-        const budgetData = await getBudgetById(selectedBudgetId)
-        console.log('Loaded budget data:', budgetData)
-        
-        // Check if we have valid budget data
-        if (budgetData && budgetData.id) {
-          setBudget(budgetData)
-          
-          // If we successfully loaded a budget, add it to available budgets if not already there
-          if (!availableBudgets.some(b => b.id === budgetData.id)) {
-            setAvailableBudgets(prev => [...prev, budgetData])
-          }
-        } else {
-          console.error("Invalid budget data received")
-          setError("Failed to load valid budget data")
-        }
-      } catch (err) {
-        console.error("Error loading budget data:", err)
-        setError("Failed to load budget data")
-      } finally {
-        setLoading(false)
+    console.log('BudgetDashboard: budgetId prop changed to:', budgetId);
+    console.log('BudgetDashboard: current selectedBudgetId:', selectedBudgetId);
+    
+    // Always update the selectedBudgetId when the budgetId prop changes
+    if (budgetId !== selectedBudgetId) {
+      console.log('BudgetDashboard: Updating selectedBudgetId to match prop:', budgetId);
+      setSelectedBudgetId(budgetId);
+      
+      // Always reload budget data when budgetId changes
+      if (budgetId) {
+        console.log('BudgetDashboard: Loading budget data for new budgetId');
+        loadBudgetData(budgetId);
       }
     }
+  }, [budgetId, selectedBudgetId]);
+  
+  // Function to load budget data by ID
+  async function loadBudgetData(budgetId: string) {
+    if (!budgetId) {
+      setLoading(false);
+      return;
+    }
 
-    loadBudgetData()
-  }, [selectedBudgetId])
+    try {
+      setLoading(true);
+      console.log('Loading budget data for ID:', budgetId);
+      const budgetData = await getBudgetById(budgetId);
+      console.log('Loaded budget data:', budgetData);
+      
+      // Check if we have valid budget data
+      if (budgetData && budgetData.id) {
+        setBudget(budgetData);
+        
+        // If we successfully loaded a budget, add it to available budgets if not already there
+        setAvailableBudgets(prev => {
+          if (!prev.some(b => b.id === budgetData.id)) {
+            return [...prev, budgetData];
+          }
+          // If it exists, update it
+          return prev.map(b => b.id === budgetData.id ? budgetData : b);
+        });
+      } else {
+        console.error("Invalid budget data received");
+        setError("Failed to load valid budget data");
+      }
+    } catch (err) {
+      console.error("Error loading budget data:", err);
+      setError("Failed to load budget data");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   // Handle budget selection change
   const handleBudgetChange = (newBudgetId: string) => {
-    setSelectedBudgetId(newBudgetId)
+    console.log('BudgetDashboard: Budget selection changed to:', newBudgetId);
+    
+    if (newBudgetId !== selectedBudgetId) {
+      setSelectedBudgetId(newBudgetId);
+      
+      // Always load fresh data from the server when budget selection changes
+      // This ensures we have the most up-to-date data
+      loadBudgetData(newBudgetId);
+    }
   }
 
   // Handle template selection and auto-create a budget
@@ -241,10 +288,13 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
     0
   ) || 0
   
+  // Ensure budget income is properly parsed as a number
+  const budgetIncome = budget?.income ? Number(budget.income) : 0
+  
   // Log budget metrics for debugging
   useEffect(() => {
     if (budget) {
-      console.log('Budget income:', budget.income);
+      console.log('Budget income:', budget.income, 'Parsed income:', budgetIncome);
       console.log('Total allocated:', totalAllocated);
       console.log('Categories:', budget.categories);
       
@@ -255,10 +305,10 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
         });
       }
     }
-  }, [budget, totalAllocated]);
+  }, [budget, totalAllocated, budgetIncome]);
   
-  const remainingBudget = (Number(budget?.income) || 0) - totalAllocated
-  const allocationPercentage = budget?.income ? (totalAllocated / Number(budget.income)) * 100 : 0
+  const remainingBudget = budgetIncome - totalAllocated
+  const allocationPercentage = budgetIncome > 0 ? (totalAllocated / budgetIncome) * 100 : 0
   
   // Generate simulated spending trends data
   useEffect(() => {
@@ -324,38 +374,37 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
   const budgetHasCategories = budget?.categories && budget.categories.length > 0
   
   // Prepare data for visualizations
-  const categoryData = budgetHasCategories ? 
-    // Use categories from the budget if available
+  const categoryData = budgetHasCategories ?      // Use categories from the budget if available
     budget.categories.map((category: any) => {
       // Calculate percentage based on the total budget
-      const percentage = budget?.income ? (category.amount_allocated / budget.income) * 100 : 0;
+      const percentage = budgetIncome > 0 ? (category.amount_allocated / budgetIncome) * 100 : 0;
       
       return {
         id: category.id,
         name: category.name || "Unnamed Category",
         amount: category.amount_allocated || 0,
         percentage: percentage,
-        color: getCategoryColor(category.amount_allocated || 0, budget?.income || 1),
+        color: getCategoryColor(category.amount_allocated || 0, budgetIncome || 1),
       };
     }) : 
     // Otherwise use the provided categories prop
     categories.map((category: any) => {
       // Calculate percentage based on the total budget
-      const percentage = budget?.income ? ((category.amount || 0) / budget.income) * 100 : 0;
+      const percentage = budgetIncome > 0 ? ((category.amount || 0) / budgetIncome) * 100 : 0;
       
       return {
         id: category.id,
         name: category.name || "Unnamed Category",
         amount: category.amount || 0,
         percentage: percentage,
-        color: getCategoryColor(category.amount || 0, budget?.income || 1),
+        color: getCategoryColor(category.amount || 0, budgetIncome || 1),
       };
     });
 
   // Format data for the treemap
   const treemapData = {
     categories: categoryData,
-    totalBudget: budget?.income || 0
+    totalBudget: budgetIncome
   };
 
   // Format data for the waterfall chart
@@ -491,7 +540,7 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
           <CardTitle>Budget Allocation</CardTitle>
           {budget && (
             <CardDescription>
-              {budget.name} - Total: {formatCurrency(budget.income || 0)}
+              {budget.name} - Total: {formatCurrency(Number(budget.income) || 0)}
             </CardDescription>
           )}
         </div>
@@ -606,8 +655,8 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
                   <tbody>
                     {budget?.categories?.map((category: any) => {
                       // Calculate percentage based on the total budget
-                      const percentage = budget?.income ? 
-                        ((category.amount_allocated || 0) / budget.income) * 100 : 0;
+                      const percentage = budgetIncome > 0 ? 
+                        ((category.amount_allocated || 0) / budgetIncome) * 100 : 0;
                       
                       // Find the spending trend for this category
                       const trend = spendingTrends.find(t => t.id === category.id);
