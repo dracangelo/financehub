@@ -141,6 +141,11 @@ export function TaxTimelineList() {
       
       const updatedItem = { ...itemToUpdate, is_completed: isCompleted }
       
+      // Optimistically update the UI first
+      setTimelineItems(prev => 
+        prev.map(item => item.id === id ? {...item, is_completed: isCompleted} : item)
+      )
+      
       const response = await fetch(`/api/tax/timeline/${id}`, {
         method: 'PUT',
         headers: {
@@ -149,14 +154,24 @@ export function TaxTimelineList() {
         body: JSON.stringify(updatedItem),
       })
       
+      const data = await response.json()
+      
       if (!response.ok) {
-        throw new Error('Failed to update timeline item status')
+        console.error("Server error:", data)
+        // Revert the optimistic update if there was an error
+        setTimelineItems(prev => 
+          prev.map(item => item.id === id ? itemToUpdate : item)
+        )
+        throw new Error(data.error || 'Failed to update timeline item status')
       }
       
-      const result = await response.json()
-      setTimelineItems(prev => 
-        prev.map(item => item.id === result.id ? result : item)
-      )
+      // If it's a mock response with success flag, keep our optimistic update
+      // Otherwise use the server response
+      if (!data.success) {
+        setTimelineItems(prev => 
+          prev.map(item => item.id === data.id ? data : item)
+        )
+      }
     } catch (error) {
       console.error("Error updating timeline item status:", error)
       toast({
@@ -164,7 +179,7 @@ export function TaxTimelineList() {
         description: "There was a problem updating the timeline item status.",
         variant: "destructive",
       })
-      throw error
+      // Don't rethrow the error to prevent the component from crashing
     }
   }
 
@@ -219,7 +234,7 @@ export function TaxTimelineList() {
 
         {/* Timeline Form */}
         {showForm && (
-          <div className="mb-6 p-4 border rounded-lg bg-gray-50">
+          <div className="mb-6 p-4 border rounded-lg bg-card">
             <TaxTimelineForm
               initialData={editingItem}
               onSubmit={editingItem ? handleUpdateTimelineItem : handleCreateTimelineItem}

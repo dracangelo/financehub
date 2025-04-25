@@ -89,7 +89,7 @@ export function TaxDeductionItem({
 
   return (
     <>
-      <div className="flex items-start space-x-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+      <div className="flex items-start space-x-4 p-4 border rounded-lg hover:bg-muted/50 transition-colors">
         <div className="mt-1">
           <DollarSign className="h-5 w-5 text-green-500" />
         </div>

@@ -44,12 +44,12 @@ function createCookieHandler(): UniversalCookieHandler {
     
     return {
       async get(name: string) {
-        const cookieStore = cookies()
+        const cookieStore = await cookies()
         return cookieStore.get(name)?.value
       },
       async set(name: string, value: string, options?: CookieOptions) {
         try {
-          const cookieStore = cookies()
+          const cookieStore = await cookies()
           cookieStore.set(name, value, options as any)
         } catch (error) {
           console.error("Error setting cookie:", error)
@@ -57,7 +57,7 @@ function createCookieHandler(): UniversalCookieHandler {
       },
       async remove(name: string, options?: CookieOptions) {
         try {
-          const cookieStore = cookies()
+          const cookieStore = await cookies()
           cookieStore.set(name, "", { ...options as any, maxAge: 0 })
         } catch (error) {
           console.error("Error removing cookie:", error)

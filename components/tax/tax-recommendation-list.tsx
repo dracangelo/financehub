@@ -58,59 +58,54 @@ export function TaxRecommendationList() {
     setIsLoading(true)
     try {
       const response = await fetch('/api/tax/recommendations')
+      
+      // Get response text first to help debug
+      const responseText = await response.text()
+      console.log('Recommendations API response:', responseText)
+      
+      // Parse JSON if possible
+      let data
+      try {
+        if (responseText && responseText.trim()) {
+          data = JSON.parse(responseText)
+        } else {
+          data = []
+        }
+      } catch (parseError) {
+        console.error('Error parsing recommendations response:', parseError)
+        data = []
+      }
+      
       if (!response.ok) {
         throw new Error('Failed to fetch recommendations')
       }
-      const data = await response.json()
+      
       setRecommendations(data)
     } catch (error) {
       console.error("Error fetching tax recommendations:", error)
       
-      // Provide fallback recommendations when API fails
-      const currentYear = new Date().getFullYear()
-      const fallbackRecommendations: TaxRecommendation[] = [
-        {
-          id: "1",
-          type: "deduction",
-          priority: "high",
-          title: "Maximize 401(k) Contributions",
-          description: "Increase your pre-tax 401(k) contributions to reduce taxable income.",
-          potential_savings: 2500,
-          action_items: ["Contact HR to update contribution percentage", "Aim for maximum annual contribution"],
-          deadline: new Date(currentYear, 11, 31).toISOString(),
-          is_completed: false
-        },
-        {
-          id: "2",
-          type: "credit",
-          priority: "medium",
-          title: "Claim Home Office Deduction",
-          description: "If you work from home, you may be eligible for home office deductions.",
-          potential_savings: 1200,
-          action_items: ["Calculate square footage of home office", "Document expenses related to home office"],
-          deadline: new Date(currentYear, 3, 15).toISOString(),
-          is_completed: false
-        },
-        {
-          id: "3",
-          type: "optimization",
-          priority: "low",
-          title: "Bundle Medical Expenses",
-          description: "Consider bundling medical expenses in a single tax year to exceed the 7.5% AGI threshold.",
-          potential_savings: 800,
-          action_items: ["Review upcoming medical procedures", "Schedule elective procedures strategically"],
-          deadline: new Date(currentYear, 11, 15).toISOString(),
-          is_completed: false
-        }
-      ]
+      // Check if the error might be due to missing table
+      const errorMessage = error.toString().toLowerCase()
+      const isMissingTableError = errorMessage.includes('relation') && 
+                                 (errorMessage.includes('does not exist') || 
+                                  errorMessage.includes('not found'))
       
-      setRecommendations(fallbackRecommendations)
+      if (isMissingTableError) {
+        toast({
+          title: "Database table missing",
+          description: "Please run the create_tax_recommendations_table.sql migration script.",
+          variant: "destructive"
+        })
+      } else {
+        toast({
+          title: "Error loading recommendations",
+          description: "Could not load tax recommendations. Please try again later.",
+          variant: "destructive"
+        })
+      }
       
-      toast({
-        title: "Using sample recommendations",
-        description: "Could not connect to the server. Using sample tax recommendations instead.",
-        variant: "default",
-      })
+      // Set empty recommendations instead of fallbacks
+      setRecommendations([])
     } finally {
       setIsLoading(false)
     }
@@ -176,6 +171,9 @@ export function TaxRecommendationList() {
         is_completed: formData.is_completed
       }
 
+      // Log what we're trying to save
+      console.log('Saving recommendation data:', data)
+
       try {
         // Try to use the API first
         let response
@@ -196,11 +194,32 @@ export function TaxRecommendationList() {
           })
         }
 
+        // Log the response status
+        console.log('API response status:', response.status)
+        
+        // Check if response is OK first
         if (!response.ok) {
-          throw new Error('Failed to save recommendation')
+          const errorText = await response.text()
+          console.error('API error response:', response.status, errorText)
+          throw new Error(`Failed to save recommendation: HTTP ${response.status}`)
         }
-
-        const result = await response.json()
+        
+        // Get response text
+        const responseText = await response.text()
+        console.log('API response text:', responseText)
+        
+        // Parse JSON if possible
+        let result
+        try {
+          if (responseText && responseText.trim()) {
+            result = JSON.parse(responseText)
+          } else {
+            throw new Error('Empty response')
+          }
+        } catch (parseError) {
+          console.error('Error parsing response:', parseError)
+          throw new Error('Invalid response format')
+        }
         
         if (editingRecommendation) {
           setRecommendations(prev => 
@@ -220,6 +239,20 @@ export function TaxRecommendationList() {
       } catch (apiError) {
         // If API fails, handle locally
         console.error("API error, using local fallback:", apiError)
+        
+        // Check if the error might be due to missing table
+        const errorMessage = apiError.toString().toLowerCase()
+        const isMissingTableError = errorMessage.includes('relation') && 
+                                   (errorMessage.includes('does not exist') || 
+                                    errorMessage.includes('not found'))
+        
+        if (isMissingTableError) {
+          toast({
+            title: "Database table missing",
+            description: "Please run the tax_recommendations_table.sql migration script first.",
+            variant: "destructive"
+          })
+        }
         
         if (editingRecommendation) {
           // Update existing recommendation locally
@@ -241,20 +274,18 @@ export function TaxRecommendationList() {
           
           toast({
             title: "Recommendation updated locally",
-            description: "Your tax recommendation has been updated locally. It will sync when the server is available."
+            description: "Your tax recommendation has been updated in the current session only."
           })
         } else {
           // Create new recommendation locally
-          const newId = `local-${Date.now()}`
-          
           const newRecommendation: TaxRecommendation = {
-            id: newId,
+            id: `local-${Date.now()}`,
             title: formData.title,
             description: formData.description,
             type: formData.type as any,
             priority: formData.priority as any,
             potential_savings: formData.potential_savings ? parseFloat(formData.potential_savings) : undefined,
-            action_items: actionItemsArray,
+            action_items: actionItemsArray.length > 0 ? actionItemsArray : undefined,
             deadline: formData.deadline || undefined,
             is_completed: formData.is_completed
           }
@@ -262,8 +293,8 @@ export function TaxRecommendationList() {
           setRecommendations(prev => [...prev, newRecommendation])
           
           toast({
-            title: "Recommendation created locally",
-            description: "Your tax recommendation has been saved locally. It will sync when the server is available."
+            title: "Recommendation saved locally",
+            description: "Your tax recommendation has been saved for the current session only."
           })
         }
       }

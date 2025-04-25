@@ -274,7 +274,7 @@ export function TaxTimelineForm({ initialData, onSubmit, onCancel }: TaxTimeline
         // Create form with text extraction option
         <div className="space-y-6">
           {/* Text input for extracting events */}
-          <div className="space-y-4 p-4 bg-gray-50 rounded-md">
+          <div className="space-y-4 p-4 bg-muted/50 rounded-md">
             <h3 className="text-sm font-medium">Extract Events from Text</h3>
             <Textarea
               placeholder="Paste your tax schedule or deadline text here..."
@@ -318,14 +318,14 @@ export function TaxTimelineForm({ initialData, onSubmit, onCancel }: TaxTimeline
                 {extractedEvents.map((event, index) => (
                   <div 
                     key={index} 
-                    className="p-3 border rounded-md hover:bg-gray-50 cursor-pointer"
+                    className="p-3 border rounded-md hover:bg-muted/50 cursor-pointer"
                     onClick={() => useExtractedEvent(event)}
                   >
                     <div className="flex justify-between">
                       <h4 className="font-medium">{event.title}</h4>
-                      <span className="text-sm text-gray-500">{event.due_date}</span>
+                      <span className="text-sm text-muted-foreground">{event.due_date}</span>
                     </div>
-                    <p className="text-sm text-gray-600 truncate">{event.description}</p>
+                    <p className="text-sm text-muted-foreground truncate">{event.description}</p>
                   </div>
                 ))}
               </div>
@@ -343,7 +343,7 @@ export function TaxTimelineForm({ initialData, onSubmit, onCancel }: TaxTimeline
                   {...form.register("title")}
                 />
                 {form.formState.errors.title && (
-                  <p className="text-red-500 text-sm">{form.formState.errors.title.message}</p>
+                  <p className="text-destructive text-sm">{form.formState.errors.title.message}</p>
                 )}
               </div>
 
@@ -354,7 +354,7 @@ export function TaxTimelineForm({ initialData, onSubmit, onCancel }: TaxTimeline
                   {...form.register("description")}
                 />
                 {form.formState.errors.description && (
-                  <p className="text-red-500 text-sm">{form.formState.errors.description.message}</p>
+                  <p className="text-destructive text-sm">{form.formState.errors.description.message}</p>
                 )}
               </div>
 
@@ -366,7 +366,7 @@ export function TaxTimelineForm({ initialData, onSubmit, onCancel }: TaxTimeline
                   {...form.register("due_date")}
                 />
                 {form.formState.errors.due_date && (
-                  <p className="text-red-500 text-sm">{form.formState.errors.due_date.message}</p>
+                  <p className="text-destructive text-sm">{form.formState.errors.due_date.message}</p>
                 )}
               </div>
 

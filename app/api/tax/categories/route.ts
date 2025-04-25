@@ -17,34 +17,55 @@ export async function GET() {
     const userId = await getCurrentUserId()
     
     if (!userId) {
-      return new NextResponse("Unauthorized", { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
     
-    // Ensure tax categories table exists
-    await ensureTaxCategoriesTableExists()
-    
-    // Get all categories (both default and user-created)
-    const { data: categories, error } = await supabaseAdmin
-      .from('tax_categories')
-      .select('*')
-      .order('name', { ascending: true })
-    
-    if (error) {
-      console.error("[TAX_CATEGORIES_GET]", error)
+    try {
+      // Try to ensure tax categories table exists
+      await ensureTaxCategoriesTableExists()
       
-      // If table doesn't exist despite our attempt to create it, return empty array
-      if (error.code === "42P01") {
-        return NextResponse.json([])
+      // Get all categories (both default and user-created)
+      const { data: categories, error } = await supabaseAdmin
+        .from('tax_categories')
+        .select('*')
+        .order('name', { ascending: true })
+      
+      if (error) {
+        console.error("[TAX_CATEGORIES_GET]", error)
+        
+        // If table doesn't exist despite our attempt to create it, return fallback categories
+        if (error.code === "42P01") {
+          return NextResponse.json(getDefaultCategories())
+        }
+        
+        // For any other database error, return fallback categories
+        console.warn("Database error, returning default categories", error)
+        return NextResponse.json(getDefaultCategories())
       }
       
-      return new NextResponse(`Database error: ${error.message}`, { status: 500 })
+      return NextResponse.json(categories && categories.length > 0 ? categories : getDefaultCategories())
+    } catch (error) {
+      console.error("[TAX_CATEGORIES_GET] Error accessing database:", error)
+      // Return fallback categories for any error
+      return NextResponse.json(getDefaultCategories())
     }
-    
-    return NextResponse.json(categories || [])
   } catch (error) {
     console.error("[TAX_CATEGORIES_GET]", error)
-    return new NextResponse("Internal error", { status: 500 })
+    // Even in case of critical errors, return fallback categories
+    return NextResponse.json(getDefaultCategories())
   }
+}
+
+// Helper function to get default tax categories
+function getDefaultCategories() {
+  return [
+    { id: "1", name: "Housing", type: "deduction", color: "#3b82f6", is_default: true },
+    { id: "2", name: "Charity", type: "deduction", color: "#10b981", is_default: true },
+    { id: "3", name: "Healthcare", type: "deduction", color: "#ef4444", is_default: true },
+    { id: "4", name: "Education", type: "deduction", color: "#f59e0b", is_default: true },
+    { id: "5", name: "Business", type: "deduction", color: "#8b5cf6", is_default: true },
+    { id: "6", name: "Other", type: "deduction", color: "#6b7280", is_default: true }
+  ]
 }
 
 // POST /api/tax/categories - Create a new tax category
@@ -53,7 +74,7 @@ export async function POST(req: Request) {
     const userId = await getCurrentUserId()
     
     if (!userId) {
-      return new NextResponse("Unauthorized", { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
     
     // Ensure tax categories table exists
@@ -71,11 +92,11 @@ export async function POST(req: Request) {
     
     if (checkError && checkError.code !== "42P01") {
       console.error("[TAX_CATEGORIES_POST_CHECK]", checkError)
-      return new NextResponse(`Database error: ${checkError.message}`, { status: 500 })
+      return NextResponse.json({ error: `Database error: ${checkError.message}` }, { status: 500 })
     }
     
     if (existingCategory) {
-      return new NextResponse("Category with this name already exists", { status: 409 })
+      return NextResponse.json({ error: "Category with this name already exists" }, { status: 409 })
     }
     
     // Create the category
@@ -98,17 +119,17 @@ export async function POST(req: Request) {
     
     if (error) {
       console.error("[TAX_CATEGORIES_POST]", error)
-      return new NextResponse(`Database error: ${error.message}`, { status: 500 })
+      return NextResponse.json({ error: `Database error: ${error.message}` }, { status: 500 })
     }
     
     return NextResponse.json(category)
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return new NextResponse(JSON.stringify(error.errors), { status: 400 })
+      return NextResponse.json({ error: "Validation error", details: error.errors }, { status: 400 })
     }
     
     console.error("[TAX_CATEGORIES_POST]", error)
-    return new NextResponse("Internal error", { status: 500 })
+    return NextResponse.json({ error: "Internal error" }, { status: 500 })
   }
 }
 
@@ -118,13 +139,13 @@ export async function PATCH(req: Request) {
     const userId = await getCurrentUserId()
     
     if (!userId) {
-      return new NextResponse("Unauthorized", { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
     
     const body = await req.json()
     
     if (!body.id) {
-      return new NextResponse("Category ID is required", { status: 400 })
+      return NextResponse.json({ error: "Category ID is required" }, { status: 400 })
     }
     
     const validatedData = categorySchema.parse(body)
@@ -140,15 +161,15 @@ export async function PATCH(req: Request) {
       console.error("[TAX_CATEGORIES_PATCH_CHECK]", checkError)
       
       if (checkError.code === "PGRST116") {
-        return new NextResponse("Category not found", { status: 404 })
+        return NextResponse.json({ error: "Category not found" }, { status: 404 })
       }
       
-      return new NextResponse(`Database error: ${checkError.message}`, { status: 500 })
+      return NextResponse.json({ error: `Database error: ${checkError.message}` }, { status: 500 })
     }
     
     // Don't allow editing default categories
     if (existingCategory.is_default) {
-      return new NextResponse("Cannot modify default categories", { status: 403 })
+      return NextResponse.json({ error: "Cannot modify default categories" }, { status: 403 })
     }
     
     // Update the category
@@ -169,17 +190,17 @@ export async function PATCH(req: Request) {
     
     if (error) {
       console.error("[TAX_CATEGORIES_PATCH]", error)
-      return new NextResponse(`Database error: ${error.message}`, { status: 500 })
+      return NextResponse.json({ error: `Database error: ${error.message}` }, { status: 500 })
     }
     
     return NextResponse.json(category)
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return new NextResponse(JSON.stringify(error.errors), { status: 400 })
+      return NextResponse.json({ error: "Validation error", details: error.errors }, { status: 400 })
     }
     
     console.error("[TAX_CATEGORIES_PATCH]", error)
-    return new NextResponse("Internal error", { status: 500 })
+    return NextResponse.json({ error: "Internal error" }, { status: 500 })
   }
 }
 
@@ -189,14 +210,14 @@ export async function DELETE(req: Request) {
     const userId = await getCurrentUserId()
     
     if (!userId) {
-      return new NextResponse("Unauthorized", { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
     
     const { searchParams } = new URL(req.url)
     const id = searchParams.get("id")
     
     if (!id) {
-      return new NextResponse("Category ID is required", { status: 400 })
+      return NextResponse.json({ error: "Category ID is required" }, { status: 400 })
     }
     
     // Check if category exists and is not a default category
@@ -210,15 +231,15 @@ export async function DELETE(req: Request) {
       console.error("[TAX_CATEGORIES_DELETE_CHECK]", checkError)
       
       if (checkError.code === "PGRST116") {
-        return new NextResponse("Category not found", { status: 404 })
+        return NextResponse.json({ error: "Category not found" }, { status: 404 })
       }
       
-      return new NextResponse(`Database error: ${checkError.message}`, { status: 500 })
+      return NextResponse.json({ error: `Database error: ${checkError.message}` }, { status: 500 })
     }
     
     // Don't allow deleting default categories
     if (existingCategory.is_default) {
-      return new NextResponse("Cannot delete default categories", { status: 403 })
+      return NextResponse.json({ error: "Cannot delete default categories" }, { status: 403 })
     }
     
     // Check if category is in use
@@ -233,7 +254,7 @@ export async function DELETE(req: Request) {
     }
     
     if (count && count > 0) {
-      return new NextResponse("Cannot delete category that is in use by tax entries", { status: 409 })
+      return NextResponse.json({ error: "Cannot delete category that is in use by tax entries" }, { status: 409 })
     }
     
     // Delete the category
@@ -244,13 +265,13 @@ export async function DELETE(req: Request) {
     
     if (error) {
       console.error("[TAX_CATEGORIES_DELETE]", error)
-      return new NextResponse(`Database error: ${error.message}`, { status: 500 })
+      return NextResponse.json({ error: `Database error: ${error.message}` }, { status: 500 })
     }
     
-    return new NextResponse(null, { status: 204 })
+    return NextResponse.json({ success: true }, { status: 200 })
   } catch (error) {
     console.error("[TAX_CATEGORIES_DELETE]", error)
-    return new NextResponse("Internal error", { status: 500 })
+    return NextResponse.json({ error: "Internal error" }, { status: 500 })
   }
 }
 

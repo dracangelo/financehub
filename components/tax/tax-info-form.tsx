@@ -332,7 +332,7 @@ export function TaxInfoForm() {
   }
 
   return (
-    <Card className="w-full max-w-2xl mx-auto">
+    <Card className="w-full max-w-2xl mx-auto bg-background">
       <CardHeader>
         <CardTitle>Add Tax Information</CardTitle>
         <CardDescription>Add new tax deductions, documents, or timeline items</CardDescription>
@@ -359,7 +359,7 @@ export function TaxInfoForm() {
           </TabsList>
 
           <TabsContent value="deduction">
-            <form onSubmit={deductionForm.handleSubmit(handleDeductionSubmit)} className="space-y-4">
+            <form onSubmit={deductionForm.handleSubmit(handleDeductionSubmit)} className="space-y-4 bg-card p-6 rounded-lg shadow-sm border border-border">
               <div className="space-y-2">
                 <Label htmlFor="name">Deduction Name</Label>
                 <Input
@@ -433,7 +433,7 @@ export function TaxInfoForm() {
           </TabsContent>
 
           <TabsContent value="document">
-            <form onSubmit={documentForm.handleSubmit(handleDocumentSubmit)} className="space-y-4">
+            <form onSubmit={documentForm.handleSubmit(handleDocumentSubmit)} className="space-y-4 bg-card p-6 rounded-lg shadow-sm border border-border">
               <div className="space-y-2">
                 <Label htmlFor="doc-name">Document Name</Label>
                 <Input
@@ -609,7 +609,7 @@ export function TaxInfoForm() {
                 </div>
               )}
 
-              <form onSubmit={timelineForm.handleSubmit(handleTimelineSubmit as any)} className="space-y-4">
+              <form onSubmit={timelineForm.handleSubmit(handleTimelineSubmit)} className="space-y-4 bg-card p-6 rounded-lg shadow-sm border border-border">
                 <div className="space-y-2">
                   <Label htmlFor="title">Title</Label>
                   <Input

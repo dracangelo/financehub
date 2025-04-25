@@ -12,7 +12,7 @@ import { TaxTimelineList } from "@/components/tax/tax-timeline-list"
 import { TaxDeductionList } from "@/components/tax/tax-deduction-list"
 import { TaxRecommendationList } from "@/components/tax/tax-recommendation-list"
 import { TaxPredictionList } from "@/components/tax/tax-prediction-list"
-import { TaxInfoForm } from "@/components/tax/tax-info-form"
+// Tax info tab removed
 
 export default function TaxPlannerPage() {
   const [activeTab, setActiveTab] = useState("overview")
@@ -27,14 +27,13 @@ export default function TaxPlannerPage() {
       <TaxBreadcrumb />
       
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid grid-cols-7 w-full md:w-auto">
+        <TabsList className="grid grid-cols-6 w-full md:w-auto">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="documents">Documents</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
           <TabsTrigger value="deductions">Deductions</TabsTrigger>
           <TabsTrigger value="recommendations">Recommendations</TabsTrigger>
           <TabsTrigger value="predictions">Predictions</TabsTrigger>
-          <TabsTrigger value="info">Tax Info</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -61,9 +60,7 @@ export default function TaxPlannerPage() {
           <TaxPredictionList />
         </TabsContent>
 
-        <TabsContent value="info">
-          <TaxInfoForm />
-        </TabsContent>
+        {/* Tax info tab removed */}
       </Tabs>
     </DashboardShell>
   )

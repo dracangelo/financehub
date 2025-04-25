@@ -86,7 +86,7 @@ export function TaxDeductionForm({
   }
 
   return (
-    <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+    <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 bg-card p-6 rounded-lg shadow-sm border border-border">
       <div className="space-y-2">
         <Label htmlFor="name">Deduction Name</Label>
         <Input

@@ -92,7 +92,7 @@ export function TaxRecommendationItem({
 
   return (
     <>
-      <div className="flex items-start space-x-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+      <div className="flex items-start space-x-4 p-4 border rounded-lg hover:bg-muted/50 transition-colors">
         <div className="mt-1">
           {recommendation.priority === "urgent" ? (
             <AlertTriangle className="h-5 w-5 text-red-500" />

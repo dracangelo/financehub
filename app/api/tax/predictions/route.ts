@@ -5,9 +5,14 @@ import { getCurrentUser } from "@/lib/auth"
 
 // Schema for tax impact predictions
 const taxImpactPredictionSchema = z.object({
+  // Support both naming conventions
   decision_type: z.string().min(1),
+  scenario: z.string().min(1).optional(),
   description: z.string().optional(),
   estimated_tax_impact: z.number().optional(),
+  difference: z.number().optional(),
+  current_tax_burden: z.number().optional(),
+  predicted_tax_burden: z.number().optional(),
   notes: z.string().optional(),
 })
 
@@ -56,16 +61,48 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid request data", details: result.error.format() }, { status: 400 })
     }
 
+    // Prepare insert data with only the columns that exist in the database
+    // Based on the error message, we need to avoid current_tax_burden, predicted_tax_burden, and created_at
+    const insertData = {
+      user_id: user.id,
+      decision_type: result.data.decision_type || result.data.scenario,
+      description: result.data.description,
+      estimated_tax_impact: result.data.estimated_tax_impact || result.data.difference,
+      notes: result.data.notes
+      // removed created_at as it doesn't exist in the schema
+    }
+    
+    // Always store tax burden values in metadata JSON field
+    // Create a metadata object to store additional fields
+    const metadata: Record<string, any> = {
+      current_tax_burden: result.data.current_tax_burden || 0,
+      predicted_tax_burden: result.data.predicted_tax_burden || 0
+    }
+    
+    // If there are existing notes, preserve them and add metadata
+    if (insertData.notes && insertData.notes.trim() !== '') {
+      // Try to parse existing notes as JSON first
+      try {
+        const existingMetadata = JSON.parse(insertData.notes);
+        // Merge existing metadata with new metadata
+        const mergedMetadata = { ...existingMetadata, ...metadata };
+        insertData.notes = JSON.stringify(mergedMetadata);
+      } catch (e) {
+        // If notes aren't JSON, store them in a separate field in the metadata
+        metadata.user_notes = insertData.notes;
+        insertData.notes = JSON.stringify(metadata);
+      }
+    } else {
+      // Just use the metadata as notes
+      insertData.notes = JSON.stringify(metadata);
+    }
+    
+    console.log('Insert data being sent to database:', JSON.stringify(insertData))
+    
     // Insert the prediction
     const { data, error } = await supabase
       .from("tax_impact_predictions")
-      .insert({
-        user_id: user.id,
-        decision_type: result.data.decision_type,
-        description: result.data.description,
-        estimated_tax_impact: result.data.estimated_tax_impact,
-        notes: result.data.notes,
-      })
+      .insert(insertData)
       .select()
       .single()
 

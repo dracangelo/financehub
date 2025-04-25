@@ -156,6 +156,16 @@ export function TaxDocumentForm({ initialData, onSubmit, onCancel }: TaxDocument
         formData.append("file", values.file[0])
       }
 
+      // Log what we're sending to help debug
+      console.log('Submitting document with FormData:', {
+        name: values.name,
+        type: values.type,
+        due_date: values.due_date,
+        status: values.status,
+        notes: values.notes,
+        file: values.file && values.file.length > 0 ? `${values.file[0].name} (${values.file[0].size} bytes)` : 'No file'
+      })
+      
       // Use XMLHttpRequest to track upload progress
       const xhr = new XMLHttpRequest()
       
@@ -178,15 +188,20 @@ export function TaxDocumentForm({ initialData, onSubmit, onCancel }: TaxDocument
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           const response = JSON.parse(xhr.responseText)
+          console.log('Document saved successfully:', response)
           onSubmit(response)
+          setIsLoading(false)
         } else {
-          throw new Error("Failed to save document")
+          setIsLoading(false)
+          console.error("Server error:", xhr.status, xhr.responseText)
+          alert("Failed to save document. Please try again.")
         }
-        setIsLoading(false)
       }
 
       xhr.onerror = () => {
-        throw new Error("Network error occurred")
+        setIsLoading(false)
+        console.error("Network error occurred")
+        alert("Network error occurred. Please check your connection and try again.")
       }
 
       xhr.send(formData)
@@ -197,7 +212,7 @@ export function TaxDocumentForm({ initialData, onSubmit, onCancel }: TaxDocument
   }
 
   return (
-    <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+    <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 bg-card p-6 rounded-lg shadow-sm border border-border">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="name">Document Name</Label>
@@ -206,7 +221,7 @@ export function TaxDocumentForm({ initialData, onSubmit, onCancel }: TaxDocument
             {...form.register("name")}
           />
           {form.formState.errors.name && (
-            <p className="text-red-500 text-sm">{form.formState.errors.name.message}</p>
+            <p className="text-destructive text-sm">{form.formState.errors.name.message}</p>
           )}
         </div>
 
@@ -229,7 +244,7 @@ export function TaxDocumentForm({ initialData, onSubmit, onCancel }: TaxDocument
             </SelectContent>
           </Select>
           {form.formState.errors.type && (
-            <p className="text-red-500 text-sm">{form.formState.errors.type.message}</p>
+            <p className="text-destructive text-sm">{form.formState.errors.type.message}</p>
           )}
         </div>
       </div>
@@ -243,7 +258,7 @@ export function TaxDocumentForm({ initialData, onSubmit, onCancel }: TaxDocument
             {...form.register("due_date")}
           />
           {form.formState.errors.due_date && (
-            <p className="text-red-500 text-sm">{form.formState.errors.due_date.message}</p>
+            <p className="text-destructive text-sm">{form.formState.errors.due_date.message}</p>
           )}
         </div>
 
@@ -264,7 +279,7 @@ export function TaxDocumentForm({ initialData, onSubmit, onCancel }: TaxDocument
             </SelectContent>
           </Select>
           {form.formState.errors.status && (
-            <p className="text-red-500 text-sm">{form.formState.errors.status.message}</p>
+            <p className="text-destructive text-sm">{form.formState.errors.status.message}</p>
           )}
         </div>
       </div>
@@ -276,14 +291,14 @@ export function TaxDocumentForm({ initialData, onSubmit, onCancel }: TaxDocument
           {...form.register("notes")}
         />
         {form.formState.errors.notes && (
-          <p className="text-red-500 text-sm">{form.formState.errors.notes.message}</p>
+          <p className="text-destructive text-sm">{form.formState.errors.notes.message}</p>
         )}
       </div>
       
       {/* File Upload Section */}
       <div className="space-y-2">
         <Label htmlFor="file">Upload Document</Label>
-        <div className="border-2 border-dashed border-gray-300 rounded-md p-4 transition-colors hover:border-blue-400">
+        <div className="border-2 border-dashed border-border rounded-md p-4 transition-colors hover:border-primary">
           <Input
             id="file"
             type="file"
@@ -297,7 +312,7 @@ export function TaxDocumentForm({ initialData, onSubmit, onCancel }: TaxDocument
                 {filePreview?.startsWith('data:image') || filePreview?.match(/\.(jpeg|jpg|gif|png)$/i) ? (
                   <img src={filePreview} alt="Preview" className="max-h-32 mx-auto mb-2 rounded" />
                 ) : (
-                  <FileText className="h-16 w-16 text-blue-500 mx-auto mb-2" />
+                  <FileText className="h-16 w-16 text-primary mx-auto mb-2" />
                 )}
                 <p className="text-sm text-center truncate">{fileName}</p>
                 <div className="flex justify-center mt-2">
@@ -318,15 +333,15 @@ export function TaxDocumentForm({ initialData, onSubmit, onCancel }: TaxDocument
               </div>
             ) : (
               <>
-                <Upload className="h-10 w-10 text-gray-400 mb-2" />
-                <p className="text-sm text-gray-500">Click to upload or drag and drop</p>
-                <p className="text-xs text-gray-400 mt-1">PDF, Word, Excel, or Images (max 5MB)</p>
+                <Upload className="h-10 w-10 text-muted-foreground mb-2" />
+                <p className="text-sm text-muted-foreground">Click to upload or drag and drop</p>
+                <p className="text-xs text-muted-foreground mt-1">PDF, Word, Excel, or Images (max 5MB)</p>
               </>
             )}
           </label>
         </div>
         {form.formState.errors.file && (
-          <p className="text-red-500 text-sm">{form.formState.errors.file.message as string}</p>
+          <p className="text-destructive text-sm">{form.formState.errors.file.message as string}</p>
         )}
       </div>
 

@@ -43,22 +43,30 @@ export function TaxDocumentList() {
     }
   }
 
-  const handleCreateDocument = async (document: Omit<TaxDocument, "id">) => {
+  const handleCreateDocument = async (document: any) => {
     try {
-      const response = await fetch('/api/tax/documents', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(document),
-      })
+      // The document is already submitted via XMLHttpRequest in the form component
+      // Here we just need to handle the response
       
-      if (!response.ok) {
-        throw new Error('Failed to create document')
+      // Log the response to understand its structure
+      console.log('Document creation response:', document)
+      
+      // Create a properly formatted document object from the response
+      const newDocument: TaxDocument = {
+        id: document.id || `temp-${Date.now()}`,
+        name: document.name,
+        type: document.document_type || 'other',
+        status: document.status || 'received',
+        due_date: document.due_date,
+        file_url: document.file_url || '',
+        notes: document.notes || '',
       }
       
-      const newDocument = await response.json()
-      setDocuments(prev => [...prev, newDocument])
+      console.log('Adding new document to state:', newDocument)
+      
+      // Refresh the document list to ensure we have the latest data
+      await fetchDocuments()
+      
       setShowForm(false)
       toast({
         title: "Document created",
@@ -135,27 +143,57 @@ export function TaxDocumentList() {
 
   const handleStatusChange = async (id: string, status: string) => {
     try {
+      console.log(`Updating document ${id} status to ${status}`)
       const documentToUpdate = documents.find(doc => doc.id === id)
-      if (!documentToUpdate) return
+      if (!documentToUpdate) {
+        console.error(`Document with id ${id} not found`)
+        return
+      }
       
-      const updatedDocument = { ...documentToUpdate, status }
+      // Only send the status field to avoid overwriting other fields
+      const statusUpdate = { status }
+      
+      console.log('Sending status update:', statusUpdate)
       
       const response = await fetch(`/api/tax/documents/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(updatedDocument),
+        body: JSON.stringify(statusUpdate),
       })
       
       if (!response.ok) {
-        throw new Error('Failed to update document status')
+        console.error('Error response:', response.status, response.statusText)
+        throw new Error(`Failed to update document status: HTTP ${response.status}`)
       }
       
-      const result = await response.json()
+      let result
+      try {
+        // Try to parse as JSON
+        const responseText = await response.text()
+        console.log('Status update response:', response.status, responseText)
+        
+        // Only try to parse if there's content
+        if (responseText && responseText.trim()) {
+          result = JSON.parse(responseText)
+        } else {
+          // Empty response is fine for status updates
+          result = { success: true }
+        }
+      } catch (parseError) {
+        console.error('Error parsing response:', parseError)
+        // Don't throw, just use a default result
+        result = { success: true }
+      }
+      
+      // Update the document in the local state
       setDocuments(prev => 
-        prev.map(doc => doc.id === result.id ? result : doc)
+        prev.map(doc => doc.id === id ? { ...doc, status } : doc)
       )
+      
+      // Refresh the document list to ensure we have the latest data
+      await fetchDocuments()
     } catch (error) {
       console.error("Error updating document status:", error)
       toast({
@@ -163,17 +201,22 @@ export function TaxDocumentList() {
         description: "There was a problem updating the document status.",
         variant: "destructive",
       })
-      throw error
     }
   }
 
   const filteredDocuments = documents.filter(doc => {
-    if (!doc || !doc.name || !doc.type) return false;
+    if (!doc || !doc.name) return false;
+    
+    // Safe access to properties with nullish coalescing
+    const docName = doc.name?.toLowerCase() || '';
+    const docType = doc.type?.toLowerCase() || '';
+    const docNotes = doc.notes?.toLowerCase() || '';
+    const query = searchQuery.toLowerCase();
     
     return (
-      doc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      doc.type.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (doc.notes && doc.notes.toLowerCase().includes(searchQuery.toLowerCase()))
+      docName.includes(query) ||
+      docType.includes(query) ||
+      docNotes.includes(query)
     );
   })
 

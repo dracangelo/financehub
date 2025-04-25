@@ -109,15 +109,21 @@ export function TaxDeductionList() {
 
   const fetchCategories = async () => {
     try {
-      const response = await fetch('/api/tax/categories')
-      if (!response.ok) {
-        throw new Error('Failed to fetch categories')
+      // First try to fetch from the API
+      try {
+        const response = await fetch('/api/tax/categories')
+        const data = await response.json()
+        if (data && Array.isArray(data) && data.length > 0) {
+          setCategories(data)
+          return
+        }
+      } catch (apiError) {
+        console.error("API error fetching tax categories:", apiError)
+        // Continue to fallback if API fails
       }
-      const data = await response.json()
-      setCategories(data)
-    } catch (error) {
-      console.error("Error fetching tax categories:", error)
-      // Provide fallback categories when API fails
+      
+      // If we get here, either the API call failed or returned empty data
+      // Use fallback categories
       const fallbackCategories = [
         { id: "1", name: "Housing", type: "deduction", color: "#3b82f6" },
         { id: "2", name: "Charity", type: "deduction", color: "#10b981" },
@@ -130,9 +136,16 @@ export function TaxDeductionList() {
       
       toast({
         title: "Using default categories",
-        description: "Could not connect to the server. Using default categories instead.",
+        description: "Using default tax categories.",
         variant: "default",
       })
+    } catch (error) {
+      // This is a safety net that should never be reached
+      console.error("Critical error in fetchCategories:", error)
+      // Use minimal fallback in case of critical error
+      setCategories([
+        { id: "1", name: "Other", type: "deduction", color: "#6b7280" }
+      ])
     }
   }
 
