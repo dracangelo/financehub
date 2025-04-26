@@ -3,7 +3,8 @@ import { getAccountSummary } from "@/app/actions/accounts"
 import { getCategorySpending } from "@/app/actions/categories"
 import { getCashflowForecast } from "@/lib/cashflow-utils"
 import { getNetWorth } from "@/app/actions/net-worth"
-import { requireAuth } from "@/lib/auth"
+import { getAuthenticatedUser } from "@/lib/auth"
+import { redirect } from 'next/navigation'
 
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
@@ -30,8 +31,8 @@ export const metadata = {
 
 export default async function DashboardPage() {
   try {
-    // This will redirect to login if not authenticated
-    const user = await requireAuth()
+    // Get the authenticated user (no redirect here since layout handles that)
+    const user = await getAuthenticatedUser()
 
     // Fetch data for the dashboard
     const [
@@ -61,7 +62,7 @@ export default async function DashboardPage() {
         transactionCount: 0,
         averageTransaction: 0,
       })),
-      getCashflowForecast(user.id).catch(() => ({
+      getCashflowForecast(user?.id).catch(() => ({
         projectedIncome: 0,
         projectedExpenses: 0,
         netCashflow: 0,
@@ -99,6 +100,19 @@ export default async function DashboardPage() {
       amount: category.amount,
       color: category.color
     }))
+
+    // Ensure we have valid net worth history data or use an empty array
+    const netWorthHistory = Array.isArray(netWorthData?.history) ? netWorthData.history : [];
+    
+    // Create sample data if history is empty
+    const netWorthTimelineData = netWorthHistory.length > 0 
+      ? netWorthHistory.map(item => ({
+          date: new Date(item.date || Date.now()).toLocaleDateString("en-US", { month: "short", year: "numeric" }),
+          assets: typeof item.assets === 'number' ? item.assets : 0,
+          liabilities: typeof item.liabilities === 'number' ? item.liabilities : 0,
+          netWorth: typeof item.netWorth === 'number' ? item.netWorth : 0
+        }))
+      : null; // If no history data, pass null to use the component's sample data
 
     return (
       <div className="space-y-6">
@@ -145,14 +159,7 @@ export default async function DashboardPage() {
         {/* Additional Visualizations */}
         <div className="grid gap-6 md:grid-cols-2">
           <SankeyDiagram />
-          <NetWorthTimeline 
-            data={netWorthData.history.map(item => ({
-              date: new Date(item.date).toLocaleDateString("en-US", { month: "short", year: "numeric" }),
-              assets: item.assets,
-              liabilities: item.liabilities,
-              netWorth: item.netWorth
-            }))} 
-          />
+          <NetWorthTimeline data={netWorthTimelineData} />
         </div>
 
         {/* Investment Portfolio Analytics */}

@@ -1,42 +1,40 @@
 "use server"
 
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 import { v4 as uuidv4 } from "uuid"
 import { cookies } from "next/headers"
-import { createServerClient } from "@supabase/ssr"
 import type { Database } from "@/lib/supabase/database.types"
 
 // Get the current user ID from the session
 async function getCurrentUserId() {
-  const cookieStore = cookies()
-  const supabase = createServerClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
-    cookies: {
-      get(name: string) {
-        return cookieStore.get(name)?.value
-      },
-      set(name: string, value: string, options: { path?: string; domain?: string; maxAge?: number; httpOnly?: boolean; secure?: boolean; sameSite?: 'strict' | 'lax' | 'none' }) {
-        cookieStore.set({ name, value, ...options })
-      },
-      remove(name: string, options: { path?: string; domain?: string }) {
-        cookieStore.set({ name, value: "", ...options })
-      },
-    },
-  })
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
-
-  // For demo purposes, use a fixed ID if no session
-  return session?.user?.id || "123e4567-e89b-12d3-a456-426614174000"
+  try {
+    // Use the server Supabase client which already has cookie handling
+    const supabase = await createServerSupabaseClient()
+    
+    if (!supabase) {
+      throw new Error("Failed to create Supabase client")
+    }
+    
+    const { data, error } = await supabase.auth.getUser()
+    
+    if (error || !data.user) {
+      throw new Error("Authentication required")
+    }
+    
+    return data.user.id
+  } catch (error) {
+    console.error("Error getting authenticated user:", error)
+    throw new Error("Authentication required")
+  }
 }
 
 export async function getNetWorth() {
-  const userId = await getCurrentUserId()
-  const supabase = await createServerSupabaseClient()
-
   try {
+    const userId = await getCurrentUserId()
+    const supabase = await createServerSupabaseClient()
+
     // Get assets
     const { data: assets, error: assetsError } = await supabase
       .from("networth_assets")
@@ -110,7 +108,7 @@ export async function getNetWorth() {
     }, [] as { category: string; amount: number }[])
 
     // Format history data from snapshots or generate placeholder if none exists
-    let formattedHistory = [];
+    let formattedHistory: { date: string; netWorth: number; assets: number; liabilities: number }[] = [];
     
     if (snapshotItems && snapshotItems.length > 0) {
       // Use actual snapshot data if available
@@ -121,35 +119,15 @@ export async function getNetWorth() {
         liabilities: item.total_liabilities || 0
       }))
     } else {
-      // Generate placeholder data based on current net worth
-      // Create data for the past 6 months
-      const today = new Date();
-      formattedHistory = Array.from({ length: 6 }, (_, i) => {
-        const date = new Date(today);
-        date.setMonth(date.getMonth() - (5 - i)); // Go back months, with most recent last
-        
-        // Generate slightly random growth pattern
-        const growthFactor = 0.94 + (i * 0.012) + (Math.random() * 0.01);
-        const assetsFactor = 0.96 + (i * 0.01) + (Math.random() * 0.01);
-        const liabilitiesFactor = 0.98 + (i * 0.005) + (Math.random() * 0.005);
-        
-        const monthAssets = Math.round(totalAssets * assetsFactor);
-        const monthLiabilities = Math.round(totalLiabilities * liabilitiesFactor);
-        
-        return {
-          date: date.toISOString().substring(0, 7), // YYYY-MM format
-          netWorth: monthAssets - monthLiabilities,
-          assets: monthAssets,
-          liabilities: monthLiabilities
-        };
-      });
+      // Empty history if no snapshots
+      formattedHistory = []
     }
     
     // Add current month with exact values if not already present
     const currentMonth = new Date().toISOString().substring(0, 7);
     const hasCurrentMonth = formattedHistory.some(item => item.date === currentMonth);
     
-    if (!hasCurrentMonth) {
+    if (!hasCurrentMonth && (totalAssets > 0 || totalLiabilities > 0)) {
       formattedHistory.push({
         date: currentMonth,
         netWorth: netWorth,
@@ -163,19 +141,23 @@ export async function getNetWorth() {
       // Update the database with current month's snapshot (fire and forget)
       try {
         const snapshotId = uuidv4();
-        supabase.from("public.networth_snapshots").upsert({
-          id: snapshotId,
-          user_id: userId,
-          month: currentMonth,
-          total_assets: totalAssets,
-          total_liabilities: totalLiabilities,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }).then(() => {
-          console.log("Updated net worth snapshot for current month");
-        }).catch((err: Error) => {
-          console.error("Error updating net worth snapshot:", err);
-        });
+        // Use async/await with try/catch instead of Promise.then().catch()
+        (async () => {
+          try {
+            await supabase.from("networth_snapshots").upsert({
+              id: snapshotId,
+              user_id: userId,
+              month: currentMonth,
+              total_assets: totalAssets,
+              total_liabilities: totalLiabilities,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+            console.log("Updated net worth snapshot for current month");
+          } catch (err) {
+            console.error("Error updating net worth snapshot:", err);
+          }
+        })();
       } catch (error) {
         console.error("Error preparing net worth snapshot update:", error);
       }
@@ -195,44 +177,21 @@ export async function getNetWorth() {
   } catch (error) {
     console.error("Error in getNetWorth:", error)
     
-    // Return mock data for development purposes
+    // Rethrow authentication errors
+    if (error instanceof Error && error.message === "Authentication required") {
+      throw error
+    }
+    
+    // For other errors, return empty data
     return {
-      totalAssets: 125000,
-      totalLiabilities: 45000,
-      netWorth: 80000,
-      assets: [
-        { id: uuidv4(), user_id: userId, name: "Checking Account", type: "cash", value: 15000, description: "Primary checking account" },
-        { id: uuidv4(), user_id: userId, name: "Savings Account", type: "cash", value: 25000, description: "Emergency savings" },
-        { id: uuidv4(), user_id: userId, name: "Investment Portfolio", type: "investment", value: 15000, description: "Stocks and ETFs" },
-        { id: uuidv4(), user_id: userId, name: "Primary Residence", type: "real_estate", value: 45000, description: "Home equity" },
-        { id: uuidv4(), user_id: userId, name: "Car", type: "vehicle", value: 15000, description: "2022 Honda Civic" },
-        { id: uuidv4(), user_id: userId, name: "Collectibles", type: "other", value: 10000, description: "Art and collectibles" }
-      ],
-      liabilities: [
-        { id: uuidv4(), user_id: userId, name: "Home Mortgage", type: "mortgage", amount: 30000, interest_rate: 3.75, description: "Primary residence mortgage" },
-        { id: uuidv4(), user_id: userId, name: "Car Loan", type: "auto_loan", amount: 8000, interest_rate: 4.25, description: "Auto loan for Honda Civic" },
-        { id: uuidv4(), user_id: userId, name: "Student Loan", type: "student_loan", amount: 5000, interest_rate: 5.00, description: "Federal student loan" },
-        { id: uuidv4(), user_id: userId, name: "Credit Card", type: "credit_card", amount: 2000, interest_rate: 18.99, description: "Credit card balance" }
-      ],
-      assetBreakdown: [
-        { category: "cash", amount: 40000 },
-        { category: "real_estate", amount: 45000 },
-        { category: "vehicle", amount: 15000 },
-        { category: "investment", amount: 15000 },
-        { category: "other", amount: 10000 },
-      ],
-      liabilityBreakdown: [
-        { category: "mortgage", amount: 30000 },
-        { category: "auto_loan", amount: 8000 },
-        { category: "student_loan", amount: 5000 },
-        { category: "credit_card", amount: 2000 },
-      ],
-      history: [
-        { date: "2025-01", netWorth: 75000, assets: 120000, liabilities: 45000 },
-        { date: "2025-02", netWorth: 76500, assets: 121500, liabilities: 45000 },
-        { date: "2025-03", netWorth: 78000, assets: 123000, liabilities: 45000 },
-        { date: "2025-04", netWorth: 80000, assets: 125000, liabilities: 45000 },
-      ],
+      totalAssets: 0,
+      totalLiabilities: 0,
+      netWorth: 0,
+      assets: [],
+      liabilities: [],
+      assetBreakdown: [],
+      liabilityBreakdown: [],
+      history: [],
       snapshots: []
     }
   }

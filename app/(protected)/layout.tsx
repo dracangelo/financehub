@@ -19,10 +19,13 @@ export default async function ProtectedLayout({
   children: React.ReactNode
 }) {
   try {
+    // Use a non-throwing authentication check
     const user = await getAuthenticatedUser()
-
-    if (!user) {
-      redirect("/login")
+    
+    // Only redirect if we're certain there's no user
+    if (user === null) {
+      // Add a query parameter to prevent redirect loops
+      redirect("/login?from=protected")
     }
 
     return (
@@ -32,6 +35,22 @@ export default async function ProtectedLayout({
     )
   } catch (error) {
     console.error("Error in protected layout:", error)
-    redirect("/login")
+    
+    // Only redirect on authentication errors, not on other types of errors
+    if (error instanceof Error && 
+        (error.message.includes("auth") || error.message.includes("unauthorized") || 
+         error.message.includes("session"))) {
+      redirect("/login?from=error")
+    }
+    
+    // For other errors, still render the layout
+    return (
+      <ResponsiveLayout>
+        <div className="p-4">
+          <h2 className="text-xl font-semibold mb-2">Something went wrong</h2>
+          <p className="text-muted-foreground">Please try refreshing the page</p>
+        </div>
+      </ResponsiveLayout>
+    )
   }
 }

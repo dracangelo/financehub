@@ -63,10 +63,10 @@ export function NetWorthTimeline({
   const chartData = data || timeRangeData[timeRange]
 
   // Calculate current net worth and change
-  const currentNetWorth = chartData[chartData.length - 1].netWorth
-  const previousNetWorth = chartData[chartData.length - 2].netWorth
+  const currentNetWorth = chartData && chartData.length >= 2 ? chartData[chartData.length - 1]?.netWorth || 0 : 0
+  const previousNetWorth = chartData && chartData.length >= 2 ? chartData[chartData.length - 2]?.netWorth || 0 : 0
   const netWorthChange = currentNetWorth - previousNetWorth
-  const netWorthChangePercent = (netWorthChange / previousNetWorth) * 100
+  const netWorthChangePercent = previousNetWorth !== 0 ? (netWorthChange / previousNetWorth) * 100 : 0
 
   // Format currency
   const formatCurrency = (value: number) => {
@@ -218,4 +218,3 @@ export function NetWorthTimeline({
     </Card>
   )
 }
-
