@@ -191,6 +191,7 @@ export function LiabilityForm({ liability, onSuccess, onCancel }: LiabilityFormP
                   step="0.01" 
                   placeholder="0.00" 
                   {...field} 
+                  value={field.value === null ? '' : field.value}
                 />
               </FormControl>
               <FormDescription>
