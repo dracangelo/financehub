@@ -151,7 +151,10 @@ export async function addToWatchlist(formData: FormData) {
       try {
         // Fetch latest price using Finnhub API
         const apiUrl = '/api/finnhub'
-        const response = await fetch(`${apiUrl}?symbol=${ticker}`)
+        const response = await fetch(`${apiUrl}?symbol=${encodeURIComponent(ticker)}`, {
+          cache: 'no-store',
+          next: { revalidate: 0 }
+        })
         
         if (response.ok) {
           const data = await response.json()
@@ -165,6 +168,10 @@ export async function addToWatchlist(formData: FormData) {
               console.log(`Suggesting target price of ${suggestedTarget} for ${ticker}`)
             }
           }
+        } else {
+          console.error(`Error fetching price for ${ticker}: ${response.status} ${response.statusText}`)
+          // Continue with the provided price or default to 0
+          if (isNaN(currentPrice)) currentPrice = 0
         }
       } catch (priceError) {
         console.error(`Error fetching price for ${ticker}:`, priceError)
@@ -176,69 +183,75 @@ export async function addToWatchlist(formData: FormData) {
     const supabase = await createServerSupabaseClient()
 
     // Check if the item already exists in the watchlist
-    const { data: existingItems, error: checkError } = await supabase
-      .from('watchlist')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('ticker', ticker)
+    try {
+      const { data: existingItems, error: checkError } = await supabase
+        .from('watchlist')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('ticker', ticker)
 
-    if (checkError) {
-      // If the table doesn't exist, attempt to create it
-      if (checkError.code === "42P01") { // PostgreSQL code for undefined_table
-        console.log("Watchlist table doesn't exist yet. Attempting to create it...")
-        
-        try {
-          // Try to run the migration script to create the watchlist table
-          const { error: migrationError } = await supabase.rpc('create_watchlist_table')
+      if (checkError) {
+        // If the table doesn't exist, attempt to create it
+        if (checkError.code === "42P01") { // PostgreSQL code for undefined_table
+          console.log("Watchlist table doesn't exist yet. Attempting to create it...")
           
-          if (migrationError) {
-            console.error("Failed to create watchlist table:", migrationError)
+          try {
+            // Try to run the migration script to create the watchlist table
+            const { error: migrationError } = await supabase.rpc('create_watchlist_table')
+            
+            if (migrationError) {
+              console.error("Failed to create watchlist table:", migrationError)
+              throw new Error("Watchlist feature is not available yet. Please try again later.")
+            }
+          } catch (migrationErr) {
+            console.error("Error running watchlist migration:", migrationErr)
             throw new Error("Watchlist feature is not available yet. Please try again later.")
           }
-        } catch (migrationErr) {
-          console.error("Error running watchlist migration:", migrationErr)
-          throw new Error("Watchlist feature is not available yet. Please try again later.")
+        } else {
+          console.error("Error checking existing watchlist items:", checkError)
+          throw new Error(`Database error: ${checkError.message}`)
         }
-      } else {
-        console.error("Error checking existing watchlist items:", checkError)
+      } else if (existingItems && existingItems.length > 0) {
+        throw new Error(`${ticker} is already in your watchlist`)
       }
-    } else if (existingItems && existingItems.length > 0) {
-      throw new Error(`${ticker} is already in your watchlist`)
+
+      // Generate a unique ID for the watchlist item
+      const id = crypto.randomUUID()
+
+      // Insert the new watchlist item
+      const { data, error } = await supabase
+        .from('watchlist')
+        .insert([
+          {
+            id,
+            user_id: user.id,
+            ticker,
+            name,
+            price: currentPrice,
+            target_price: targetPrice,
+            notes,
+            sector,
+            price_alert_enabled: priceAlerts,
+            alert_threshold: alertThreshold,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }
+        ])
+        .select()
+
+      if (error) {
+        console.error("Error adding item to watchlist:", error)
+        throw new Error("Failed to add item to watchlist: " + error.message)
+      }
+
+      // Revalidate the watchlist page to show the new item
+      revalidatePath("/investments/watchlist")
+
+      return { success: true, data }
+    } catch (dbError) {
+      console.error("Database operation error:", dbError)
+      throw dbError
     }
-
-    // Generate a unique ID for the watchlist item
-    const id = crypto.randomUUID()
-
-    // Insert the new watchlist item
-    const { data, error } = await supabase
-      .from('watchlist')
-      .insert([
-        {
-          id,
-          user_id: user.id,
-          ticker,
-          name,
-          price: currentPrice,
-          target_price: targetPrice,
-          notes,
-          sector,
-          price_alert_enabled: priceAlerts,
-          alert_threshold: alertThreshold,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }
-      ])
-      .select()
-
-    if (error) {
-      console.error("Error adding item to watchlist:", error)
-      throw new Error("Failed to add item to watchlist: " + error.message)
-    }
-
-    // Revalidate the watchlist page to show the new item
-    revalidatePath("/investments/watchlist")
-
-    return { success: true, data }
   } catch (error) {
     console.error("Error in addToWatchlist:", error)
     if (error instanceof Error) {
@@ -366,10 +379,12 @@ async function enrichWatchlistWithPrices(items: any[]) {
     
     // Fetch latest prices using Finnhub API endpoint
     if (tickers.length > 0) {
-      const apiUrl = '/api/finnhub';
+      // Use absolute URL with the server's origin
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      const apiUrl = `${baseUrl}/api/finnhub`;
       const pricePromises = tickers.map(async ticker => {
         try {
-          const response = await fetch(`${apiUrl}?symbol=${ticker}`);
+          const response = await fetch(`${apiUrl}?symbol=${encodeURIComponent(ticker)}`);
           if (response.ok) {
             return { ticker, data: await response.json() };
           }

@@ -1,20 +1,58 @@
 # FinanceHub Changelog
 
-## Recent Updates (April 2025)
+## Recent Updates (May 2025)
+
+### Financial Education Integration
+
+#### Educational Content Platform
+- Replaced ESG investment screener with comprehensive financial education hub
+- Integrated curated content from top 15 financial education YouTube channels
+- Created topic-based learning system with difficulty levels (beginner to advanced)
+- Implemented financial topic explorer with recommended channels for each topic
+
+#### Educational Resources
+- Added financial literacy statistics dashboard with key metrics
+- Created searchable financial education content by topic, channel, and keywords
+- Developed financial topic categorization with visual indicators
+- Implemented channel recommendations based on user interests and knowledge level
+
+### Comprehensive Tax Management System
+
+#### Tax Deduction Tracking
+- Implemented comprehensive tax deduction database with SQL migration scripts
+- Added support for tracking deduction categories, amounts, and maximum limits
+- Created tax year organization for multi-year tax planning
+- Implemented Row Level Security (RLS) for user-specific tax data privacy
+
+#### Tax Impact Prediction
+- Developed tax prediction system for financial decision modeling
+- Added scenario-based tax burden comparison with visual indicators
+- Created tax impact visualization with savings/cost indicators
+- Implemented metadata-rich notes system for detailed tax planning
+
+#### Tax Analytics Dashboard
+- Added current vs. predicted tax burden comparison tools
+- Implemented tax savings opportunity identification
+- Created tax decision impact analysis with visual cues
+- Developed comprehensive CRUD operations for tax predictions
 
 ### Enhanced Expense Tracking System
 
 #### Advanced Expense Management
 - Added comprehensive expense tracking with merchant intelligence and location data
-- Implemented receipt upload and storage functionality with warranty tracking
-- Created split expense functionality for shared purchases
-- Added support for recurring expense identification and tracking
-
-#### Expense Analytics
 - Implemented geo-tagged expenses with map visualization
 - Added time-of-day analysis for spending pattern insights
 - Created merchant intelligence system to track spending patterns by vendor
 - Enhanced expense categorization with impulse purchase detection
+
+### Net Worth Tracking System
+
+#### Asset & Liability Management
+- Implemented comprehensive net worth tracking with asset and liability categorization
+- Added historical net worth tracking with trend visualization
+- Created detailed breakdown of assets and liabilities by category
+- Developed progress visualization for financial components
+- Replaced emergency fund feature with more comprehensive net worth tracking
 
 ### Financial Goals Planning System
 
@@ -52,17 +90,32 @@
 - Created efficient frontier analysis for optimal risk-return portfolio construction
 - Developed investment fee analysis to identify cost-saving opportunities
 
-#### ESG Investing
-- Implemented ESG (Environmental, Social, Governance) investment screening
-- Added detailed ESG score breakdown for each investment
-- Created sector exclusion functionality for values-based investing
-- Developed ESG investment universe for discovering sustainable investments
+#### Financial Education
+- Implemented comprehensive financial education hub with curated content
+- Added detailed topic breakdown with difficulty levels and recommended resources
+- Created financial literacy topic explorer with expert channel recommendations
+- Developed financial education content library from trusted YouTube creators
+- Integrated beginner, intermediate, and advanced learning paths
 
 #### Investment Analytics
 - Implemented tax-loss harvesting opportunity identification
 - Added benchmark comparison against major market indices
 - Created dividend reinvestment projection modeling
 - Developed portfolio correlation analysis to identify diversification opportunities
+
+### Investment Watchlist System
+
+#### Watchlist Management
+- Implemented investment watchlist with real-time stock data via Finnhub API
+- Added smart target price suggestions based on current price trends
+- Created price alerts and notification system for watchlist items
+- Developed sorting and filtering capabilities for watchlist items
+
+#### ESG Investment Screening
+- Implemented comprehensive ESG (Environmental, Social, Governance) screening system
+- Added detailed ESG category filtering across environmental, social, and governance pillars
+- Created sector exclusion functionality for values-based investing
+- Developed ESG investment universe for discovering sustainable investments
 
 ### Subscription Management System
 
@@ -98,96 +151,6 @@
 - Created transaction time-of-day analysis for spending pattern insights
 - Developed merchant intelligence for tracking spending by vendor
 
-### Net Worth Tracking System
-
-#### Asset & Liability Management
-- Implemented comprehensive net worth tracking with asset and liability categorization
-- Added historical net worth tracking with trend visualization
-- Created detailed breakdown of assets and liabilities by category
-- Developed progress visualization for financial components
-
-### Investment Watchlist System
-
-#### Watchlist Management
-- Implemented investment watchlist with real-time stock data via Finnhub API
-- Added smart target price suggestions based on current price trends
-- Created price alerts and notification system for watchlist items
-- Developed sorting and filtering capabilities for watchlist items
-
-#### ESG Investment Screening
-- Implemented comprehensive ESG (Environmental, Social, Governance) screening system
-- Added detailed ESG category filtering across environmental, social, and governance pillars
-- Created sector exclusion functionality for values-based investing
-- Developed ESG investment universe for discovering sustainable investments
-
-### Financial Tools Suite
-
-#### Currency Converter
-- Implemented real-time currency conversion with up-to-date exchange rates
-- Added support for major world currencies
-- Created historical exchange rate trend visualization
-- Developed unified currency management for international finances
-
-#### Financial Calendar
-- Implemented comprehensive financial calendar for visualizing income and expense events
-- Added bill payment deadline tracking and notifications
-- Created financial event categorization and filtering
-- Developed month and year navigation with financial summary
-
-#### Advanced Analytics
-- Implemented spending heatmap for geographic visualization of expenses
-- Added advanced spending pattern analysis
-- Created financial behavior insights dashboard
-- Developed predictive financial analytics
-
-### Tax Management System
-
-#### Tax Planning
-- Implemented comprehensive tax planning dashboard with deduction tracking
-- Added tax document management with status tracking and due date monitoring
-- Created tax timeline with important deadlines and event notifications
-- Developed tax recommendation engine with personalized tax-saving strategies
-
-#### Investment Tax Optimization
-- Implemented tax-loss harvesting opportunity identification
-- Added tax location optimization for investment accounts (taxable, tax-deferred, tax-free)
-- Created tax-efficient investment recommendations
-- Developed year-over-year tax burden analysis and comparison
-
-#### Tax Analytics
-- Implemented tax deduction optimization with potential savings calculation
-- Added tax impact prediction for financial decisions
-- Created tax category management for organized record-keeping
-- Developed multi-year tax projection modeling
-
-### Strategic Debt Management System
-
-#### Debt Payoff Optimization
-- Implemented debt payoff strategy calculator with Avalanche and Snowball methods
-- Added interactive payoff timeline visualization with projected interest savings
-- Created debt consolidation analyzer to identify potential savings opportunities
-- Enhanced debt tracking with comprehensive debt details and payment history
-
-#### Financial Health Monitoring
-- Added debt-to-income ratio tracker with personalized recommendations
-- Implemented debt freedom timeline with visual milestone tracking
-- Created interest vs. principal waterfall charts for payment visualization
-- Added repayment strategy comparison tools to identify optimal approaches
-
-### AI-Powered Budgeting System
-
-#### Intelligent Budget Generation
-- Implemented AI budget generator with multiple budgeting models (Traditional, 50/30/20, Zero-Based, Envelope)
-- Added spending pattern analysis for personalized budget recommendations
-- Created budget model comparison tool to help users select the best approach
-- Implemented risk tolerance settings to customize budget aggressiveness
-
-#### Advanced Budget Visualization
-- Added interactive budget treemap for hierarchical category visualization
-- Created budget waterfall charts for tracking spending over time
-- Implemented budget progress tracker with real-time updates
-- Enhanced budget insights with strengths, weaknesses, opportunities, and risks analysis
-
 ### Bill Management System Enhancements
 
 #### Comprehensive Bill Tracking
@@ -197,7 +160,6 @@
 - Enhanced bill payment history tracking with status indicators
 
 #### Bill Negotiation Assistant
-- Added bill negotiation opportunities detection to identify potential savings
 - Implemented intelligent negotiation strategy generation based on bill type and category
 - Created automated next payment date calculation based on recurrence patterns
 - Added support for multiple billing frequencies (weekly, biweekly, monthly, quarterly, semi-annually, annually)
@@ -217,25 +179,17 @@
 - Created backend validation using Zod schema for data integrity
 - Added comprehensive CRUD operations for tax-advantaged accounts management
 
-### ESG Screener and Investment Database Enhancements
+### Database Infrastructure Improvements
 
-#### Database Setup
-- Created SQL migration scripts for setting up ESG-related tables in Supabase
-  - `investment_universe` table with comprehensive investment data and ESG scores
-  - `esg_categories` table with 24 categories across environmental, social, and governance pillars
-  - `excluded_sectors` table with common sectors ESG-focused investors might want to exclude
+#### SQL Migration Scripts
+- Created comprehensive SQL migration scripts for all major features:
+  - ESG-related tables (`investment_universe`, `esg_categories`, `excluded_sectors`)
+  - Expense tracking tables with enhanced columns for receipts and split expenses
+  - Net worth tracking tables (`assets`, `liabilities`, `net_worth_history`)
+  - Tax management tables (`tax_deductions`, `tax_predictions`)
+  - Watchlist tables with proper indexes and security policies
 - Added detailed documentation for database setup in README files
-
-#### ESG Screener Improvements
-- Enhanced the ESG investment screener with real-time price data
-- Implemented automatic calculation of expense ratios based on investment type
-- Added intelligent ESG score estimation based on sector information
-- Improved error handling for missing database tables with graceful fallbacks to mock data
-- Fixed UI display issues with proper handling of missing data fields
-
-#### Watchlist Integration
-- Connected the watchlist feature with the ESG screener for comprehensive investment analysis
-- Enhanced data enrichment capabilities for investment data
+- Implemented proper Row Level Security (RLS) across all tables
 
 This document tracks the progress of the Ultimate Personal Finance Tracker project, documenting both implemented features and those that are still pending implementation.
 
@@ -244,6 +198,7 @@ This document tracks the progress of the Ultimate Personal Finance Tracker proje
 ### 1. User Authentication & Security 🔐
 - Basic authentication system using Supabase (temporarily disabled as noted in AUTHENTICATION.md)
 - Session management functionality
+- Improved authentication method using supabase.auth.getUser() for better security
 
 ### 2. Intelligent Dashboard 📈
 - Basic dashboard layout with key financial metrics
@@ -256,9 +211,10 @@ This document tracks the progress of the Ultimate Personal Finance Tracker proje
 - Flexible budget models
 
 ### 4. Comprehensive Expense Tracking 📑
-- Basic expense entry and categorization
-- Transaction management
-- Expense analytics
+- Advanced expense entry with merchant intelligence and location data
+- Transaction management with receipt upload and warranty tracking
+- Split expense functionality for shared purchases
+- Expense analytics with geo-tagging and time-of-day analysis
 
 ### 5. Holistic Income Management 💵
 - Income tracking and categorization
@@ -276,8 +232,8 @@ This document tracks the progress of the Ultimate Personal Finance Tracker proje
 - Basic investment tracking
 - Portfolio visualization
 - Watchlist feature with real-time stock data integration
-- ESG investment screener with filtering capabilities
-- Investment universe database with ESG scores and sector information
+- Financial education hub with curated content from top YouTube channels
+- Investment universe database with risk level and sector information
 
 ### 9. Debt Management 🏦
 - Debt tracking functionality
@@ -290,6 +246,18 @@ This document tracks the progress of the Ultimate Personal Finance Tracker proje
 ### 11. Advanced Categorization System 🎨
 - Hierarchical category structure
 - Category management tools
+
+### 12. Net Worth Tracking System 💼
+- Comprehensive asset and liability management
+- Historical net worth tracking with trend visualization
+- Detailed breakdown by category
+- Progress visualization for financial components
+
+### 13. Tax Management System 📊
+- Tax deduction tracking with category management
+- Tax impact prediction for financial decisions
+- Tax burden comparison and visualization
+- Comprehensive tax analytics dashboard
 
 ## Pending Implementation
 
@@ -567,12 +535,17 @@ This document tracks the progress of the Ultimate Personal Finance Tracker proje
   - ✅ Basic investment tracking
   - ✅ Portfolio visualization
   - ✅ Watchlist feature with real-time stock data
-  - ✅ ESG investment screener
-  - 🔄 Investment universe database
+  - ✅ Financial education hub
+  - ✅ Investment universe database
 - 🔄 Debt optimization tools (basic implementation)
-- ❌ Educational content platform (not started)
+- ✅ Net worth tracking system (fully implemented)
+- 🔄 Tax management system (partially implemented)
+  - ✅ Tax deduction tracking
+  - ✅ Tax impact prediction
+  - 🔄 Tax document management
+  - 🔄 Tax timeline with deadlines
+- ✅ Financial education platform (implemented)
 - ❌ Community features & social tools (not started)
-- ❌ Advanced tax planning integration (not started)
 
 ### Phase 4: Innovation & Future Growth
 - ❌ AI-powered financial assistant (not started)

@@ -158,7 +158,8 @@ export default function SplitTransactionsPage() {
     return sum
   }, 0)
 
-  // Calculate total you owe
+  // Calculate total you owe others (commented out as it's not used in this example)
+  /*
   const totalYouOwe = splitExpenses
     .filter((expense: SplitExpense) => expense.status === "active")
     .reduce((total: number, expense: SplitExpense) => {
@@ -171,6 +172,7 @@ export default function SplitTransactionsPage() {
 
       return total + othersOwingYou
     }, 0)
+  */
 
   // Calculate total you owe
   const totalYouOwe = 0 // In this example, you've paid for everything
@@ -485,4 +487,3 @@ export default function SplitTransactionsPage() {
     </div>
   )
 }
-

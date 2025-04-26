@@ -1,3 +1,5 @@
+import { NetWorthIcon, FinancialEducationIcon } from "@/components/ui/custom-icons"
+
 /**
  * Navigation structure used by both desktop and mobile navigation
  */
@@ -14,7 +16,7 @@ export const navItems = [
       { title: "Accounts", href: "/accounts", iconName: "CreditCard" },
       { title: "Transactions", href: "/transactions", iconName: "Receipt" },
       { title: "Income", href: "/income", iconName: "TrendingUp" },
-      { title: "Expenses", href: "/expenses", iconName: "TrendingDown", badge: "New" },
+      { title: "Expenses", href: "/expenses", iconName: "TrendingDown" },
       { title: "Debt Management", href: "/debt-management", iconName: "CreditCard" },
       { title: "Subscriptions", href: "/subscriptions", iconName: "Repeat" },
     ],
@@ -27,7 +29,7 @@ export const navItems = [
       { title: "Goals", href: "/goals", iconName: "Target" },
       { title: "Bills", href: "/bills", iconName: "FileText" },
       { title: "Tax Planner", href: "/tax-planner", iconName: "Calculator" },
-      { title: "Net Worth", href: "/net-worth", iconName: "TrendingUp" },
+      { title: "Net Worth", href: "/net-worth", icon: NetWorthIcon },
     ],
   },
   {
@@ -35,7 +37,7 @@ export const navItems = [
     iconName: "TrendingUp",
     items: [
       { title: "Portfolio", href: "/investments/portfolio", iconName: "DollarSign" },
-      { title: "ESG Screener", href: "/investments/esg-screener", iconName: "Landmark", badge: "ESG" },
+      { title: "Financial Education", href: "/investments/financial-education", icon: FinancialEducationIcon },
       { title: "Watchlist", href: "/investments/watchlist", iconName: "Clock" },
     ],
   },
@@ -56,6 +58,7 @@ export const navItems = [
     ],
   },
 ]
+
 
 /**
  * Creates a return URL parameter for redirects

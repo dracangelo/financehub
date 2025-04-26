@@ -117,13 +117,21 @@ export function AddToWatchlist({ open, onOpenChange }: AddToWatchlistProps) {
       
       setIsSearching(true)
       try {
-        const response = await fetch('/api/finnhub', {
+        // Use relative URL path instead of absolute URL
+        const response = await fetch(`/api/finnhub`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: searchQuery })
+          body: JSON.stringify({ query: searchQuery }),
+          // Add these options to improve fetch reliability
+          cache: 'no-store',
+          next: { revalidate: 0 }
         })
         
-        if (!response.ok) throw new Error('Search failed')
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Search failed:', errorText);
+          throw new Error(`Search failed: ${response.status} ${errorText}`);
+        }
         
         const data = await response.json()
         if (data.result && Array.isArray(data.result)) {
@@ -138,7 +146,9 @@ export function AddToWatchlist({ open, onOpenChange }: AddToWatchlistProps) {
         }
       } catch (error) {
         console.error('Error searching stocks:', error)
-        toast.error('Failed to search for stocks')
+        toast.error('Failed to search for stocks. Please try again.')
+        setSearchResults([])
+        setShowSearchResults(false)
       } finally {
         setIsSearching(false)
       }
@@ -151,9 +161,18 @@ export function AddToWatchlist({ open, onOpenChange }: AddToWatchlistProps) {
   const fetchStockQuote = async (symbol: string) => {
     setIsFetchingQuote(true)
     try {
-      const response = await fetch(`/api/finnhub?symbol=${encodeURIComponent(symbol)}`)
+      // Use relative URL path instead of absolute URL
+      const response = await fetch(`/api/finnhub?symbol=${encodeURIComponent(symbol)}`, {
+        // Add these options to improve fetch reliability
+        cache: 'no-store',
+        next: { revalidate: 0 }
+      })
       
-      if (!response.ok) throw new Error('Failed to fetch quote')
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Quote fetch failed:', errorText);
+        throw new Error(`Failed to fetch quote: ${response.status} ${errorText}`);
+      }
       
       const data: StockQuote = await response.json()
       
@@ -171,7 +190,10 @@ export function AddToWatchlist({ open, onOpenChange }: AddToWatchlistProps) {
       toast.success(`Loaded current price: $${data.c.toFixed(2)}`)
     } catch (error) {
       console.error('Error fetching stock quote:', error)
-      toast.error('Failed to fetch current price')
+      toast.error('Failed to fetch current price. Using placeholder value.')
+      // Set a placeholder price if the API call fails
+      setPriceValue('0')
+      setTargetPriceValue('0')
     } finally {
       setIsFetchingQuote(false)
     }
@@ -194,7 +216,7 @@ export function AddToWatchlist({ open, onOpenChange }: AddToWatchlistProps) {
   
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Add to Watchlist</DialogTitle>
           <DialogDescription>
@@ -202,11 +224,13 @@ export function AddToWatchlist({ open, onOpenChange }: AddToWatchlistProps) {
           </DialogDescription>
         </DialogHeader>
         
-        <form action={handleSubmit} className="space-y-4 py-4">
-          <div className="grid grid-cols-4 gap-4">
-            <div className="col-span-4">
-              <Label htmlFor="search">Search for a stock</Label>
-              <div className="relative mt-1">
+        <form action={handleSubmit} className="overflow-y-auto pr-2">
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="search" className="text-right">
+                Search Stock
+              </Label>
+              <div className="relative col-span-3">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="search"
@@ -238,8 +262,10 @@ export function AddToWatchlist({ open, onOpenChange }: AddToWatchlistProps) {
               </div>
             </div>
             
-            <div className="col-span-1">
-              <Label htmlFor="ticker">Ticker</Label>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="ticker" className="text-right">
+                Ticker
+              </Label>
               <Input
                 id="ticker"
                 name="ticker"
@@ -247,12 +273,11 @@ export function AddToWatchlist({ open, onOpenChange }: AddToWatchlistProps) {
                 onChange={(e) => setTickerValue(e.target.value.toUpperCase())}
                 placeholder="AAPL"
                 required
-                className="mt-1 uppercase"
+                className="uppercase col-span-1"
               />
-            </div>
-            
-            <div className="col-span-3">
-              <Label htmlFor="name">Company Name</Label>
+              <Label htmlFor="name" className="text-right">
+                Name
+              </Label>
               <Input
                 id="name"
                 name="name"
@@ -260,15 +285,15 @@ export function AddToWatchlist({ open, onOpenChange }: AddToWatchlistProps) {
                 onChange={(e) => setNameValue(e.target.value)}
                 placeholder="Apple Inc."
                 required
-                className="mt-1"
+                className="col-span-1"
               />
             </div>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="price">Current Price ($)</Label>
-              <div className="relative">
+            
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="price" className="text-right">
+                Current Price
+              </Label>
+              <div className="relative col-span-1">
                 <Input
                   id="price"
                   name="price"
@@ -278,16 +303,14 @@ export function AddToWatchlist({ open, onOpenChange }: AddToWatchlistProps) {
                   onChange={(e) => setPriceValue(e.target.value)}
                   placeholder="0.00"
                   required
-                  className="mt-1"
                 />
                 {isFetchingQuote && (
-                  <Loader2 className="absolute right-2 top-3.5 h-4 w-4 animate-spin text-muted-foreground" />
+                  <Loader2 className="absolute right-2 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />
                 )}
               </div>
-            </div>
-            
-            <div>
-              <Label htmlFor="targetPrice">Target Price ($)</Label>
+              <Label htmlFor="targetPrice" className="text-right">
+                Target Price
+              </Label>
               <Input
                 id="targetPrice"
                 name="targetPrice"
@@ -296,57 +319,68 @@ export function AddToWatchlist({ open, onOpenChange }: AddToWatchlistProps) {
                 value={targetPriceValue}
                 onChange={(e) => setTargetPriceValue(e.target.value)}
                 placeholder="0.00"
-                className="mt-1"
+                className="col-span-1"
               />
             </div>
-          </div>
-          
-          <div>
-            <Label htmlFor="sector">Sector</Label>
-            <Select 
-              name="sector" 
-              value={sectorValue} 
-              onValueChange={setSectorValue}
-            >
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="Select a sector" />
-              </SelectTrigger>
-              <SelectContent>
-                {SECTORS.map((sector) => (
-                  <SelectItem key={sector} value={sector}>
-                    {sector}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          
-          <div>
-            <Label htmlFor="notes">Notes</Label>
-            <Textarea
-              id="notes"
-              name="notes"
-              value={notesValue}
-              onChange={(e) => setNotesValue(e.target.value)}
-              placeholder="Add your notes about this investment"
-              className="mt-1"
-            />
-          </div>
-          
-          <div className="space-y-4">
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="priceAlertEnabled"
-                name="priceAlertEnabled"
-                checked={priceAlertEnabled}
-                onCheckedChange={setPriceAlertEnabled}
+            
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="sector" className="text-right">
+                Sector
+              </Label>
+              <Select 
+                name="sector" 
+                value={sectorValue} 
+                onValueChange={setSectorValue}
+              >
+                <SelectTrigger className="col-span-3">
+                  <SelectValue placeholder="Select a sector" />
+                </SelectTrigger>
+                <SelectContent>
+                  {SECTORS.map((sector) => (
+                    <SelectItem key={sector} value={sector}>
+                      {sector}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="notes" className="text-right">
+                Notes
+              </Label>
+              <Textarea
+                id="notes"
+                name="notes"
+                value={notesValue}
+                onChange={(e) => setNotesValue(e.target.value)}
+                placeholder="Add your notes about this investment"
+                className="col-span-3"
               />
-              <Label htmlFor="priceAlertEnabled">Enable price alerts</Label>
+            </div>
+            
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="priceAlertEnabled" className="text-right">
+                Price Alerts
+              </Label>
+              <div className="flex items-center space-x-2 col-span-3">
+                <Switch
+                  id="priceAlertEnabled"
+                  name="priceAlertEnabled"
+                  checked={priceAlertEnabled}
+                  onCheckedChange={setPriceAlertEnabled}
+                />
+                <Label htmlFor="priceAlertEnabled">
+                  Enable price alerts
+                </Label>
+              </div>
             </div>
             
             {priceAlertEnabled && (
-              <div>
-                <Label htmlFor="alertThreshold">Alert Threshold ($)</Label>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="alertThreshold" className="text-right">
+                  Alert Threshold
+                </Label>
                 <Input
                   id="alertThreshold"
                   name="alertThreshold"
@@ -355,11 +389,13 @@ export function AddToWatchlist({ open, onOpenChange }: AddToWatchlistProps) {
                   value={alertThresholdValue}
                   onChange={(e) => setAlertThresholdValue(e.target.value)}
                   placeholder="Price threshold for alerts"
-                  className="mt-1"
+                  className="col-span-3"
                 />
-                <p className="text-sm text-muted-foreground mt-1">
-                  You'll be notified when the price reaches this threshold.
-                </p>
+                <div className="col-span-4 pl-[25%]">
+                  <p className="text-sm text-muted-foreground">
+                    You'll be notified when the price reaches this threshold.
+                  </p>
+                </div>
               </div>
             )}
           </div>

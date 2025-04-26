@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -55,7 +56,24 @@ type WatchlistTableProps = {
   onAddNew: () => void
 }
 
-export function WatchlistTable({ items, onAddNew }: WatchlistTableProps) {
+const SECTORS = [
+  'Basic Materials',
+  'Communication Services',
+  'Consumer Cyclical',
+  'Consumer Defensive',
+  'Energy',
+  'Financial Services',
+  'Healthcare',
+  'Industrials',
+  'Real Estate',
+  'Technology',
+  'Utilities',
+]
+
+export function WatchlistTable({ items = [], onAddNew }: WatchlistTableProps) {
+  // Ensure items is always an array
+  const watchlistItems = Array.isArray(items) ? items : []
+  
   const [sortColumn, setSortColumn] = useState<keyof WatchlistItem>("created_at")
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
   const [selectedItem, setSelectedItem] = useState<WatchlistItem | null>(null)
@@ -72,7 +90,7 @@ export function WatchlistTable({ items, onAddNew }: WatchlistTableProps) {
   }
   
   // Sort items
-  const sortedItems = [...items].sort((a, b) => {
+  const sortedItems = [...watchlistItems].sort((a, b) => {
     const aValue = a[sortColumn]
     const bValue = b[sortColumn]
     
@@ -136,7 +154,7 @@ export function WatchlistTable({ items, onAddNew }: WatchlistTableProps) {
         </Button>
       </div>
       
-      {items.length === 0 ? (
+      {watchlistItems.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center p-6 text-center">
             <div className="rounded-full bg-primary/10 p-3 mb-4">
@@ -251,17 +269,52 @@ export function WatchlistTable({ items, onAddNew }: WatchlistTableProps) {
       
       {/* Edit Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[500px] max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Edit Watchlist Item</DialogTitle>
             <DialogDescription>
               Update details for {selectedItem?.ticker} - {selectedItem?.name}
             </DialogDescription>
           </DialogHeader>
-          <form action={handleUpdate}>
+          <form action={handleUpdate} className="overflow-y-auto pr-2">
             <input type="hidden" name="id" value={selectedItem?.id} />
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="ticker" className="text-right">
+                  Ticker
+                </Label>
+                <Input
+                  id="ticker"
+                  name="ticker"
+                  defaultValue={selectedItem?.ticker}
+                  readOnly
+                  className="uppercase col-span-1"
+                />
+                <Label htmlFor="name" className="text-right">
+                  Name
+                </Label>
+                <Input
+                  id="name"
+                  name="name"
+                  defaultValue={selectedItem?.name}
+                  readOnly
+                  className="col-span-1"
+                />
+              </div>
+              
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="price" className="text-right">
+                  Current Price
+                </Label>
+                <Input
+                  id="price"
+                  name="price"
+                  type="number"
+                  step="0.01"
+                  defaultValue={selectedItem?.price}
+                  readOnly
+                  className="col-span-1"
+                />
                 <Label htmlFor="targetPrice" className="text-right">
                   Target Price
                 </Label>
@@ -272,9 +325,31 @@ export function WatchlistTable({ items, onAddNew }: WatchlistTableProps) {
                   step="0.01"
                   defaultValue={selectedItem?.target_price || ''}
                   placeholder="Set a target price"
-                  className="col-span-3"
+                  className="col-span-1"
                 />
               </div>
+              
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="sector" className="text-right">
+                  Sector
+                </Label>
+                <Select 
+                  name="sector" 
+                  defaultValue={selectedItem?.sector || ''}
+                >
+                  <SelectTrigger className="col-span-3">
+                    <SelectValue placeholder="Select a sector" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SECTORS.map((sector) => (
+                      <SelectItem key={sector} value={sector}>
+                        {sector}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="notes" className="text-right">
                   Notes
@@ -287,6 +362,7 @@ export function WatchlistTable({ items, onAddNew }: WatchlistTableProps) {
                   className="col-span-3"
                 />
               </div>
+              
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="priceAlertEnabled" className="text-right">
                   Price Alerts
@@ -302,6 +378,7 @@ export function WatchlistTable({ items, onAddNew }: WatchlistTableProps) {
                   </Label>
                 </div>
               </div>
+              
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="alertThreshold" className="text-right">
                   Alert Threshold
@@ -316,9 +393,17 @@ export function WatchlistTable({ items, onAddNew }: WatchlistTableProps) {
                   className="col-span-3"
                   disabled={!selectedItem?.price_alerts}
                 />
+                <div className="col-span-4 pl-[25%]">
+                  <p className="text-sm text-muted-foreground">
+                    You'll be notified when the price reaches this threshold.
+                  </p>
+                </div>
               </div>
             </div>
             <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditDialogOpen(false)}>
+                Cancel
+              </Button>
               <Button type="submit">Save Changes</Button>
             </DialogFooter>
           </form>

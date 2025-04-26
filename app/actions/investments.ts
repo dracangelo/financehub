@@ -1863,7 +1863,7 @@ export async function getAssetClasses(): Promise<string[]> {
   }
 }
 
-// ESG-related functions
+// Financial education functions
 export async function fetchInvestments({ type = 'portfolio' }: { type?: 'portfolio' | 'universe' } = {}): Promise<Investment[]> {
   try {
     console.log(`Fetching ${type} investments...`)
@@ -1877,7 +1877,8 @@ export async function fetchInvestments({ type = 'portfolio' }: { type?: 'portfol
         
         if (!user) {
           console.warn('No authenticated user found. Falling back to mock data.')
-          return enrichInvestmentData(getMockInvestments())
+          const mockData = await getMockInvestments()
+          return enrichInvestmentData(mockData)
         }
         
         console.log(`Authenticated user found: ${user.id}. Querying investments table...`)
@@ -1893,17 +1894,24 @@ export async function fetchInvestments({ type = 'portfolio' }: { type?: 'portfol
           // If the table doesn't exist yet, return mock data
           if (error.code === "42P01") {
             console.log(`Investments table doesn't exist yet. Using mock data.`)
-            return enrichInvestmentData(getMockInvestments())
+            const mockData = await getMockInvestments()
+            return enrichInvestmentData(mockData)
           }
           
-          return enrichInvestmentData(getMockInvestments())
+          const mockData = await getMockInvestments()
+          return enrichInvestmentData(mockData)
         }
         
         console.log(`Successfully fetched ${data?.length || 0} portfolio investments`)
-        return enrichInvestmentData(data as Investment[] || getMockInvestments())
+        if (!data || data.length === 0) {
+          const mockData = await getMockInvestments()
+          return enrichInvestmentData(mockData)
+        }
+        return enrichInvestmentData(data as Investment[])
       } catch (authError) {
         console.error('Authentication error in fetchInvestments:', authError)
-        return enrichInvestmentData(getMockInvestments())
+        const mockData = await getMockInvestments()
+        return enrichInvestmentData(mockData)
       }
     } else {
       // For universe type, no authentication needed
@@ -1918,291 +1926,115 @@ export async function fetchInvestments({ type = 'portfolio' }: { type?: 'portfol
         // If the table doesn't exist yet, return mock data
         if (error.code === "42P01") {
           console.log(`Investment universe table doesn't exist yet. Using mock data.`)
-          return enrichInvestmentData(getMockInvestments())
+          const mockData = await getMockInvestments()
+          return enrichInvestmentData(mockData)
         }
         
-        return enrichInvestmentData(getMockInvestments())
+        const mockData = await getMockInvestments()
+        return enrichInvestmentData(mockData)
       }
       
       console.log(`Successfully fetched ${data?.length || 0} investment universe items`)
-      return enrichInvestmentData(data as Investment[] || getMockInvestments())
+      if (!data || data.length === 0) {
+        const mockData = await getMockInvestments()
+        return enrichInvestmentData(mockData)
+      }
+      return enrichInvestmentData(data as Investment[])
     }
   } catch (error) {
     console.error('Unexpected error in fetchInvestments:', error)
-    return enrichInvestmentData(getMockInvestments())
+    const mockData = await getMockInvestments()
+    return enrichInvestmentData(mockData)
   }
 }
 
-export async function fetchESGCategories() {
+export async function fetchFinancialEducationChannels() {
   try {
-    const supabase = await createServerSupabaseClient()
-    
-    const { data, error } = await supabase
-      .from('esg_categories')
-      .select('*')
-      .order('category')
-      .order('name')
-    
-    if (error) {
-      console.error('Error fetching ESG categories:', error)
-      
-      // If the table doesn't exist yet, use the SQL migration script
-      if (error.code === "42P01") { // PostgreSQL code for undefined_table
-        console.log('ESG categories table doesn\'t exist yet. Attempting to create it...')
-        
-        // Try to create the table using the migration script
-        const { error: createError } = await supabase.rpc('create_esg_tables')
-        
-        if (createError) {
-          console.error('Failed to create ESG tables:', createError)
-          // Fall back to mock data if table creation fails
-          return getMockESGCategories()
-        }
-        
-        // Try fetching again after creating the table
-        const { data: newData, error: newError } = await supabase
-          .from('esg_categories')
-          .select('*')
-          .order('category')
-          .order('name')
-        
-        if (newError) {
-          console.error('Error fetching ESG categories after table creation:', newError)
-          return getMockESGCategories()
-        }
-        
-        return newData || getMockESGCategories()
-      }
-      
-      return getMockESGCategories()
-    }
-    
-    return data || getMockESGCategories()
+    // In a real implementation, this would fetch from a database
+    // For now, we'll import from our local data file
+    const { financialEducationChannels } = await import('@/lib/investments/financial-education')
+    return financialEducationChannels
   } catch (error) {
-    console.error('Error in fetchESGCategories:', error)
-    return getMockESGCategories()
+    console.error('Error fetching financial education channels:', error)
+    return []
   }
 }
 
-export async function fetchExcludedSectors() {
+export async function fetchFinancialTopics() {
   try {
-    const supabase = await createServerSupabaseClient()
-    
-    const { data, error } = await supabase
-      .from('excluded_sectors')
-      .select('*')
-      .order('name')
-    
-    if (error) {
-      console.error('Error fetching excluded sectors:', error)
-      
-      // If the table doesn't exist yet, use the SQL migration script
-      if (error.code === "42P01") { // PostgreSQL code for undefined_table
-        console.log('Excluded sectors table doesn\'t exist yet. Attempting to create it...')
-        
-        // Try to create the table using the migration script
-        const { error: createError } = await supabase.rpc('create_esg_tables')
-        
-        if (createError) {
-          console.error('Failed to create excluded sectors table:', createError)
-          // Fall back to mock data if table creation fails
-          return getMockExcludedSectors()
-        }
-        
-        // Try fetching again after creating the table
-        const { data: newData, error: newError } = await supabase
-          .from('excluded_sectors')
-          .select('*')
-          .order('name')
-        
-        if (newError) {
-          console.error('Error fetching excluded sectors after table creation:', newError)
-          return getMockExcludedSectors()
-        }
-        
-        return newData || getMockExcludedSectors()
-      }
-      
-      return getMockExcludedSectors()
-    }
-    
-    return data || getMockExcludedSectors()
+    // In a real implementation, this would fetch from a database
+    // For now, we'll import from our local data file
+    const { financialTopics } = await import('@/lib/investments/financial-education')
+    return financialTopics
   } catch (error) {
-    console.error('Error in fetchExcludedSectors:', error)
-    return getMockExcludedSectors()
+    console.error('Error fetching financial topics:', error)
+    return []
   }
 }
 
 // Helper functions for mock data
-function getMockInvestments(): Investment[] {
-  return [
-    {
-      id: '1',
-      name: 'Sustainable Energy Fund',
-      ticker: 'SESG',
-      type: 'etf',
-      asset_type: 'Stocks',
-      risk_level: 'medium',
-      sector: 'Energy',
-      esgScore: { environmental: 9.2, social: 8.5, governance: 8.8, total: 8.8 },
-      sector_id: 'renewable_energy',
-      esg_categories: ['climate_action', 'clean_energy'],
-      price: 78.45,
-      current_price: 78.45,
-      value: 10000,
-      change: 2.3,
-      marketCap: '45B',
-      description: 'Focuses on companies leading in renewable energy and sustainability.'
-    },
-    {
-      id: '2',
-      name: 'Social Impact ETF',
-      ticker: 'SIMP',
-      type: 'etf',
-      asset_type: 'Stocks',
-      risk_level: 'medium',
-      sector: 'Healthcare',
-      esgScore: { environmental: 7.5, social: 9.3, governance: 8.2, total: 8.3 },
-      sector_id: 'healthcare',
-      esg_categories: ['social_equity', 'healthcare_access'],
-      price: 65.21,
-      current_price: 65.21,
-      value: 8000,
-      change: 1.1,
-      marketCap: '12B',
-      description: 'Invests in companies making positive social impacts in healthcare and education.'
-    },
-    {
-      id: '3',
-      name: 'Clean Water Fund',
-      ticker: 'WATR',
-      type: 'mutual',
-      asset_type: 'Bonds',
-      risk_level: 'low',
-      sector: 'Utilities',
-      esgScore: { environmental: 9.5, social: 8.0, governance: 7.8, total: 8.4 },
-      sector_id: 'utilities',
-      esg_categories: ['water_conservation', 'pollution_reduction'],
-      price: 45.67,
-      current_price: 45.67,
-      value: 5000,
-      change: -0.5,
-      marketCap: '8B',
-      description: 'Focuses on companies involved in water purification and conservation.'
-    },
-    {
-      id: '4',
-      name: 'Fossil Fuel Free Index',
-      ticker: 'NFFL',
-      type: 'index',
-      asset_type: 'Stocks',
-      risk_level: 'medium',
-      sector: 'Diversified',
-      esgScore: { environmental: 8.9, social: 7.2, governance: 8.0, total: 8.0 },
-      sector_id: 'diversified',
-      esg_categories: ['climate_action', 'renewable_energy'],
-      price: 112.34,
-      current_price: 112.34,
-      value: 15000,
-      change: 3.2,
-      marketCap: '30B',
-      description: 'Broad market exposure excluding fossil fuel companies.'
-    },
-    {
-      id: '5',
-      name: 'Weapons Free Defense ETF',
-      ticker: 'PEACE',
-      type: 'etf',
-      asset_type: 'Shares',
-      risk_level: 'high',
-      sector: 'Defense',
-      esgScore: { environmental: 6.8, social: 9.5, governance: 8.5, total: 8.3 },
-      sector_id: 'defense',
-      esg_categories: ['peace', 'human_rights'],
-      price: 89.45,
-      current_price: 89.45,
-      value: 12000,
-      change: 0.7,
-      marketCap: '15B',
-      description: 'Defense sector companies that do not manufacture weapons.'
-    }
-  ]
-}
-
-function getMockESGCategories() {
-  return [
-    { id: 'climate_action', name: 'Climate Action', category: 'environmental' },
-    { id: 'clean_energy', name: 'Clean Energy', category: 'environmental' },
-    { id: 'water_conservation', name: 'Water Conservation', category: 'environmental' },
-    { id: 'pollution_reduction', name: 'Pollution Reduction', category: 'environmental' },
-    { id: 'social_equity', name: 'Social Equity', category: 'social' },
-    { id: 'healthcare_access', name: 'Healthcare Access', category: 'social' },
-    { id: 'human_rights', name: 'Human Rights', category: 'social' },
-    { id: 'diversity_inclusion', name: 'Diversity & Inclusion', category: 'social' },
-    { id: 'board_diversity', name: 'Board Diversity', category: 'governance' },
-    { id: 'executive_compensation', name: 'Executive Compensation', category: 'governance' },
-    { id: 'transparency', name: 'Transparency', category: 'governance' },
-    { id: 'ethical_practices', name: 'Ethical Business Practices', category: 'governance' }
-  ]
-}
-
-function getMockExcludedSectors() {
-  return [
-    { id: 'fossil_fuels', name: 'Fossil Fuels' },
-    { id: 'weapons', name: 'Weapons Manufacturing' },
-    { id: 'tobacco', name: 'Tobacco' },
-    { id: 'gambling', name: 'Gambling' },
-    { id: 'adult_entertainment', name: 'Adult Entertainment' },
-    { id: 'alcohol', name: 'Alcohol' },
-    { id: 'nuclear', name: 'Nuclear Power' },
-    { id: 'animal_testing', name: 'Animal Testing' }
-  ]
+export async function getMockInvestments(): Promise<Investment[]> {
+  // Generate 20 mock investments
+  return Array.from({ length: 20 }, (_, i) => {
+    const id = `inv-${i + 1}`
+    const isETF = Math.random() > 0.5
+    
+    // Assign a sector
+    const sectors = [
+      { id: 'technology', name: 'Technology' },
+      { id: 'healthcare', name: 'Healthcare' },
+      { id: 'consumer_goods', name: 'Consumer Goods' },
+      { id: 'financial', name: 'Financial' },
+      { id: 'industrial', name: 'Industrial' },
+      { id: 'utilities', name: 'Utilities' },
+      { id: 'energy', name: 'Energy' },
+      { id: 'materials', name: 'Materials' },
+    ]
+    const sectorIndex = Math.floor(Math.random() * sectors.length)
+    
+    // Assign risk level
+    const riskLevels = ['low', 'medium', 'high'] as const
+    const riskLevel = riskLevels[Math.floor(Math.random() * riskLevels.length)]
+    
+    return {
+      id,
+      name: isETF 
+        ? `${sectors[sectorIndex].name} ${Math.random() > 0.5 ? 'Index' : 'ETF'}` 
+        : `${['Global', 'American', 'European', 'Asian'][Math.floor(Math.random() * 4)]} ${sectors[sectorIndex].name} Corp${Math.random() > 0.7 ? '.' : ''}`,
+      ticker: isETF 
+        ? `${sectors[sectorIndex].id.substring(0, 3).toUpperCase()}X` 
+        : `${sectors[sectorIndex].id.substring(0, 2).toUpperCase()}${Math.floor(Math.random() * 100)}`,
+      type: isETF ? 'etf' : 'stock',
+      price: Math.round((20 + Math.random() * 180) * 100) / 100,
+      value: Math.round((1000 + Math.random() * 9000) * 100) / 100,
+      expenseRatio: isETF ? Math.round((0.03 + Math.random() * 0.7) * 100) / 100 : undefined,
+      sector: sectors[sectorIndex].name,
+      sector_id: sectors[sectorIndex].id,
+      riskLevel: riskLevel
+    } as Investment
+  })
 }
 
 // Enrich investment data with real-time prices and calculated metrics
-async function enrichInvestmentData(investments: Investment[]): Promise<Investment[]> {
-  try {
-    // Create a map of tickers to fetch prices efficiently
-    const tickers = investments.filter(inv => inv.ticker).map(inv => inv.ticker as string)
+function enrichInvestmentData(investments: Investment[]): Investment[] {
+  return investments.map(investment => {
+    // Add real-time price simulation for investments with tickers
+    if (investment.ticker && !investment.price) {
+      investment.price = Math.round((20 + Math.random() * 180) * 100) / 100
+    }
     
-    // Fetch real-time prices for all tickers (in a real app, this would call an external API)
-    const priceData = await fetchPricesForTickers(tickers)
+    // Add expense ratio calculation for certain investment types
+    if (investment.type && !investment.expenseRatio) {
+      investment.expenseRatio = calculateEstimatedExpenseRatio(investment)
+    }
     
-    // Enrich each investment with additional data
-    return investments.map(investment => {
-      // Get real-time price data if available
-      const priceInfo = investment.ticker ? priceData[investment.ticker] : null
-      
-      // Calculate expense ratio if not available
-      let expenseRatio = investment.expenseRatio
-      if (!expenseRatio && investment.type === 'etf') {
-        expenseRatio = calculateEstimatedExpenseRatio(investment)
-      }
-      
-      // Calculate or validate ESG score
-      let esgScore = investment.esgScore
-      if (!esgScore || !esgScore.total) {
-        esgScore = calculateEstimatedESGScore(investment)
-      }
-      
-      // Ensure sector is available for components that need it
-      const sector = investment.sector || investment.sector_id || 'Uncategorized'
-      
-      return {
-        ...investment,
-        price: priceInfo?.price || investment.price || 0,
-        current_price: priceInfo?.price || investment.current_price || investment.price || 0,
-        change: priceInfo?.change || investment.change || 0,
-        expenseRatio,
-        esgScore,
-        sector,
-        // Add any other enriched data here
-      }
-    })
-  } catch (error) {
-    console.error('Error enriching investment data:', error)
-    return investments
-  }
+    // Add risk level estimation if not available
+    if (!investment.riskLevel) {
+      investment.riskLevel = calculateEstimatedRiskLevel(investment)
+    }
+    
+    return investment
+  })
 }
 
 // Fetch real-time prices using Finnhub API
@@ -2281,46 +2113,24 @@ function calculateEstimatedExpenseRatio(investment: Investment): number {
   return 0.50
 }
 
-// Calculate estimated ESG score if not available
-function calculateEstimatedESGScore(investment: Investment): ESGScore {
+// Calculate estimated risk level if not available
+function calculateEstimatedRiskLevel(investment: Investment): "low" | "medium" | "high" {
   // In a real app, this would use more sophisticated logic or external data
-  // For now, we'll generate reasonable ESG scores
+  // For now, we'll generate reasonable risk levels based on investment type and sector
   
-  // Check if the investment has sector information that could inform ESG scores
   const sector = ((investment.sector_id || investment.sector || '')).toLowerCase()
+  const type = (investment.type || '').toLowerCase()
   
-  let environmental = 0, social = 0, governance = 0
-  
-  // Assign scores based on sector
-  if (sector.includes('renewable') || sector.includes('clean')) {
-    environmental = 8.5 + Math.random() * 1.5 // 8.5-10
-  } else if (sector.includes('tech') || sector.includes('technology')) {
-    environmental = 6.0 + Math.random() * 2.0 // 6.0-8.0
-  } else if (sector.includes('fossil') || sector.includes('oil')) {
-    environmental = 2.0 + Math.random() * 2.0 // 2.0-4.0
-  } else {
-    environmental = 5.0 + Math.random() * 3.0 // 5.0-8.0
+  // Lower risk for bonds, ETFs, and certain sectors
+  if (type.includes('bond') || sector.includes('utilities')) {
+    return 'low'
   }
   
-  // Social score
-  if (sector.includes('healthcare') || sector.includes('education')) {
-    social = 8.0 + Math.random() * 2.0 // 8.0-10.0
-  } else if (sector.includes('weapons') || sector.includes('tobacco')) {
-    social = 2.0 + Math.random() * 2.0 // 2.0-4.0
-  } else {
-    social = 5.5 + Math.random() * 2.5 // 5.5-8.0
+  // Higher risk for individual stocks and volatile sectors
+  if (type.includes('stock') && (sector.includes('tech') || sector.includes('energy'))) {
+    return 'high'
   }
   
-  // Governance score - less tied to sector
-  governance = 5.0 + Math.random() * 4.0 // 5.0-9.0
-  
-  // Calculate total score (weighted average)
-  const total = (environmental * 0.4) + (social * 0.3) + (governance * 0.3)
-  
-  return {
-    environmental: parseFloat(environmental.toFixed(1)),
-    social: parseFloat(social.toFixed(1)),
-    governance: parseFloat(governance.toFixed(1)),
-    total: parseFloat(total.toFixed(1))
-  }
+  // Medium risk for everything else
+  return 'medium'
 }

@@ -33,6 +33,7 @@ import {
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { navItems } from "@/lib/utils/navigation"
+import { NetWorthIcon, FinancialEducationIcon } from "@/components/ui/custom-icons"
 
 // Define the icon mapping
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -94,7 +95,8 @@ export function NavItems({ className }: { className?: string }) {
             <AccordionContent className="pt-1 pb-2">
               <div className="flex flex-col space-y-1 pl-6">
                 {group.items?.map((item, itemIndex) => {
-                  const ItemIcon = iconMap[item.iconName || ""]
+                  // Support both iconName and custom icon component
+                  let ItemIcon = item.icon || iconMap[item.iconName || ""]
                   const isActive = pathname === item.href
                   
                   return (
