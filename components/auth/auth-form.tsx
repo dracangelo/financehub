@@ -56,6 +56,9 @@ export function AuthForm({ defaultTab = "login" }: { defaultTab?: "login" | "reg
   const [isLoading, setIsLoading] = useState(false)
   const [isRedirecting, setIsRedirecting] = useState(false)
   const router = useRouter()
+  
+  // Initialize Supabase client in a way that ensures it's only created in the browser
+  // This helps prevent serialization issues with server components
   const supabase = getClientSupabaseClient()
 
   // Login form

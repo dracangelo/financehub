@@ -48,27 +48,49 @@ function createCookieHandler(): UniversalCookieHandler {
 }
 
 // Create a Supabase client for server components/API routes
-export function createClient(cookieStore: any) {
+export function createClient(cookieStore?: any) {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    console.error('Missing Supabase environment variables')
+    return null
+  }
+  
+  // If cookieStore is undefined, use cookies() from next/headers
+  if (!cookieStore) {
+    try {
+      // Try to import cookies from next/headers dynamically
+      // This is needed for App Router server components
+      if (typeof window === 'undefined') {
+        // We're in a server environment, try to get cookies from next/headers
+        return createServerSupabaseClient()
+      }
+    } catch (error) {
+      console.error('Error creating client with next/headers:', error)
+      // Fall back to a client with empty cookies
+    }
+  }
+  
   return createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     {
       cookies: {
         get(name: string) {
-          return cookieStore.get(name)?.value
+          return cookieStore?.get(name)?.value
         },
         set(name: string, value: string, options: CookieOptions) {
           try {
-            cookieStore.set(name, value, options)
+            cookieStore?.set(name, value, options)
           } catch (error) {
             // Handle error
+            console.error('Error setting cookie:', error)
           }
         },
         remove(name: string, options: CookieOptions) {
           try {
-            cookieStore.set(name, '', { ...options, maxAge: 0 })
+            cookieStore?.set(name, '', { ...options, maxAge: 0 })
           } catch (error) {
             // Handle error
+            console.error('Error removing cookie:', error)
           }
         },
       },
@@ -82,6 +104,11 @@ export async function createServerSupabaseClient(context?: {
   res: NextApiResponse
 } | GetServerSidePropsContext) {
   try {
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      console.error('Missing Supabase environment variables')
+      return null
+    }
+    
     // First try to use the App Router cookies() API if available
     // We don't import it directly to avoid breaking Pages Router
     let appRouterCookies = null;
@@ -89,7 +116,7 @@ export async function createServerSupabaseClient(context?: {
       // Dynamic import to avoid breaking Pages Router
       if (typeof window === 'undefined') {
         const { cookies } = await import('next/headers');
-        appRouterCookies = cookies();
+        appRouterCookies = await cookies();
       }
     } catch (e) {
       // Not in App Router or cookies() failed
@@ -99,13 +126,18 @@ export async function createServerSupabaseClient(context?: {
     // If we have cookies from App Router, use them
     if (appRouterCookies) {
       return createServerClient<Database>(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
         {
           cookies: {
             get(name: string) {
-              const cookie = appRouterCookies.get(name);
-              return cookie?.value;
+              try {
+                const cookie = appRouterCookies.get(name);
+                return cookie?.value;
+              } catch (error) {
+                console.error('Error getting cookie:', error)
+                return undefined
+              }
             },
             set(name: string, value: string, options: CookieOptions) {
               // In App Router, cookies are read-only in Server Components
@@ -151,8 +183,8 @@ export async function createServerSupabaseClient(context?: {
     }
     
     return createServerClient<Database>(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
       {
         cookies: cookieHandler,
       }

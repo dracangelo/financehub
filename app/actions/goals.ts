@@ -106,6 +106,10 @@ export async function getGoals() {
     }
 
     const supabase = await createClient()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { error: "Database connection error", goals: [] }
+    }
 
     try {
       const { data: goals, error } = await supabase
@@ -168,6 +172,10 @@ export async function getGoalStatistics() {
     }
 
     const supabase = await createClient()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { error: "Database connection error", stats: null }
+    }
 
     // Default stats in case of errors
     const defaultStats = {
@@ -257,7 +265,16 @@ export async function getGoalStatistics() {
     return { stats, error: null }
     } catch (error) {
       console.error("Error in getGoalStatistics inner try/catch:", error)
-      return { error: "Failed to fetch goal statistics", stats: defaultStats }
+      return { error: "Failed to fetch goal statistics", stats: {
+        totalGoals: 0,
+        activeGoals: 0,
+        completedGoals: 0,
+        totalMilestones: 0,
+        completedMilestones: 0,
+        totalSavings: 0,
+        totalTargets: 0,
+        progressPercentage: 0,
+      } }
     }
   } catch (error) {
     console.error("Error in getGoalStatistics outer try/catch:", error)
@@ -283,6 +300,10 @@ export async function getGoalById(goalId: string) {
     }
 
     const supabase = await createClient()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { error: "Database connection error", goal: null }
+    }
 
     const { data: goal, error } = await supabase
       .from("user_goals")
@@ -333,6 +354,12 @@ export async function createGoal(formData: FormData) {
       return { error: "Not authenticated", success: false }
     }
 
+    const supabase = await createClient()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { error: "Database connection error", success: false }
+    }
+
     const templateId = formData.get("template_id") as string
     const name = formData.get("name") as string
     const description = formData.get("description") as string
@@ -344,8 +371,6 @@ export async function createGoal(formData: FormData) {
     const priority = Number.parseInt(formData.get("priority") as string)
     const fundingStrategy = formData.get("funding_strategy") as FundingStrategy
     const isShared = formData.get("is_shared") === "true"
-
-    const supabase = await createClient()
 
     // Start a transaction
     const { data: goal, error: goalError } = await supabase
@@ -418,6 +443,10 @@ export async function updateGoalPriority(goalId: string, formData: FormData) {
     }
 
     const supabase = await createClient()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { error: "Database connection error", success: false }
+    }
 
     // Check if goal belongs to user
     const { data: goal, error: goalError } = await supabase
@@ -485,6 +514,10 @@ export async function updateGoalRelationship(
     }
 
     const supabase = await createClient()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { error: "Database connection error", success: false }
+    }
 
     // Check if both goals belong to user
     const { data: goals, error: goalsError } = await supabase
@@ -537,6 +570,10 @@ export async function configureRoundUp(goalId: string, formData: FormData) {
     }
 
     const supabase = await createClient()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { error: "Database connection error", success: false }
+    }
 
     // Check if goal belongs to user
     const { data: goal, error: goalError } = await supabase
@@ -598,6 +635,10 @@ export async function configureIncomeSplit(goalId: string, formData: FormData) {
     }
 
     const supabase = await createClient()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { error: "Database connection error", success: false }
+    }
 
     // Check if goal belongs to user
     const { data: goal, error: goalError } = await supabase
@@ -659,6 +700,10 @@ export async function deleteGoal(goalId: string) {
     }
 
     const supabase = await createClient()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { error: "Database connection error", success: false }
+    }
 
     // First check if the goal belongs to the user
     const { data: existingGoal, error: fetchError } = await supabase
@@ -703,6 +748,10 @@ export async function createMilestone(goalId: string, formData: FormData) {
     const targetAmount = Number.parseFloat(formData.get("target_amount") as string)
 
     const supabase = await createClient()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { error: "Database connection error", success: false }
+    }
 
     // First check if the goal belongs to the user
     const { data: existingGoal, error: fetchError } = await supabase
@@ -753,6 +802,10 @@ export async function deleteMilestone(milestoneId: string) {
     }
 
     const supabase = await createClient()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { error: "Database connection error", success: false }
+    }
 
     // Get milestone to check ownership
     const { data: milestone, error: fetchError } = await supabase
@@ -805,6 +858,10 @@ export async function updateMilestone(milestoneId: string, formData: FormData) {
     }
 
     const supabase = await createClient()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { error: "Database connection error", success: false }
+    }
 
     // Get milestone to check ownership
     const { data: milestone, error: fetchError } = await supabase
@@ -872,6 +929,10 @@ export async function updateMilestoneStatus(milestoneId: string, isCompleted: bo
     }
 
     const supabase = await createClient()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { error: "Database connection error", success: false }
+    }
 
     // First check if the milestone's goal belongs to the user
     const { data: milestone, error: fetchError } = await supabase
@@ -929,6 +990,10 @@ export async function createAchievement(goalId: string, formData: FormData) {
     }
 
     const supabase = await createClient()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { error: "Database connection error", success: false }
+    }
 
     // Check if goal belongs to user
     const { data: goal, error: goalError } = await supabase
@@ -1012,6 +1077,10 @@ export async function addGoalContribution(goalId: string, formData: FormData) {
 
     // Initialize Supabase client
     const supabase = await createClient()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { error: "Database connection error", success: false }
+    }
     
     // Get the goal to update
     const { data: goal, error: goalError } = await supabase
@@ -1110,6 +1179,10 @@ export async function updateGoal(goalId: string, formData: FormData) {
     }
 
     const supabase = await createClient()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { error: "Database connection error", success: false }
+    }
 
     // Check if goal belongs to user
     const { data: existingGoal, error: fetchError } = await supabase

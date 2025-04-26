@@ -10,6 +10,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.error('Missing Supabase environment variables')
 }
 
+// Create a memoized client to avoid recreating the client on every call
+let browserSupabaseClient: ReturnType<typeof createBrowserClient<Database>> | null = null
+
 export function createClientSupabaseClient() {
   // Only create the client in browser environments
   if (typeof window === 'undefined') {
@@ -24,29 +27,34 @@ export function createClientSupabaseClient() {
   }
   
   try {
-    return createBrowserClient<Database>(
-      supabaseUrl,
-      supabaseAnonKey,
-      {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: true
-        },
-        global: {
-          headers: {
-            'x-application-name': 'finance-tracker'
+    // Create a new client if one doesn't exist
+    if (!browserSupabaseClient) {
+      browserSupabaseClient = createBrowserClient<Database>(
+        supabaseUrl,
+        supabaseAnonKey,
+        {
+          auth: {
+            persistSession: true,
+            autoRefreshToken: true,
+            detectSessionInUrl: true
+          },
+          global: {
+            headers: {
+              'x-application-name': 'finance-tracker'
+            }
           }
         }
-      }
-    )
+      )
+    }
+    
+    return browserSupabaseClient
   } catch (error) {
     console.error('Error creating Supabase client:', error)
     return null
   }
 }
 
-// Get client Supabase instance, creating a new one each time to avoid stale state
+// Get client Supabase instance
 export function getClientSupabaseClient() {
   return createClientSupabaseClient()
 }
