@@ -49,6 +49,7 @@ export type GoalMilestone = {
   name: string
   description?: string
   amount_target: number
+  target_date?: string
   achieved: boolean
   achieved_at?: string
   celebration_triggered: boolean
@@ -305,43 +306,97 @@ export async function getGoalById(goalId: string) {
       return { error: "Database connection error", goal: null }
     }
 
-    const { data: goal, error } = await supabase
-      .from("user_goals")
-      .select(`
-        *,
-        template:goal_templates(*),
-        milestones:goal_milestones(*),
-        priority_matrix:goal_priority_matrix(*),
-        parent_relationships:goal_relationships!goal_relationships_child_goal_id_fkey(*),
-        child_relationships:goal_relationships!goal_relationships_parent_goal_id_fkey(*),
-        shares:goal_shares(*),
-        achievements:goal_achievements(*)
-      `)
-      .eq("id", goalId)
-      .eq("user_id", user.id)
-      .single()
+    try {
+      const { data: goal, error } = await supabase
+        .from("user_goals")
+        .select(`
+          *,
+          milestones:goal_milestones(*)
+        `)
+        .eq("id", goalId)
+        .eq("user_id", user.id)
+        .single()
 
-    if (error) {
-      console.error("Error fetching goal:", error)
-      return { error: error.message, goal: null }
-    }
-
-    // Calculate status for the goal
-    if (goal) {
-      let status: "not_started" | "in_progress" | "completed" | "on_hold" = "not_started"
-
-      if (goal.is_achieved) {
-        status = "completed"
-      } else if (goal.current_savings > 0) {
-        status = "in_progress"
+      if (error) {
+        // Check if the error is due to missing tables (common during development)
+        if (error.code === "42P01") { // undefined_table
+          console.log("Goals tables not yet created, returning empty object")
+          return { error: null, goal: null }
+        }
+        
+        console.error("Error fetching goal:", error)
+        return { error: error.message, goal: null }
       }
 
-      return { goal: { ...goal, status }, error: null }
-    }
+      // Calculate status for the goal
+      if (goal) {
+        let status: "not_started" | "in_progress" | "completed" | "on_hold" = "not_started"
 
-    return { goal: null, error: null }
+        if (goal.is_achieved) {
+          status = "completed"
+        } else if (goal.current_savings > 0) {
+          status = "in_progress"
+        }
+
+        // Now fetch additional relationships in separate queries to avoid join issues
+        try {
+          const { data: templates } = await supabase
+            .from("goal_templates")
+            .select("*")
+            .eq("id", goal.template_id)
+            .maybeSingle()
+
+          const { data: priorityMatrix } = await supabase
+            .from("goal_priority_matrix")
+            .select("*")
+            .eq("goal_id", goalId)
+            .maybeSingle()
+
+          const { data: parentRelationships } = await supabase
+            .from("goal_relationships")
+            .select("*")
+            .eq("child_goal_id", goalId)
+
+          const { data: childRelationships } = await supabase
+            .from("goal_relationships")
+            .select("*")
+            .eq("parent_goal_id", goalId)
+
+          const { data: shares } = await supabase
+            .from("goal_shares")
+            .select("*")
+            .eq("goal_id", goalId)
+
+          const { data: achievements } = await supabase
+            .from("goal_achievements")
+            .select("*")
+            .eq("goal_id", goalId)
+
+          const enrichedGoal = { 
+            ...goal, 
+            status,
+            template: templates || null,
+            priority_matrix: priorityMatrix || null,
+            parent_relationships: parentRelationships || [],
+            child_relationships: childRelationships || [],
+            shares: shares || [],
+            achievements: achievements || []
+          }
+
+          return { goal: enrichedGoal, error: null }
+        } catch (relationshipError) {
+          console.log("Error fetching relationships, returning goal with basic data:", relationshipError)
+          return { goal: { ...goal, status }, error: null }
+        }
+      }
+
+      return { goal: null, error: null }
+    } catch (innerError) {
+      console.error("Error in getGoalById inner try/catch:", innerError)
+      return { error: "Failed to fetch goal details", goal: null }
+    }
   } catch (error) {
-    console.error("Error in getGoal:", error)
+    console.error("Error in getGoalById:", error)
     return { error: "Failed to fetch goal", goal: null }
   }
 }
@@ -707,12 +762,17 @@ export async function deleteGoal(goalId: string) {
 
     // First check if the goal belongs to the user
     const { data: existingGoal, error: fetchError } = await supabase
-      .from("budget_goals")
+      .from("user_goals")
       .select("user_id")
       .eq("id", goalId)
       .single()
 
-    if (fetchError || !existingGoal) {
+    if (fetchError) {
+      console.error("Error fetching goal:", fetchError)
+      return { error: "Goal not found", success: false }
+    }
+    
+    if (!existingGoal) {
       return { error: "Goal not found", success: false }
     }
 
@@ -720,7 +780,22 @@ export async function deleteGoal(goalId: string) {
       return { error: "Not authorized", success: false }
     }
 
-    const { error } = await supabase.from("budget_goals").delete().eq("id", goalId)
+    // First delete related milestones to avoid foreign key constraints
+    const { error: milestonesDeleteError } = await supabase
+      .from("goal_milestones")
+      .delete()
+      .eq("goal_id", goalId)
+    
+    if (milestonesDeleteError) {
+      console.error("Error deleting goal milestones:", milestonesDeleteError)
+      // Continue with goal deletion even if milestone deletion fails
+    }
+
+    // Delete the goal
+    const { error } = await supabase
+      .from("user_goals")
+      .delete()
+      .eq("id", goalId)
 
     if (error) {
       console.error("Error deleting goal:", error)
@@ -745,7 +820,8 @@ export async function createMilestone(goalId: string, formData: FormData) {
 
     const name = formData.get("name") as string
     const description = formData.get("description") as string
-    const targetAmount = Number.parseFloat(formData.get("target_amount") as string)
+    const targetAmount = Number.parseFloat(formData.get("target_amount") as string) || 0
+    // We'll handle the target_date separately to avoid schema errors
 
     const supabase = await createClient()
     if (!supabase) {
@@ -814,7 +890,12 @@ export async function deleteMilestone(milestoneId: string) {
       .eq("id", milestoneId)
       .single()
 
-    if (fetchError || !milestone) {
+    if (fetchError) {
+      console.error("Error fetching milestone:", fetchError)
+      return { error: "Milestone not found", success: false }
+    }
+    
+    if (!milestone) {
       return { error: "Milestone not found", success: false }
     }
 
@@ -825,7 +906,12 @@ export async function deleteMilestone(milestoneId: string) {
       .eq("id", milestone.goal_id)
       .single()
 
-    if (goalError || !goal) {
+    if (goalError) {
+      console.error("Error fetching goal:", goalError)
+      return { error: "Goal not found", success: false }
+    }
+    
+    if (!goal) {
       return { error: "Goal not found", success: false }
     }
 
@@ -833,16 +919,22 @@ export async function deleteMilestone(milestoneId: string) {
       return { error: "Not authorized", success: false }
     }
 
+    // Store the goal ID before deleting the milestone
+    const goalId = milestone.goal_id
+
+    // Delete the milestone
     const { error: deleteError } = await supabase
       .from("goal_milestones")
       .delete()
       .eq("id", milestoneId)
 
     if (deleteError) {
+      console.error("Error deleting milestone:", deleteError)
       return { error: deleteError.message, success: false }
     }
 
-    revalidatePath(`/goals/${milestone.goal_id}`)
+    // Revalidate the path with the stored goal ID
+    revalidatePath(`/goals/${goalId}`)
     return { success: true }
   } catch (error) {
     console.error("Error in deleteMilestone:", error)
@@ -870,7 +962,12 @@ export async function updateMilestone(milestoneId: string, formData: FormData) {
       .eq("id", milestoneId)
       .single()
 
-    if (fetchError || !milestone) {
+    if (fetchError) {
+      console.error("Error fetching milestone:", fetchError)
+      return { error: "Milestone not found", success: false }
+    }
+    
+    if (!milestone) {
       return { error: "Milestone not found", success: false }
     }
 
@@ -881,7 +978,12 @@ export async function updateMilestone(milestoneId: string, formData: FormData) {
       .eq("id", milestone.goal_id)
       .single()
 
-    if (goalError || !goal) {
+    if (goalError) {
+      console.error("Error fetching goal:", goalError)
+      return { error: "Goal not found", success: false }
+    }
+    
+    if (!goal) {
       return { error: "Goal not found", success: false }
     }
 
@@ -893,6 +995,7 @@ export async function updateMilestone(milestoneId: string, formData: FormData) {
     const description = formData.get("description") as string
     const targetAmount = formData.get("target_amount") ? 
       Number(formData.get("target_amount")) : undefined
+    // We'll handle target_date separately to avoid schema errors
 
     if (!name) {
       return { error: "Missing required fields", success: false }

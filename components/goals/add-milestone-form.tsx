@@ -38,9 +38,20 @@ export function AddMilestoneForm({ goalId, onComplete }: AddMilestoneFormProps) 
         return
       }
 
+      // Get the description
+      const description = formData.get("description") as string || "";
+      
       // Format the date safely
+      let formattedDate = "";
       try {
-        formData.set("target_date", format(date, "yyyy-MM-dd"))
+        formattedDate = format(date, "yyyy-MM-dd");
+        
+        // Store the date in the description as a workaround
+        const enhancedDescription = description + 
+          (description ? "\n\n" : "") + 
+          `Target Date: ${format(date, "MMMM d, yyyy")}`;
+        
+        formData.set("description", enhancedDescription);
       } catch (e) {
         setError("Invalid date format. Please select a valid date.")
         setIsSubmitting(false)

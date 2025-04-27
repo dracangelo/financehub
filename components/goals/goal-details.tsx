@@ -123,8 +123,27 @@ export function GoalDetails({ goal }: GoalDetailsProps) {
     try {
       const result = await deleteGoal(goal.id)
       if (result.success) {
+        toast({
+          title: "Success",
+          description: "Goal deleted successfully",
+        })
+        // Ensure we navigate away from the goal detail page
         router.push("/goals")
+        router.refresh()
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to delete goal",
+          variant: "destructive",
+        })
       }
+    } catch (error) {
+      console.error("Error deleting goal:", error)
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred while deleting the goal",
+        variant: "destructive",
+      })
     } finally {
       setIsDeleting(false)
     }
@@ -268,11 +287,18 @@ export function GoalDetails({ goal }: GoalDetailsProps) {
                   <div key={milestone.id} className="flex items-start gap-2 p-2 rounded hover:bg-accent/50">
                     {editingMilestoneId === milestone.id ? (
                       <EditMilestoneForm
-                        milestone={milestone}
+                        milestone={{
+                          id: milestone.id,
+                          name: milestone.name,
+                          description: milestone.description || "",
+                          target_amount: milestone.amount_target || milestone.target_amount,
+                          target_date: milestone.target_date
+                        }}
                         onComplete={() => {
                           setEditingMilestoneId(null)
                           router.refresh()
                         }}
+                        onCancel={() => setEditingMilestoneId(null)}
                       />
                     ) : (
                       <div className="flex-1">
@@ -313,13 +339,28 @@ export function GoalDetails({ goal }: GoalDetailsProps) {
                                 <DropdownMenuItem
                                   className="text-destructive"
                                   onClick={async () => {
-                                    const result = await deleteMilestone(milestone.id)
-                                    if (result.success) {
+                                    try {
+                                      const result = await deleteMilestone(milestone.id)
+                                      if (result.success) {
+                                        toast({
+                                          title: "Success",
+                                          description: "Milestone deleted successfully",
+                                        })
+                                        router.refresh()
+                                      } else {
+                                        toast({
+                                          title: "Error",
+                                          description: result.error || "Failed to delete milestone",
+                                          variant: "destructive",
+                                        })
+                                      }
+                                    } catch (error) {
+                                      console.error("Error deleting milestone:", error)
                                       toast({
-                                        title: "Success",
-                                        description: "Milestone deleted successfully",
+                                        title: "Error",
+                                        description: "Failed to delete milestone",
+                                        variant: "destructive",
                                       })
-                                      router.refresh()
                                     }
                                   }}
                                 >
@@ -337,21 +378,42 @@ export function GoalDetails({ goal }: GoalDetailsProps) {
                           <div className="flex items-center text-xs text-muted-foreground">
                             <Calendar className="h-3 w-3 mr-1" />
                             <span>
-                              {milestone.target_date && milestone.target_date !== "null" && milestone.target_date !== "undefined" 
-                                ? format(new Date(milestone.target_date), "MMM d, yyyy")
-                                : "No date set"}
+                              {(() => {
+                                // Try to extract date from description as a fallback
+                                if (milestone.description && milestone.description.includes("Target Date:")) {
+                                  const dateMatch = milestone.description.match(/Target Date: ([A-Za-z]+ \d+, \d{4})/);
+                                  if (dateMatch && dateMatch[1]) {
+                                    return dateMatch[1];
+                                  }
+                                }
+                                
+                                // Fall back to target_date field if it exists
+                                if (milestone.target_date && milestone.target_date !== "null" && milestone.target_date !== "undefined") {
+                                  return format(new Date(milestone.target_date), "MMM d, yyyy");
+                                }
+                                
+                                return "No date set";
+                              })()}
                             </span>
-                            {milestone.target_amount > 0 && (
-                              <>
-                                <DollarSign className="h-3 w-3 ml-2 mr-1" />
-                                <span>
-                                  {new Intl.NumberFormat("en-US", {
-                                    style: "currency",
-                                    currency: "USD",
-                                  }).format(milestone.target_amount)}
-                                </span>
-                              </>
-                            )}
+                            {(() => {
+                              // Check for amount_target (database field) or target_amount (UI field)
+                              const amount = milestone.amount_target || milestone.target_amount;
+                              
+                              if (amount && amount > 0) {
+                                return (
+                                  <>
+                                    <DollarSign className="h-3 w-3 ml-2 mr-1" />
+                                    <span>
+                                      {new Intl.NumberFormat("en-US", {
+                                        style: "currency",
+                                        currency: "USD",
+                                      }).format(amount)}
+                                    </span>
+                                  </>
+                                );
+                              }
+                              return null;
+                            })()}
                           </div>
                         </div>
                       </div>

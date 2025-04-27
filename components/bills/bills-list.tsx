@@ -356,12 +356,6 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {!showCalendarView && (
-            <Button variant="outline" onClick={() => router.push("/bills/calendar")}>
-              <Calendar className="mr-2 h-4 w-4" />
-              Calendar View
-            </Button>
-          )}
           <Button onClick={handleAddBill}>
             <Plus className="mr-2 h-4 w-4" />
             Add Bill

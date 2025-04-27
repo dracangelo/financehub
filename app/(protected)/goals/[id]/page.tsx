@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
 import { getGoalById } from "@/app/actions/goals"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { GoalDetails } from "@/components/goals/goal-details"
@@ -21,19 +21,29 @@ export default async function GoalPage({ params }: GoalPageProps) {
   const id = resolvedParams?.id
 
   if (!id) {
-    notFound()
+    return redirect("/goals")
   }
 
-  const { goal, error } = await getGoalById(id)
+  try {
+    const { goal, error } = await getGoalById(id)
 
-  if (error || !goal) {
-    notFound()
+    if (error) {
+      console.error(`Error loading goal (${id}):`, error)
+      return redirect("/goals")
+    }
+
+    if (!goal) {
+      console.log(`Goal not found (${id})`)
+      return redirect("/goals")
+    }
+
+    return (
+      <DashboardShell>
+        <GoalDetails goal={goal} />
+      </DashboardShell>
+    )
+  } catch (error) {
+    console.error(`Unexpected error loading goal (${id}):`, error)
+    return redirect("/goals")
   }
-
-  return (
-    <DashboardShell>
-      <GoalDetails goal={goal} />
-    </DashboardShell>
-  )
 }
-
