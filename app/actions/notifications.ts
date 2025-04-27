@@ -1,6 +1,7 @@
 "use server"
 
 import { createServerSupabaseClient } from "@/lib/supabase/server"
+import { createAdminSupabaseClient } from "@/lib/supabase/admin"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 
@@ -52,10 +53,16 @@ interface SendEmailParams {
 // Get user's notifications
 export async function getNotifications() {
   try {
-    const supabase = createServerSupabaseClient()
+    const supabase = await createServerSupabaseClient()
+    
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { notifications: [], error: "Database connection error" }
+    }
     
     // Get current user
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    const { data, error: userError } = await supabase.auth.getUser()
+    const user = data?.user
     
     if (userError || !user) {
       console.error("Error getting user:", userError)
@@ -63,7 +70,7 @@ export async function getNotifications() {
     }
     
     // Get notifications
-    const { data, error } = await supabase
+    const { data: notifications, error } = await supabase
       .from("notifications")
       .select("*")
       .eq("user_id", user.id)
@@ -75,7 +82,7 @@ export async function getNotifications() {
       return { notifications: [], error: error.message }
     }
     
-    return { notifications: data as Notification[], error: null }
+    return { notifications: notifications as Notification[], error: null }
   } catch (error) {
     console.error("Unexpected error in getNotifications:", error)
     return { notifications: [], error: "An unexpected error occurred" }
@@ -85,90 +92,90 @@ export async function getNotifications() {
 // Create a new notification
 export async function createNotification(params: CreateNotificationParams) {
   try {
-    const supabase = createServerSupabaseClient()
+    const supabase = await createServerSupabaseClient()
     
-    const { data, error } = await supabase
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { success: false, error: "Database connection error" }
+    }
+
+    // Create admin client to bypass RLS
+    const adminClient = createAdminSupabaseClient()
+    
+    if (!adminClient) {
+      console.error("Failed to create admin client")
+      return { success: false, error: "Could not create notification" }
+    }
+
+    // Create notification using admin client
+    const { data, error } = await adminClient
       .from("notifications")
       .insert({
         user_id: params.userId,
         type: params.type,
         title: params.title,
         message: params.message,
-        link: params.link,
-        data: params.data,
+        link: params.link || null,
+        data: params.data || null,
         read: false,
-        emailed: false
+        emailed: false,
       })
       .select()
+      .single()
     
     if (error) {
       console.error("Error creating notification:", error)
-      return { notification: null, error: error.message }
+      return { success: false, error: error.message }
     }
     
-    // Check notification preferences to see if we should send an email
-    try {
-      const { data: prefs, error: prefsError } = await supabase
-        .from("notification_preferences")
-        .select("*")
-        .eq("user_id", params.userId)
-        .single()
-      
-      if (!prefsError && prefs) {
-        // Check if email notifications are enabled for this type
-        const shouldSendEmail = prefs.email_notifications && 
-          (
-            (params.type.includes("watchlist") && prefs.watchlist_alerts) ||
-            (params.type.includes("budget") && prefs.budget_alerts) ||
-            (params.type.includes("expense") && prefs.expense_reminders) ||
-            (params.type.includes("bill") && prefs.bill_reminders) ||
-            (params.type.includes("investment") && prefs.investment_updates)
-          )
-        
-        if (shouldSendEmail) {
-          // Send email notification
-          await sendEmailNotification({
-            userId: params.userId,
-            subject: params.title,
-            message: params.message,
-            html: `<p>${params.message}</p>${params.link ? `<p><a href="${process.env.NEXT_PUBLIC_BASE_URL}${params.link}">View in FinanceHub</a></p>` : ''}`
-          })
-          
-          // Mark notification as emailed
-          await supabase
-            .from("notifications")
-            .update({ emailed: true })
-            .eq("id", data[0].id)
-        }
-      }
-    } catch (prefsError) {
-      console.error("Error checking notification preferences:", prefsError)
-      // Continue without sending email
+    // Check if user wants email notifications
+    const { data: preferences, error: prefError } = await supabase
+      .from("notification_preferences")
+      .select("*")
+      .eq("user_id", params.userId)
+      .single()
+    
+    if (!prefError && preferences && preferences.email_notifications) {
+      // Send email notification
+      await sendEmailNotification({
+        userId: params.userId,
+        subject: params.title,
+        message: params.message,
+        html: `<h1>${params.title}</h1><p>${params.message}</p>${params.link ? `<a href="${params.link}">View Details</a>` : ''}`,
+      })
     }
     
     revalidatePath("/notifications")
-    return { notification: data[0] as Notification, error: null }
+    return { success: true, notification: data as Notification }
   } catch (error) {
     console.error("Unexpected error in createNotification:", error)
-    return { notification: null, error: "An unexpected error occurred" }
+    return { success: false, error: "An unexpected error occurred" }
   }
 }
 
 // Mark a notification as read
 export async function markNotificationAsRead(id: string) {
   try {
-    const supabase = createServerSupabaseClient()
+    const supabase = await createServerSupabaseClient()
     
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { success: false, error: "Database connection error" }
+    }
+    
+    // Get current user
+    const { data, error: userError } = await supabase.auth.getUser()
+    const user = data?.user
     
     if (userError || !user) {
       console.error("Error getting user:", userError)
       return { success: false, error: "User not authenticated" }
     }
     
+    // Update notification
     const { error } = await supabase
       .from("notifications")
-      .update({ read: true, updated_at: new Date().toISOString() })
+      .update({ read: true })
       .eq("id", id)
       .eq("user_id", user.id)
     
@@ -178,7 +185,7 @@ export async function markNotificationAsRead(id: string) {
     }
     
     revalidatePath("/notifications")
-    return { success: true, error: null }
+    return { success: true }
   } catch (error) {
     console.error("Unexpected error in markNotificationAsRead:", error)
     return { success: false, error: "An unexpected error occurred" }
@@ -188,18 +195,26 @@ export async function markNotificationAsRead(id: string) {
 // Mark all notifications as read
 export async function markAllNotificationsAsRead() {
   try {
-    const supabase = createServerSupabaseClient()
+    const supabase = await createServerSupabaseClient()
     
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { success: false, error: "Database connection error" }
+    }
+    
+    // Get current user
+    const { data, error: userError } = await supabase.auth.getUser()
+    const user = data?.user
     
     if (userError || !user) {
       console.error("Error getting user:", userError)
       return { success: false, error: "User not authenticated" }
     }
     
+    // Update all notifications
     const { error } = await supabase
       .from("notifications")
-      .update({ read: true, updated_at: new Date().toISOString() })
+      .update({ read: true })
       .eq("user_id", user.id)
       .eq("read", false)
     
@@ -209,7 +224,7 @@ export async function markAllNotificationsAsRead() {
     }
     
     revalidatePath("/notifications")
-    return { success: true, error: null }
+    return { success: true }
   } catch (error) {
     console.error("Unexpected error in markAllNotificationsAsRead:", error)
     return { success: false, error: "An unexpected error occurred" }
@@ -219,15 +234,23 @@ export async function markAllNotificationsAsRead() {
 // Delete a notification
 export async function deleteNotification(id: string) {
   try {
-    const supabase = createServerSupabaseClient()
+    const supabase = await createServerSupabaseClient()
     
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { success: false, error: "Database connection error" }
+    }
+    
+    // Get current user
+    const { data, error: userError } = await supabase.auth.getUser()
+    const user = data?.user
     
     if (userError || !user) {
       console.error("Error getting user:", userError)
       return { success: false, error: "User not authenticated" }
     }
     
+    // Delete notification
     const { error } = await supabase
       .from("notifications")
       .delete()
@@ -240,7 +263,7 @@ export async function deleteNotification(id: string) {
     }
     
     revalidatePath("/notifications")
-    return { success: true, error: null }
+    return { success: true }
   } catch (error) {
     console.error("Unexpected error in deleteNotification:", error)
     return { success: false, error: "An unexpected error occurred" }
@@ -250,25 +273,43 @@ export async function deleteNotification(id: string) {
 // Get user's notification preferences
 export async function getNotificationPreferences() {
   try {
-    const supabase = createServerSupabaseClient()
+    const supabase = await createServerSupabaseClient()
     
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { preferences: null, error: "Database connection error" }
+    }
+    
+    // Get current user
+    const { data, error: userError } = await supabase.auth.getUser()
+    const user = data?.user
     
     if (userError || !user) {
       console.error("Error getting user:", userError)
       return { preferences: null, error: "User not authenticated" }
     }
     
-    const { data, error } = await supabase
+    // Get preferences
+    const { data: preferences, error } = await supabase
       .from("notification_preferences")
       .select("*")
       .eq("user_id", user.id)
       .single()
     
     if (error) {
-      console.error("Error fetching notification preferences:", error)
-      // If no preferences exist yet, create default preferences
+      // If no preferences found, create them using admin client
       if (error.code === "PGRST116") {
+        console.log("No notification preferences found, creating new preferences")
+        
+        // Create admin client to bypass RLS
+        const adminClient = createAdminSupabaseClient()
+        
+        if (!adminClient) {
+          console.error("Failed to create admin client")
+          return { preferences: null, error: "Could not create notification preferences" }
+        }
+        
+        // Create default preferences
         const defaultPreferences = {
           user_id: user.id,
           email_notifications: true,
@@ -278,26 +319,29 @@ export async function getNotificationPreferences() {
           expense_reminders: true,
           bill_reminders: true,
           investment_updates: true
-        };
+        }
         
-        const { data: newPrefs, error: insertError } = await supabase
+        // Insert preferences using admin client
+        const { data: newPreferences, error: insertError } = await adminClient
           .from("notification_preferences")
           .insert(defaultPreferences)
           .select()
-          .single();
-          
+          .single()
+        
         if (insertError) {
-          console.error("Error creating default preferences:", insertError);
-          return { preferences: null, error: insertError.message };
+          console.error("Error creating notification preferences with admin client:", insertError)
+          return { preferences: null, error: "Failed to create notification preferences" }
         }
         
-        return { preferences: newPrefs as NotificationPreferences, error: null };
+        console.log("Successfully created notification preferences")
+        return { preferences: newPreferences as NotificationPreferences, error: null }
       }
       
+      console.error("Error getting notification preferences:", error)
       return { preferences: null, error: error.message }
     }
     
-    return { preferences: data as NotificationPreferences, error: null }
+    return { preferences: preferences as NotificationPreferences, error: null }
   } catch (error) {
     console.error("Unexpected error in getNotificationPreferences:", error)
     return { preferences: null, error: "An unexpected error occurred" }
@@ -307,21 +351,26 @@ export async function getNotificationPreferences() {
 // Update user's notification preferences
 export async function updateNotificationPreferences(preferences: Partial<NotificationPreferences>) {
   try {
-    const supabase = createServerSupabaseClient()
+    const supabase = await createServerSupabaseClient()
     
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { success: false, error: "Database connection error" }
+    }
+    
+    // Get current user
+    const { data, error: userError } = await supabase.auth.getUser()
+    const user = data?.user
     
     if (userError || !user) {
       console.error("Error getting user:", userError)
       return { success: false, error: "User not authenticated" }
     }
     
-    // Remove id and user_id from the update
-    const { id, user_id, created_at, updated_at, ...updateData } = preferences as any
-    
+    // Update preferences
     const { error } = await supabase
       .from("notification_preferences")
-      .update({ ...updateData, updated_at: new Date().toISOString() })
+      .update(preferences)
       .eq("user_id", user.id)
     
     if (error) {
@@ -329,8 +378,8 @@ export async function updateNotificationPreferences(preferences: Partial<Notific
       return { success: false, error: error.message }
     }
     
-    revalidatePath("/notifications")
-    return { success: true, error: null }
+    revalidatePath("/settings/notifications")
+    return { success: true }
   } catch (error) {
     console.error("Unexpected error in updateNotificationPreferences:", error)
     return { success: false, error: "An unexpected error occurred" }
@@ -340,53 +389,53 @@ export async function updateNotificationPreferences(preferences: Partial<Notific
 // Send an email notification
 export async function sendEmailNotification(params: SendEmailParams) {
   try {
-    const supabase = createServerSupabaseClient()
+    const supabase = await createServerSupabaseClient()
+    
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { success: false, error: "Database connection error" }
+    }
     
     // Get user's email
-    const { data: userData, error: userError } = await supabase
-      .from("users")
-      .select("email")
-      .eq("id", params.userId)
-      .single()
+    const { data, error: userError } = await supabase.auth.getUser()
+    const user = data?.user
     
-    if (userError) {
-      // Try to get email from auth.users
-      const { data, error } = await supabase.auth.admin.getUserById(params.userId)
-      
-      if (error || !data || !data.user) {
-        console.error("Error getting user email:", error || "User not found")
-        return { success: false, error: "User not found" }
-      }
-      
-      // Use email from auth.users
-      const userEmail = data.user.email
-      
-      if (!userEmail) {
-        return { success: false, error: "User email not found" }
-      }
-      
-      // For development, just log the email instead of sending it
-      console.log(`[DEV] Would send email to ${userEmail}:`, {
-        subject: params.subject,
-        content: params.html || params.message
-      });
-      
-      return { success: true, error: null }
+    if (userError || !user) {
+      console.error("Error getting user:", userError)
+      return { success: false, error: "User not authenticated" }
     }
     
-    const userEmail = userData.email
+    const userEmail = user.email
     
     if (!userEmail) {
-      return { success: false, error: "User email not found" }
+      console.error("User has no email address")
+      return { success: false, error: "User has no email address" }
     }
     
-    // For development, just log the email instead of sending it
-    console.log(`[DEV] Would send email to ${userEmail}:`, {
-      subject: params.subject,
-      content: params.html || params.message
-    });
+    // In a real app, you would send an actual email here
+    // For now, we'll just log it
+    console.log(`Sending email to ${userEmail}:`)
+    console.log(`Subject: ${params.subject}`)
+    console.log(`Message: ${params.message}`)
     
-    return { success: true, error: null }
+    if (params.html) {
+      console.log(`HTML: ${params.html}`)
+    }
+    
+    // In a real implementation, you would use a service like SendGrid, AWS SES, etc.
+    // Example with SendGrid:
+    /*
+    const msg = {
+      to: userEmail,
+      from: 'noreply@financehub.com',
+      subject: params.subject,
+      text: params.message,
+      html: params.html || params.message,
+    }
+    await sendgrid.send(msg)
+    */
+    
+    return { success: true }
   } catch (error) {
     console.error("Unexpected error in sendEmailNotification:", error)
     return { success: false, error: "An unexpected error occurred" }
