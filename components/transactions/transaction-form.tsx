@@ -72,7 +72,7 @@ export function TransactionForm({ accounts, categories = ALL_CATEGORIES, transac
       date: transaction ? new Date(transaction.date) : new Date(),
       amount: transaction?.amount || 0,
       description: transaction?.description || "",
-      is_income: transaction?.is_income || false,
+      is_income: transaction ? Boolean(transaction.is_income) : false,
       merchant_name: transaction?.merchant_name || "",
       is_recurring: transaction?.is_recurring || false,
       recurrence_pattern: transaction?.recurrence_pattern || "",
@@ -198,22 +198,24 @@ export function TransactionForm({ accounts, categories = ALL_CATEGORIES, transac
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
         <Tabs defaultValue="basic" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-3 sticky top-0 z-10 bg-background shadow-sm">
             <TabsTrigger value="basic">Basic Info</TabsTrigger>
             <TabsTrigger value="advanced">Advanced Tracking</TabsTrigger>
             <TabsTrigger value="receipt">Receipt & Warranty</TabsTrigger>
           </TabsList>
+          
+          <div className="max-h-[50vh] overflow-y-auto pr-2 pb-4 mt-2 custom-scrollbar">
 
           {/* Basic Info Tab */}
-          <TabsContent value="basic" className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <TabsContent value="basic" className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FormField
                 control={form.control}
                 name="is_income"
                 render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 sm:p-4">
                     <div className="space-y-0.5">
                       <FormLabel className="text-base">Transaction Type</FormLabel>
                       <FormDescription>Is this an income or an expense?</FormDescription>
@@ -241,7 +243,7 @@ export function TransactionForm({ accounts, categories = ALL_CATEGORIES, transac
               />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FormField
                 control={form.control}
                 name="account_id"
@@ -293,7 +295,7 @@ export function TransactionForm({ accounts, categories = ALL_CATEGORIES, transac
               />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FormField
                 control={form.control}
                 name="date"
@@ -338,8 +340,8 @@ export function TransactionForm({ accounts, categories = ALL_CATEGORIES, transac
           </TabsContent>
 
           {/* Advanced Tracking Tab */}
-          <TabsContent value="advanced" className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <TabsContent value="advanced" className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FormField
                 control={form.control}
                 name="merchant_name"
@@ -376,12 +378,12 @@ export function TransactionForm({ accounts, categories = ALL_CATEGORIES, transac
               />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FormField
                 control={form.control}
                 name="is_recurring"
                 render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 sm:p-4">
                     <div className="space-y-0.5">
                       <FormLabel className="text-base">Recurring Transaction</FormLabel>
                       <FormDescription>Is this a subscription or recurring payment?</FormDescription>
@@ -450,7 +452,7 @@ export function TransactionForm({ accounts, categories = ALL_CATEGORIES, transac
               control={form.control}
               name="is_split"
               render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 sm:p-4">
                   <div className="space-y-0.5">
                     <FormLabel className="text-base">Split Transaction</FormLabel>
                     <FormDescription>Split this expense with others</FormDescription>
@@ -521,7 +523,7 @@ export function TransactionForm({ accounts, categories = ALL_CATEGORIES, transac
               control={form.control}
               name="is_impulse"
               render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 sm:p-4">
                   <div className="space-y-0.5">
                     <FormLabel className="text-base">Impulse Purchase</FormLabel>
                     <FormDescription>Was this an unplanned purchase?</FormDescription>
@@ -536,7 +538,7 @@ export function TransactionForm({ accounts, categories = ALL_CATEGORIES, transac
           </TabsContent>
 
           {/* Receipt & Warranty Tab */}
-          <TabsContent value="receipt" className="space-y-4">
+          <TabsContent value="receipt" className="space-y-3">
             <div className="grid grid-cols-1 gap-4">
               <div className="flex flex-col space-y-2">
                 <FormLabel>Upload Receipt</FormLabel>
@@ -581,7 +583,7 @@ export function TransactionForm({ accounts, categories = ALL_CATEGORIES, transac
                 control={form.control}
                 name="has_warranty"
                 render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 sm:p-4">
                     <div className="space-y-0.5">
                       <FormLabel className="text-base">Warranty Tracking</FormLabel>
                       <FormDescription>Does this purchase have a warranty?</FormDescription>
@@ -633,6 +635,7 @@ export function TransactionForm({ accounts, categories = ALL_CATEGORIES, transac
               )}
             </div>
           </TabsContent>
+          </div>
         </Tabs>
 
         <div className="flex justify-end gap-4">

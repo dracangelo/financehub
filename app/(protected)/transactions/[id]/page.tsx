@@ -8,7 +8,9 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft } from "lucide-react"
 
+// Force dynamic rendering and disable caching to ensure fresh data
 export const dynamic = "force-dynamic"
+export const revalidate = 0 // Disable caching completely
 
 interface TransactionDetailPageProps {
   params: {

@@ -3,206 +3,173 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 import { v4 as uuidv4 } from "uuid"
-import { cookies } from "next/headers"
-import { createServerClient } from "@supabase/ssr"
-import type { Database } from "@/lib/supabase/database.types"
+import { getIncomes, createIncome, updateIncome, deleteIncome, calculateIncomeDiversification as getIncomeDiversificationScore, getAuthenticatedUser } from "./income"
+import type { Income } from "./income"
 
 // Get the current user ID from the session
 async function getCurrentUserId() {
   try {
-    const supabase = await createServerSupabaseClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = await getAuthenticatedUser();
     
     if (user?.id) {
-      // Simply return the authenticated user ID
-      // The RLS policies will handle access control
-      return user.id
+      return user.id;
     }
     
-    // For demo purposes, use a fixed ID when no user is authenticated
-    // This should only happen in development
-    console.warn("No authenticated user found, using demo user ID")
-    return "00000000-0000-0000-0000-000000000000"
+    console.warn("No authenticated user found")
+    throw new Error("No authenticated user found");
   } catch (error) {
     console.error("Error getting current user:", error)
     throw new Error("Failed to get current user")
   }
 }
 
-export async function getIncomeSources(timestamp?: number) {
-  const userId = await getCurrentUserId()
-  const supabase = await createServerSupabaseClient()
-  
-  // Log timestamp for debugging
-  console.log(`Fetching income sources at timestamp ${timestamp || Date.now()}`)
-
-  const { data, error } = await supabase
-    .from("income_sources")
-    .select("*")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-
-  if (error) {
-    console.error("Error fetching income sources:", error)
-    throw new Error("Failed to fetch income sources")
+// Adapter function to convert from the new Income schema to the old IncomeSource schema
+function adaptIncomeToIncomeSource(income: Income) {
+  return {
+    id: income.id,
+    user_id: income.user_id,
+    name: income.source_name,
+    type: income.category?.name || "salary",
+    amount: income.amount,
+    frequency: mapRecurrenceToFrequency(income.recurrence),
+    currency: income.currency,
+    start_date: income.start_date,
+    end_date: income.end_date,
+    notes: income.notes,
+    created_at: income.created_at,
+    is_active: true,
+    category: income.category?.name
   }
-
-  return data || []
 }
 
+// Map the new recurrence values to the old frequency values
+function mapRecurrenceToFrequency(recurrence: string): string {
+  switch (recurrence) {
+    case "none": return "one-time";
+    case "weekly": return "weekly";
+    case "bi_weekly": return "bi-weekly";
+    case "monthly": return "monthly";
+    case "quarterly": return "quarterly";
+    case "semi_annual": return "semi-annual";
+    case "annual": return "annually";
+    default: return "monthly";
+  }
+}
+
+// Map the old frequency values to the new recurrence values
+function mapFrequencyToRecurrence(frequency: string): string {
+  switch (frequency) {
+    case "one-time": return "none";
+    case "weekly": return "weekly";
+    case "bi-weekly": return "bi_weekly";
+    case "monthly": return "monthly";
+    case "quarterly": return "quarterly";
+    case "semi-annual": return "semi_annual";
+    case "annually": return "annual";
+    default: return "monthly";
+  }
+}
+
+// Compatibility layer for getIncomeSources
+export async function getIncomeSources(timestamp?: number) {
+  try {
+    // Get incomes from the new schema
+    const incomes = await getIncomes(timestamp);
+    
+    // Convert to the old format
+    return incomes.map(adaptIncomeToIncomeSource);
+  } catch (error) {
+    console.error("Error fetching income sources:", error);
+    throw new Error("Failed to fetch income sources");
+  }
+}
+
+// Compatibility layer for getIncomeSourceById
 export async function getIncomeSourceById(id: string, timestamp?: number) {
   try {
-    const userId = await getCurrentUserId()
-    const supabase = await createServerSupabaseClient()
-
-    // Using timestamp or current time for cache-busting if needed
-    const cacheParam = timestamp || Date.now()
-    console.log(`Fetching income source ${id} at timestamp ${cacheParam}`)
-
-    // First try to get the income source with exact user match
-    const { data: exactMatchSource, error: exactMatchError } = await supabase
-      .from("income_sources")
-      .select("*")
-      .eq("id", id)
-      .eq("user_id", userId)
-      .maybeSingle()
-
-    if (exactMatchError) {
-      console.error("Error fetching income source with exact match:", exactMatchError)
-      throw new Error("Failed to fetch income source")
-    }
-
-    // If found with exact match, return it
-    if (exactMatchSource) {
-      console.log("Income source found with exact user match:", exactMatchSource)
-      return exactMatchSource
-    }
-
-    // If not found with exact match, try to get demo sources (for demo user)
-    const demoUserId = "00000000-0000-0000-0000-000000000000"
+    // Get the income from the new schema
+    const income = await getIncomeById(id);
     
-    const { data: demoSource, error: demoError } = await supabase
-      .from("income_sources")
-      .select("*")
-      .eq("id", id)
-      .eq("user_id", demoUserId)
-      .maybeSingle()
-
-    if (demoError) {
-      console.error("Error fetching demo income source:", demoError)
-      throw new Error("Failed to fetch income source")
+    if (!income) {
+      return null;
     }
-
-    // If found as demo source, return it
-    if (demoSource) {
-      console.log("Income source found as demo source:", demoSource)
-      return demoSource
-    }
-
-    // Not found at all
-    console.error("Income source not found with ID:", id)
-    return null
+    
+    // Convert to the old format
+    return adaptIncomeToIncomeSource(income);
   } catch (error) {
-    console.error("Error in getIncomeSourceById:", error)
-    throw error
+    console.error("Error in getIncomeSourceById:", error);
+    throw error;
   }
 }
 
+// Helper function to get income by ID
+async function getIncomeById(id: string) {
+  try {
+    const supabase = await createServerSupabaseClient();
+    if (!supabase) {
+      throw new Error("Failed to create Supabase client");
+    }
+    
+    const { data, error } = await supabase
+      .from("incomes")
+      .select("*, category:income_categories(id, name)")
+      .eq("id", id)
+      .single();
+      
+    if (error) {
+      console.error("Error fetching income:", error);
+      return null;
+    }
+    
+    return data;
+  } catch (error) {
+    console.error("Error in getIncomeById:", error);
+    return null;
+  }
+}
+
+// Compatibility layer for createIncomeSource
 export async function createIncomeSource(formData: FormData) {
   try {
-    const userId = await getCurrentUserId()
-    console.log("Creating income source for user:", userId)
+    // Convert from old format to new format
+    const newFormData = new FormData();
     
-    const supabase = await createServerSupabaseClient()
-    if (!supabase) {
-      console.error("Failed to create Supabase client")
-      throw new Error("Database connection failed")
-    }
-
-    // Validate required fields
-    const name = formData.get("name") as string
-    if (!name) {
-      throw new Error("Name is required")
-    }
-
-    const amountStr = formData.get("amount") as string
-    const amount = Number(amountStr)
-    if (isNaN(amount) || amount <= 0) {
-      throw new Error("Amount must be a positive number")
-    }
-
-    const type = formData.get("type") as string
-    if (!type) {
-      throw new Error("Type is required")
-    }
-
-    const frequency = formData.get("frequency") as string
-    if (!frequency) {
-      throw new Error("Frequency is required")
-    }
+    // Map fields from old format to new format
+    newFormData.append("source_name", formData.get("name") as string);
+    newFormData.append("amount", formData.get("amount") as string);
     
-    // Check against the allowed frequencies from the database constraint
-    const allowedFrequencies = ['monthly', 'weekly', 'bi-weekly', 'annually', 'one-time']
-    if (!allowedFrequencies.includes(frequency)) {
-      console.error(`Invalid frequency: ${frequency}. Allowed frequencies are: ${allowedFrequencies.join(', ')}`)
-      throw new Error(`Invalid frequency. Allowed frequencies are: ${allowedFrequencies.join(', ')}`)
-    }
-
-    // Format dates if provided
-    const startDate = formData.get("start_date") as string
-    const endDate = formData.get("end_date") as string
-    const formattedStartDate = startDate ? new Date(startDate).toISOString().split('T')[0] : null
-    const formattedEndDate = endDate ? new Date(endDate).toISOString().split('T')[0] : null
-
-    // Only include fields that exist in the schema
-    const notes = formData.get("notes") as string || null
-    const currency = (formData.get("currency") as string) || "USD"
-
-    // Create income source data object with only fields that exist in the database schema
-    const incomeData = {
-      user_id: userId,
-      name,
-      type,
-      amount,
-      frequency,
-      currency,
-      start_date: formattedStartDate,
-      end_date: formattedEndDate,
-      notes,
-      is_active: true
-    }
-
-    console.log("Income source data to insert:", incomeData)
-
-    // Insert the income source
-    const { data, error } = await supabase
-      .from("income_sources")
-      .insert(incomeData)
-      .select()
-
-    if (error) {
-      console.error("Error creating income source:", error)
-      console.error("Error details:", {
-        code: error.code,
-        message: error.message,
-        details: error.details,
-        hint: error.hint
-      })
-      throw new Error(`Failed to create income source: ${error.message}`)
-    }
-
-    console.log("Income source created successfully:", data)
-    revalidatePath("/income")
-    return { id: data[0].id }
+    // Map frequency to recurrence
+    const oldFrequency = formData.get("frequency") as string;
+    const recurrence = mapFrequencyToRecurrence(oldFrequency);
+    newFormData.append("recurrence", recurrence);
+    
+    // Map type to category_id (would need to look up or create the category)
+    // For now, we'll leave category_id as null
+    
+    // Copy other fields
+    if (formData.get("start_date")) newFormData.append("start_date", formData.get("start_date") as string);
+    if (formData.get("end_date")) newFormData.append("end_date", formData.get("end_date") as string);
+    if (formData.get("notes")) newFormData.append("notes", formData.get("notes") as string);
+    if (formData.get("currency")) newFormData.append("currency", formData.get("currency") as string);
+    
+    // Set is_taxable and tax_class
+    newFormData.append("is_taxable", "true");
+    newFormData.append("tax_class", "post_tax");
+    
+    // Create using the new function
+    const result = await createIncome(newFormData);
+    
+    return result;
   } catch (error) {
-    console.error("Unexpected error in createIncomeSource:", error)
+    console.error("Unexpected error in createIncomeSource:", error);
     if (error instanceof Error) {
-      throw new Error(`Failed to create income source: ${error.message}`)
+      throw new Error(`Failed to create income source: ${error.message}`);
     }
-    throw new Error("Failed to create income source")
+    throw error;
   }
 }
 
+// Compatibility layer for updateIncomeSource
 export async function updateIncomeSource(id: string, formData: FormData) {
   console.log("updateIncomeSource called with ID:", id);
   console.log("Form data received:", Object.fromEntries(formData.entries()));
@@ -433,21 +400,20 @@ export async function updateIncomeSource(id: string, formData: FormData) {
   }
 }
 
+// Compatibility layer for deleteIncomeSource
 export async function deleteIncomeSource(id: string) {
-  const userId = await getCurrentUserId()
-  const supabase = await createServerSupabaseClient()
-
-  const { error } = await supabase.from("income_sources").delete().eq("id", id).eq("user_id", userId)
-
-  if (error) {
-    console.error("Error deleting income source:", error)
-    throw new Error("Failed to delete income source")
+  try {
+    // Use the new function
+    await deleteIncome(id);
+    
+    return { success: true };
+  } catch (error) {
+    console.error("Error in deleteIncomeSource:", error);
+    throw error;
   }
-
-  revalidatePath("/income")
-  return { success: true }
 }
 
+// Compatibility layer for calculateIncomeDiversification
 export async function calculateIncomeDiversification() {
   const userId = await getCurrentUserId()
   const supabase = await createServerSupabaseClient()

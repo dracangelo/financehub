@@ -28,8 +28,9 @@ interface Account {
 interface Category {
   id: string
   name: string
-  color: string
-  is_income: boolean
+  color?: string
+  is_income?: boolean
+  icon?: string
 }
 
 interface Transaction {
@@ -38,12 +39,16 @@ interface Transaction {
   account_id: string
   category_id: string
   amount: number
-  description: string
+  description?: string
+  note?: string // Add note field to match database schema
   is_income: boolean
+  date?: string
+  transaction_date?: string
   created_at: string
   updated_at: string | null
   account: Account
   category: Category
+  type?: string
 }
 
 interface TransactionEditFormProps {
@@ -56,16 +61,49 @@ export function TransactionEditForm({ transaction, accounts, categories = ALL_CA
   const router = useRouter()
   const { toast } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [transactionType, setTransactionType] = useState<"expense" | "income">(
-    transaction.is_income ? "income" : "expense",
-  )
-
-  const [formData, setFormData] = useState({
+  // Initialize transaction type based on the type field from the database
+  // Explicitly log the transaction data to debug
+  console.log("Transaction data for edit form:", {
+    id: transaction.id,
+    type: transaction.type,
+    is_income: transaction.is_income,
     description: transaction.description,
+    note: transaction.note,
+    date: transaction.date,
+    transaction_date: transaction.transaction_date
+  })
+  
+  // Always use the type field first, then fall back to is_income if needed
+  const initialType = transaction.type === "income" ? "income" : "expense"
+  const [transactionType, setTransactionType] = useState<"expense" | "income">(initialType)
+
+  // Initialize with transaction date from either date or transaction_date field
+  const transactionDate = transaction.date || transaction.transaction_date || transaction.created_at
+  
+  // Format date as YYYY/MM/DD for display
+  const formatDateForDisplay = (dateString: string) => {
+    const date = new Date(dateString)
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}/${month}/${day}`
+  }
+  
+  // Log the transaction data for debugging
+  console.log("Transaction data for form:", {
+    note: transaction.note,
+    description: transaction.description,
+    date: transactionDate
+  })
+  
+  const [formData, setFormData] = useState({
+    // Use note field from transaction as description for the form
+    description: transaction.note || transaction.description || '',
     amount: transaction.amount.toString(),
     account_id: transaction.account_id,
     category_id: transaction.category_id,
-    created_at: new Date(transaction.created_at).toISOString().split("T")[0],
+    // Use transaction_date field from the database with simple date format
+    date: transactionDate ? formatDateForDisplay(transactionDate) : formatDateForDisplay(new Date().toISOString()),
   })
 
   // Filter categories based on selected type (income or expense)
@@ -102,22 +140,59 @@ export function TransactionEditForm({ transaction, accounts, categories = ALL_CA
     try {
       const formDataObj = new FormData()
 
-      // Add form data
-      Object.entries(formData).forEach(([key, value]) => {
-        formDataObj.append(key, value)
-      })
+      // Add basic form data - ensure all required fields are included
+      formDataObj.append("account_id", formData.account_id)
+      formDataObj.append("amount", formData.amount)
+      formDataObj.append("category_id", formData.category_id)
+      
+      // Set the transaction type directly - this is the most important field
+      // The database uses 'type' field with values 'income' or 'expense'
+      console.log("Submitting transaction type:", transactionType)
+      formDataObj.append("type", transactionType)
+      
+      // Also include is_income for backwards compatibility
+      const is_income = transactionType === "income"
+      console.log("Submitting is_income:", is_income, "from type:", transactionType)
+      formDataObj.append("is_income", is_income.toString())
+      
+      // Parse the date from YYYY/MM/DD format to ISO format for the database
+      const parseDateFromDisplay = (displayDate: string) => {
+        // Check if it's already in ISO format
+        if (displayDate.includes('T') || displayDate.includes('-')) {
+          return displayDate
+        }
+        
+        // Parse from YYYY/MM/DD format
+        const [year, month, day] = displayDate.split('/')
+        return `${year}-${month}-${day}`
+      }
+      
+      // Always include the date in the correct format - use 'date' field name to match createTransaction
+      const formattedDate = parseDateFromDisplay(formData.date)
+      console.log("Submitting date:", formData.date, "→", formattedDate)
+      formDataObj.append("date", formattedDate)
+      
+      // Use 'description' field name to match createTransaction
+      console.log("Submitting description:", formData.description)
+      formDataObj.append("description", formData.description || transaction.note || "Transaction")
 
-      // Add transaction type
-      formDataObj.append("is_income", String(transactionType === "income"))
-
-      await updateTransaction(transaction.id, formDataObj)
+      const updatedTransaction = await updateTransaction(transaction.id, formDataObj)
 
       toast({
         title: "Transaction updated",
         description: "Your transaction has been updated successfully.",
       })
 
-      router.push(`/transactions/${transaction.id}`)
+      // Use a more robust approach to ensure data is refreshed
+      // First refresh the current router cache
+      router.refresh()
+      
+      // Then redirect to the transaction detail page with a cache-busting query parameter
+      // This forces Next.js to revalidate the data when viewing the transaction
+      const timestamp = Date.now()
+      router.push(`/transactions/${transaction.id}?t=${timestamp}`)
+      
+      // This approach ensures the transaction detail page shows the updated data immediately
     } catch (error) {
       console.error("Error updating transaction:", error)
       toast({
@@ -219,12 +294,12 @@ export function TransactionEditForm({ transaction, accounts, categories = ALL_CA
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="created_at">Date</Label>
+            <Label htmlFor="date">Date</Label>
             <Input
-              id="created_at"
-              name="created_at"
+              id="date"
+              name="date"
               type="date"
-              value={formData.created_at}
+              value={formData.date}
               onChange={handleInputChange}
               required
             />

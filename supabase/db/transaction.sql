@@ -93,3 +93,38 @@ order by total_amount desc;
 -- ========================================
 -- END OF TRANSACTIONS + NOTES
 -- ========================================
+
+-- ========================================
+-- ACCOUNT BALANCE MANAGEMENT
+-- ========================================
+
+-- Function to update account balance
+create or replace function update_account_balance(p_account_id uuid, p_amount numeric)
+returns void as $$
+begin
+  -- Update the account balance
+  update accounts
+  set balance = balance + p_amount
+  where id = p_account_id;
+  
+  -- Record the balance change in history
+  insert into account_balance_history (
+    account_id,
+    user_id,
+    balance,
+    change_type,
+    note
+  )
+  select
+    p_account_id,
+    user_id,
+    balance,
+    case when p_amount > 0 then 'income' else 'expense' end,
+    'Balance updated via transaction'
+  from accounts
+  where id = p_account_id;
+  
+  -- Return success
+  return;
+end;
+$$ language plpgsql;

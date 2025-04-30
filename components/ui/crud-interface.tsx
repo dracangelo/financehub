@@ -374,27 +374,25 @@ export function CrudInterface<T>({
             <CardTitle>{title}</CardTitle>
             {description && <CardDescription>{description}</CardDescription>}
           </div>
-          <Button onClick={openCreateDialog}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add New
+          <Button onClick={() => openCreateDialog()} className="w-full sm:w-auto">
+            <Plus className="mr-2 h-4 w-4" /> Add New
           </Button>
         </div>
       </CardHeader>
       <CardContent>
         <div className="mb-4">
-          <div className="relative">
+          <div className="relative w-full sm:w-[300px]">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               type="search"
               placeholder="Search..."
-              className="pl-8"
+              className="pl-8 w-full"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
         </div>
-
-        <div className="rounded-md border">
+        <div className="rounded-md border overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -459,39 +457,17 @@ export function CrudInterface<T>({
           <Pagination>
             <PaginationContent>
               <PaginationItem>
-                <PaginationPrevious
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    setCurrentPage((prev) => Math.max(prev - 1, 1))
-                  }}
-                  aria-disabled={currentPage === 1}
-                  className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
-                />
-              </PaginationItem>
-
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                <PaginationItem key={page}>
-                  <PaginationLink
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      setCurrentPage(page)
-                    }}
-                    isActive={currentPage === page}
-                  >
-                    {page}
-                  </PaginationLink>
                 </PaginationItem>
-              ))}
-
-              <PaginationItem>
-                <PaginationNext
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    setCurrentPage((prev) => Math.min(prev + 1, totalPages))
-                  }}
+              );
+            }
+            return (
+              <PaginationItem key={page}>
+                <PaginationLink
+                  onClick={() => setCurrentPage(page)}
+                  isActive={currentPage === page}
+                >
+                  {page}
+                </PaginationLink>
                   aria-disabled={currentPage === totalPages}
                   className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""}
                 />

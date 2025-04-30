@@ -105,13 +105,47 @@ export async function getTransactionById(id: string) {
       type: data.account.account_type
     } : null;
     
-    return {
-      ...data,
-      date: data.transaction_date,
+    // Log the raw data from the database for debugging
+    console.log("Raw transaction data from database:", data);
+    
+    // Create a completely new object with only the fields we need
+    // This ensures no unexpected fields from the database interfere with our UI
+    const transformedTransaction = {
+      id: data.id,
+      user_id: data.user_id,
+      account_id: data.account_id,
+      category_id: data.category_id || '',
+      amount: data.amount,
+      currency: data.currency || 'USD',
+      // Map note to description for UI
       description: data.note || '',
+      // Store the original note as well
+      note: data.note || '',
+      // Set is_income based on the type field
       is_income: data.type === 'income',
-      account: accountData
-    }
+      // Preserve the original type
+      type: data.type,
+      // Map transaction_date to date for UI
+      date: data.transaction_date,
+      transaction_date: data.transaction_date,
+      created_at: data.created_at,
+      updated_at: data.updated_at,
+      // Include the account data
+      account: accountData,
+      // Include category data (required by the Transaction interface)
+      category: {
+        id: data.category_id || '',
+        name: 'Uncategorized',
+        color: '#888888',
+        is_income: data.type === 'income'
+      },
+      // Include tags
+      tags: data.tags || []
+    };
+    
+    console.log("Transformed transaction for UI:", transformedTransaction);
+    
+    return transformedTransaction
   }
 
   return null
@@ -236,20 +270,68 @@ export async function updateTransaction(id: string, formData: FormData) {
     throw new Error("Transaction not found or access denied")
   }
 
-  // Extract form data
-  const note = formData.get("description") as string // Using 'description' from form for 'note' field
-  const amount = Number.parseFloat(formData.get("amount") as string)
-  const isIncome = formData.get("is_income") === "true"
-  const accountId = formData.get("account_id") as string
+  // Extract form data - use the same approach as createTransaction
+  // This ensures consistency between creation and editing
+  const description = formData.get("description") as string
+  const amountStr = formData.get("amount") as string
+  const amount = amountStr ? Number.parseFloat(amountStr) : originalTransaction.amount
+  const accountId = formData.get("account_id") as string || originalTransaction.account_id
   const tags = formData.get("tags") ? (formData.get("tags") as string).split(',') : originalTransaction.tags || []
+  
+  // Get the transaction date from form data with fallback
   const date = formData.get("date") as string || originalTransaction.transaction_date
+  
+  // Get transaction type directly from the form
+  // The type field is the primary source of truth
+  let type = formData.get("type") as string
+  
+  // Log all form data for debugging
+  console.log("Form data for transaction update:", {
+    type: formData.get("type"),
+    is_income: formData.get("is_income"),
+    description: formData.get("description"),
+    date: formData.get("date")
+  })
+  
+  // Ensure we have a valid type - this is critical
+  if (!type || (type !== "income" && type !== "expense")) {
+    // If no valid type from form, check is_income as fallback
+    const isIncomeStr = formData.get("is_income") as string
+    if (isIncomeStr === "true") {
+      type = "income"
+    } else if (isIncomeStr === "false") {
+      type = "expense"
+    } else {
+      // If still no valid type, use the original transaction type
+      type = originalTransaction.type
+    }
+  }
+  
+  // Double check that we have a valid type
+  if (!type || (type !== "income" && type !== "expense")) {
+    type = "expense" // Default fallback
+  }
+  
+  // Log the values for debugging
+  console.log("Update transaction values:", { 
+    description, 
+    amount, 
+    accountId, 
+    date, 
+    type 
+  })
+  
+  // Validate with more helpful error messages
+  if (!description) {
+    throw new Error("Description is required")
+  }
 
-  // Determine transaction type based on is_income
-  const type = isIncome ? 'income' : 'expense'
+  if (isNaN(amount) || amount <= 0) {
+    throw new Error("Amount must be a positive number")
+  }
 
-  // Validate required fields
-  if (!note || isNaN(amount) || !accountId) {
-    throw new Error("Description, amount, and account are required")
+  if (!accountId) {
+    throw new Error("Account is required")
   }
 
   // Check if account changed
@@ -274,6 +356,8 @@ export async function updateTransaction(id: string, formData: FormData) {
     ? originalTransaction.amount
     : -originalTransaction.amount
 
+  // Determine if this is an income transaction based on type
+  const isIncome = type === 'income'
   const newAmount = isIncome ? amount : -amount
 
   // Update transaction
@@ -282,9 +366,9 @@ export async function updateTransaction(id: string, formData: FormData) {
     .update({
       account_id: accountId,
       transaction_date: date,
-      type,
+      type, // Using the type directly from the form
       amount,
-      note,
+      note: description, // Map description to note field in the database
       tags,
       // updated_at will be handled by the trigger function
     })
@@ -294,6 +378,9 @@ export async function updateTransaction(id: string, formData: FormData) {
       *,
       account:accounts(id, name, account_type, institution)
     `)
+    
+  // Log the updated data for debugging
+  console.log("Updated transaction data from database:", data)
 
   if (error) {
     console.error("Error updating transaction:", error)
@@ -648,13 +735,13 @@ export async function getCombinedTransactions(): Promise<CombinedTransaction[]> 
     // Format expenses
     const formattedExpenses = expenses.map((expense) => ({
       id: expense.id,
-      description: expense.merchant || "Expense",
+      description: expense.name,
       amount: expense.amount,
-      date: expense.expense_date,
+      date: expense.date,
       is_income: false,
       type: 'expense',
       category: {
-        name: expense.categories && expense.categories.length > 0 ? expense.categories[0].name : "Expense",
+        name: expense.category || "Expense",
         color: "#ef4444",
         icon: "credit-card",
         is_income: false,
