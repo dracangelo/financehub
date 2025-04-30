@@ -49,6 +49,31 @@ export function IncomeAnalyticsClient({ incomes, diversificationScore }: IncomeA
   const categoryDistributionData = React.useMemo(() => {
     if (!incomes || incomes.length === 0) return [];
     
+    // Group by category
+    const categoryMap = new Map<string, number>();
+    
+    incomes.forEach(income => {
+      const categoryName = income.category?.name || "Uncategorized";
+      const monthlyAmount = income.monthly_equivalent_amount || 0;
+      
+      if (categoryMap.has(categoryName)) {
+        categoryMap.set(categoryName, categoryMap.get(categoryName)! + monthlyAmount);
+      } else {
+        categoryMap.set(categoryName, monthlyAmount);
+      }
+    });
+    
+    // Convert to array format for chart
+    return Array.from(categoryMap.entries()).map(([name, value]) => ({
+      name,
+      value
+    }));
+  }, [incomes]);
+  
+  // Prepare data for type distribution chart (using source_name as type)
+  const typeDistributionData = React.useMemo(() => {
+    if (!incomes || incomes.length === 0) return [];
+    
     const categoryDistribution: Record<string, number> = {};
     
     incomes.forEach((income) => {

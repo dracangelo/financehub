@@ -134,6 +134,37 @@ export async function getIncomeById(id: string) {
   }
 }
 
+// Create default income categories for a user
+async function createDefaultIncomeCategories(userId: string) {
+  const supabase = await createServerSupabaseClient()
+  if (!supabase) {
+    throw new Error("Failed to create Supabase client")
+  }
+
+  const defaultCategories = [
+    { name: "Salary", user_id: userId },
+    { name: "Freelance", user_id: userId },
+    { name: "Investments", user_id: userId },
+    { name: "Rental", user_id: userId },
+    { name: "Business", user_id: userId },
+    { name: "Bonus", user_id: userId },
+    { name: "Side Hustle", user_id: userId },
+    { name: "Other", user_id: userId }
+  ]
+
+  const { data, error } = await supabase
+    .from("income_categories")
+    .insert(defaultCategories)
+    .select()
+
+  if (error) {
+    console.error("Error creating default income categories:", error)
+    return []
+  }
+
+  return data || []
+}
+
 // Get all income categories
 export async function getIncomeCategories() {
   const userId = await getCurrentUserId()
@@ -142,6 +173,7 @@ export async function getIncomeCategories() {
     throw new Error("Failed to create Supabase client")
   }
 
+  // Get existing categories
   const { data, error } = await supabase
     .from("income_categories")
     .select("*")
@@ -153,7 +185,14 @@ export async function getIncomeCategories() {
     throw new Error("Failed to fetch income categories")
   }
 
-  return data || []
+  // If no categories exist, create default ones
+  if (!data || data.length === 0) {
+    console.log("No income categories found, creating defaults")
+    const defaultCategories = await createDefaultIncomeCategories(userId)
+    return defaultCategories
+  }
+
+  return data
 }
 
 // Create a new income category
