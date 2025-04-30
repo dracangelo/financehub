@@ -44,61 +44,86 @@ export async function getProjectedFinances(userId: string): Promise<ProjectedFin
     throw new Error("Failed to create Supabase client")
   }
   
-  // Get recurring income sources
+  // Get recurring income sources from the new income schema
   const { data: incomeSources, error: incomeError } = await supabase
-    .from("income_sources")
-    .select("*")
+    .from("incomes")
+    .select("*, category:income_categories(id, name)")
     .eq("user_id", userId)
-    .eq("is_active", true)
     .or(`end_date.is.null,end_date.gte.${new Date().toISOString()}`)
   
   if (incomeError) {
-    console.error("Error fetching income sources:", incomeError)
+    console.error("Error fetching incomes:", incomeError)
   }
 
   // Get recurring expenses
   const { data: recurringExpenses, error: expenseError } = await supabase
-    .from("transactions")
+    .from("expenses")
     .select(`
       *,
-      account:accounts(id, name, type, institution),
-      category:categories(id, name, color, icon, is_income),
-      recurring_pattern:recurring_patterns(id, frequency, confidence, next_expected_date, is_subscription)
+      categories:expense_categories(id, name, parent_id)
     `)
     .eq("user_id", userId)
-    .eq("is_income", false)
-    .eq("is_recurring", true)
+    .neq("recurrence", "none")
   
   if (expenseError) {
     console.error("Error fetching recurring expenses:", expenseError)
   }
 
-  // Calculate projected monthly income
+  // Calculate projected monthly income using the monthly_equivalent_amount from the new schema
   const projectedIncomeBreakdown = (incomeSources || []).map(source => {
-    const monthlyAmount = normalizeToMonthlyAmount(source.amount, source.frequency)
+    // Use the monthly_equivalent_amount that's already calculated by the database
+    const monthlyAmount = source.monthly_equivalent_amount || normalizeToMonthlyAmount(source.amount, source.recurrence)
     const nextPaymentDate = calculateNextPaymentDate(source)
     
     return {
       id: source.id,
-      name: source.name,
+      name: source.source_name,
       amount: monthlyAmount,
-      sourceType: source.source_type,
-      frequency: source.frequency,
+      sourceType: source.category?.name || 'Income',
+      frequency: source.recurrence,
       nextPaymentDate
     }
   })
 
   // Calculate projected monthly expenses
   const projectedExpensesBreakdown = (recurringExpenses || []).map(expense => {
-    const frequency = expense.recurring_pattern?.frequency || 'monthly'
+    const frequency = expense.recurrence || 'monthly'
     const monthlyAmount = normalizeToMonthlyAmount(expense.amount, frequency)
-    const nextDueDate = expense.recurring_pattern?.next_expected_date || null
+    
+    // Calculate next due date based on recurrence pattern
+    const lastDate = new Date(expense.expense_date)
+    let nextDueDate = null
+    
+    if (frequency !== 'none') {
+      const nextDate = new Date(lastDate)
+      
+      if (frequency === 'weekly') {
+        nextDate.setDate(lastDate.getDate() + 7)
+      } else if (frequency === 'bi_weekly') {
+        nextDate.setDate(lastDate.getDate() + 14)
+      } else if (frequency === 'monthly') {
+        nextDate.setMonth(lastDate.getMonth() + 1)
+      } else if (frequency === 'quarterly') {
+        nextDate.setMonth(lastDate.getMonth() + 3)
+      } else if (frequency === 'semi_annual') {
+        nextDate.setMonth(lastDate.getMonth() + 6)
+      } else if (frequency === 'annual') {
+        nextDate.setFullYear(lastDate.getFullYear() + 1)
+      }
+      
+      nextDueDate = nextDate.toISOString()
+    }
+    
+    // Get category name from the first category if available
+    const categoryName = expense.categories && expense.categories.length > 0 
+      ? expense.categories[0].name 
+      : 'Uncategorized'
     
     return {
       id: expense.id,
-      title: expense.description || 'Recurring Expense',
+      title: expense.merchant || 'Recurring Expense',
       amount: monthlyAmount,
-      category: expense.category?.name || 'Uncategorized',
+      category: categoryName,
       frequency: frequency,
       nextDueDate
     }
@@ -162,41 +187,51 @@ export async function getProjectedFinances(userId: string): Promise<ProjectedFin
 }
 
 /**
- * Normalize an amount to a monthly value based on frequency
+ * Normalize an amount to a monthly value based on recurrence frequency
+ * This matches the calculation in the income.sql schema
  */
 function normalizeToMonthlyAmount(amount: number, frequency: string): number {
   switch (frequency?.toLowerCase()) {
-    case 'daily':
-      return amount * 30.42 // Average days in a month
+    case 'none':
+      return amount // One-time payment
     case 'weekly':
-      return amount * 4.35 // Average weeks in a month
-    case 'biweekly':
-      return amount * 2.17 // Average bi-weeks in a month
+      return amount * 52 / 12 // Weekly to monthly conversion
+    case 'bi_weekly':
+      return amount * 26 / 12 // Bi-weekly to monthly conversion
     case 'monthly':
-      return amount
+      return amount // Already monthly
     case 'quarterly':
-      return amount / 3
-    case 'annually':
-      return amount / 12
+      return amount / 3 // Quarterly to monthly
+    case 'semi_annual':
+      return amount / 6 // Semi-annual to monthly
+    case 'annual':
+      return amount / 12 // Annual to monthly
     default:
       return amount
   }
 }
 
 /**
- * Calculate the next payment date for an income source
+ * Calculate the next payment date for an income source based on the new income schema
  */
 function calculateNextPaymentDate(source: any): string | null {
-  if (!source.payment_day) {
+  if (!source.start_date) {
     return null
   }
 
+  const startDate = new Date(source.start_date)
   const today = new Date()
-  const nextPayment = new Date(today.getFullYear(), today.getMonth(), source.payment_day)
+  const paymentDay = startDate.getDate()
+  const nextPayment = new Date(today.getFullYear(), today.getMonth(), paymentDay)
   
   // If the payment day has passed this month, move to next month
   if (nextPayment < today) {
     nextPayment.setMonth(nextPayment.getMonth() + 1)
+  }
+  
+  // If there's an end_date and the next payment is after it, return null
+  if (source.end_date && new Date(source.end_date) < nextPayment) {
+    return null
   }
   
   return nextPayment.toISOString()

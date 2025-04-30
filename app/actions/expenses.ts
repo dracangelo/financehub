@@ -19,6 +19,10 @@ export interface LocationSearchParams {
 export async function getExpenses(locationSearch?: LocationSearchParams) {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return { data: null, error: new Error("Supabase client not initialized") }
+    }
+
     const user = await getAuthenticatedUser()
 
     if (!user) {
@@ -29,7 +33,11 @@ export async function getExpenses(locationSearch?: LocationSearchParams) {
     // Build the query
     let query = supabase
       .from("expenses")
-      .select("*")
+      .select(`
+        *,
+        categories:expense_categories(id, name, parent_id),
+        splits:split_expenses(id, shared_with_user, amount, note)
+      `)
       .eq("user_id", user.id)
     
     // Add location filter if provided
@@ -40,7 +48,7 @@ export async function getExpenses(locationSearch?: LocationSearchParams) {
       // Use PostGIS ST_DWithin to find expenses within the radius
       // Note: ST_DWithin with geography type measures in meters
       query = query.filter(
-        'location', 
+        'location_geo', 
         'st_dwithin', 
         `CAST(ST_SetSRID(ST_GeomFromText('${point}'), 4326) AS geography),${radius}`
       );
@@ -48,7 +56,7 @@ export async function getExpenses(locationSearch?: LocationSearchParams) {
     
     // Execute the query
     const { data, error } = await query
-      .order("spent_at", { ascending: false })
+      .order("expense_date", { ascending: false })
       .limit(100)
 
     if (error) {
@@ -56,9 +64,7 @@ export async function getExpenses(locationSearch?: LocationSearchParams) {
       return []
     }
 
-    // Map the expenses to include the category information from our constants
-    // instead of trying to join with a non-existent categories table
-    return data;
+    return data || [];
   } catch (error) {
     console.error("Unexpected error in getExpenses:", error)
     return []
@@ -69,6 +75,10 @@ export async function getExpenses(locationSearch?: LocationSearchParams) {
 export async function searchExpensesByLocation(params: LocationSearchParams) {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return { data: null, error: new Error("Supabase client not initialized") }
+    }
+
     const user = await getAuthenticatedUser()
 
     if (!user) {
@@ -79,7 +89,11 @@ export async function searchExpensesByLocation(params: LocationSearchParams) {
     // Build the query
     let query = supabase
       .from("expenses")
-      .select("*")
+      .select(`
+        *,
+        categories:expense_categories(id, name, parent_id),
+        splits:split_expenses(id, shared_with_user, amount, note)
+      `)
       .eq("user_id", user.id)
     
     // Add location filter if provided
@@ -89,7 +103,7 @@ export async function searchExpensesByLocation(params: LocationSearchParams) {
       
       // Use PostGIS ST_DWithin to find expenses within the radius
       query = query.filter(
-        'location', 
+        'location_geo', 
         'st_dwithin', 
         `CAST(ST_SetSRID(ST_GeomFromText('${point}'), 4326) AS geography),${radius}`
       );
@@ -97,13 +111,13 @@ export async function searchExpensesByLocation(params: LocationSearchParams) {
     
     // Add location name filter if provided
     if (params && params.locationName) {
-      // Try to match against merchant_name or notes fields that might contain location info
-      query = query.or(`merchant_name.ilike.%${params.locationName}%,notes.ilike.%${params.locationName}%,description.ilike.%${params.locationName}%`);
+      // Try to match against location_name or notes fields that might contain location info
+      query = query.or(`location_name.ilike.%${params.locationName}%,notes.ilike.%${params.locationName}%,merchant.ilike.%${params.locationName}%`);
     }
     
     // Execute the query
     const { data, error } = await query
-      .order("spent_at", { ascending: false })
+      .order("expense_date", { ascending: false })
       .limit(100)
 
     if (error) {
@@ -122,6 +136,10 @@ export async function searchExpensesByLocation(params: LocationSearchParams) {
 export async function getExpenseById(id: string) {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return { data: null, error: new Error("Supabase client not initialized") }
+    }
+
     const user = await getAuthenticatedUser()
 
     if (!user) {
@@ -130,7 +148,11 @@ export async function getExpenseById(id: string) {
 
     const { data, error } = await supabase
       .from("expenses")
-      .select("*")
+      .select(`
+        *,
+        categories:expense_categories(id, name, parent_id),
+        splits:split_expenses(id, shared_with_user, amount, note)
+      `)
       .eq("id", id)
       .eq("user_id", user.id)
       .single()
@@ -153,22 +175,26 @@ export async function getExpenseById(id: string) {
 
 // Create a new expense with advanced features
 export async function createExpense(expenseData: {
-  merchant_name?: string | null;
+  merchant: string;
   amount: number;
-  category_id: string;
-  description: string;
-  spent_at: Date;
-  location?: { latitude: number; longitude: number } | null;
-  is_recurring?: boolean;
+  currency?: string;
+  category_ids?: string[];
+  budget_item_id?: string | null;
+  expense_date: Date;
+  location_name?: string | null;
+  location_geo?: { type: string; coordinates: number[] } | null;
+  recurrence?: string;
   is_impulse?: boolean;
   notes?: string | null;
   receipt_url?: string | null;
-  warranty_expiry?: Date | null;
-  split_with_name?: string | null;
-  split_amount?: number | null;
+  warranty_expiration_date?: Date | null;
 }) {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return { data: null, error: new Error("Supabase client not initialized") }
+    }
+
     const user = await getAuthenticatedUser()
 
     if (!user) {
@@ -178,54 +204,24 @@ export async function createExpense(expenseData: {
     // Prepare the expense data for insertion
     const insertData = {
       user_id: user.id,
-      merchant_name: expenseData.merchant_name || null,
+      merchant: expenseData.merchant,
       amount: expenseData.amount,
-      category: expenseData.category_id,
-      description: expenseData.description,
-      spent_at: expenseData.spent_at.toISOString(),
-      location: expenseData.location ? 
-        `POINT(${expenseData.location.longitude} ${expenseData.location.latitude})` : 
-        null,
-      is_recurring: expenseData.is_recurring || false,
+      currency: expenseData.currency || "USD",
+      budget_item_id: expenseData.budget_item_id || null,
+      expense_date: expenseData.expense_date.toISOString(),
+      location_name: expenseData.location_name || null,
+      location_geo: expenseData.location_geo || null,
+      recurrence: expenseData.recurrence || "none",
       is_impulse: expenseData.is_impulse || false,
       notes: expenseData.notes || null,
       receipt_url: expenseData.receipt_url || null,
-      warranty_expiry: expenseData.warranty_expiry?.toISOString() || null,
-      split_with_name: expenseData.split_with_name || null,
-      split_amount: expenseData.split_amount || null,
+      warranty_expiration_date: expenseData.warranty_expiration_date?.toISOString() || null,
     }
 
-    // Create merchant if needed
-    let merchant_id = null
-    if (expenseData.merchant_name) {
-      const { data: existingMerchant } = await supabase
-        .from("merchants")
-        .select("id")
-        .eq("name", expenseData.merchant_name)
-        .single()
-
-      if (existingMerchant) {
-        merchant_id = existingMerchant.id
-      } else {
-        const { data: newMerchant } = await supabase
-          .from("merchants")
-          .insert({ name: expenseData.merchant_name })
-          .select("id")
-          .single()
-
-        if (newMerchant) {
-          merchant_id = newMerchant.id
-        }
-      }
-    }
-
-    // Create the expense
-    const { data: expense, error } = await supabase
+    // Insert the expense
+    const { data, error } = await supabase
       .from("expenses")
-      .insert({
-        ...insertData,
-        merchant_id,
-      })
+      .insert(insertData)
       .select()
       .single()
 
@@ -234,81 +230,30 @@ export async function createExpense(expenseData: {
       throw new Error("Failed to create expense")
     }
 
-    // Handle split expense if applicable
-    if (expenseData.split_with_name && expenseData.split_amount) {
-      try {
-        const { error: splitError } = await supabase.from("expense_splits").insert({
-          expense_id: expense.id,
-          shared_with_name: expenseData.split_with_name, // Use name instead of user ID
-          amount: expenseData.split_amount,
-          status: 'pending'
-        })
-        if (splitError) {
-          console.error("Error creating split expense:", splitError)
-        }
-      } catch (error) {
-        console.error("Error creating split expense:", error)
-        // We'll continue even if split creation fails
+    // Add category links if provided
+    if (expenseData.category_ids && expenseData.category_ids.length > 0 && data.id) {
+      const categoryLinks = expenseData.category_ids.map(categoryId => ({
+        expense_id: data.id,
+        category_id: categoryId
+      }))
+
+      const { error: categoryLinkError } = await supabase
+        .from("expense_category_links")
+        .insert(categoryLinks)
+
+      if (categoryLinkError) {
+        console.error("Error linking categories to expense:", categoryLinkError)
       }
     }
 
-    // Check for recurring patterns
-    if (expenseData.merchant_name && !expenseData.is_recurring) {
-      try {
-        const thirtyDaysAgo = new Date()
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-
-        const { data: previousTransactions } = await supabase
-          .from('expenses')
-          .select('spent_at')
-          .eq('merchant_id', merchant_id)
-          .eq('user_id', user.id)
-          .gte('spent_at', thirtyDaysAgo.toISOString())
-          .order('spent_at', { ascending: false })
-
-        if (previousTransactions && previousTransactions.length >= 2) {
-          // If there are 2 or more transactions in the last 30 days, suggest marking as recurring
-          await supabase
-            .from('expenses')
-            .update({ is_recurring: true })
-            .eq('id', expense.id)
-        }
-      } catch (error) {
-        console.error("Error checking recurring pattern:", error)
-        // Continue even if recurring check fails
-      }
-    }
-
-    // Update merchant intelligence data
-    if (expenseData.merchant_name) {
-      try {
-        await updateMerchantIntelligence(
-          user.id,
-          expenseData.merchant_name,
-          expenseData.amount,
-          expenseData.spent_at.toISOString(),
-          expenseData.category_id
-        )
-        // Also revalidate merchant intelligence pages
-        revalidatePath("/merchants")
-      } catch (error) {
-        console.error("Error updating merchant intelligence:", error)
-        // Continue even if merchant intelligence update fails
-      }
-    }
-
-    // Revalidate all paths that display expense data
+    // Revalidate the expenses page
     revalidatePath("/expenses")
     revalidatePath("/dashboard")
-    revalidatePath("/categories")
-    revalidatePath("/analytics")
-    revalidatePath("/receipts")
-    revalidatePath("/splits")
 
-    return expense
-  } catch (error: any) {
+    return data
+  } catch (error) {
     console.error("Error in createExpense:", error)
-    throw new Error(`Failed to create expense: ${error.message || 'Unknown error'}`)
+    throw new Error("Failed to create expense")
   }
 }
 
@@ -316,6 +261,10 @@ export async function createExpense(expenseData: {
 export async function updateExpense(id: string, expenseData: any) {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return { data: null, error: new Error("Supabase client not initialized") }
+    }
+
     const user = await getAuthenticatedUser()
 
     if (!user) {
@@ -325,21 +274,18 @@ export async function updateExpense(id: string, expenseData: any) {
     console.log("Updating expense with data:", expenseData)
 
     // Extract basic expense data directly from the input object
-    const merchant_name = expenseData.merchant_name || null
+    const merchant = expenseData.merchant || null
     const amount = typeof expenseData.amount === 'number' ? expenseData.amount : parseFloat(expenseData.amount)
-    // Store the actual category ID or name from the form
-    const category = expenseData.category_id || null  // Map category_id from form to category in database, note that this is the actual category ID or name used for the expense
-    const description = expenseData.description
-    const spent_at = expenseData.spent_at
-    const latitude = expenseData.latitude || null
-    const longitude = expenseData.longitude || null
-    const is_recurring = !!expenseData.is_recurring
-    const notes = expenseData.notes || null
+    const category_ids = expenseData.category_ids || null
+    const budget_item_id = expenseData.budget_item_id || null
+    const expense_date = expenseData.expense_date
+    const location_name = expenseData.location_name || null
+    const location_geo = expenseData.location_geo || null
+    const recurrence = expenseData.recurrence || null
     const is_impulse = !!expenseData.is_impulse
-    const warranty_expiry = expenseData.warranty_expiry || null
+    const notes = expenseData.notes || null
+    const warranty_expiration_date = expenseData.warranty_expiration_date || null
     const receipt_url = expenseData.receipt_url || null
-    const split_with_name = expenseData.split_with_name || null
-    const split_amount = expenseData.split_amount || null
 
     // First, get the existing expense to compare changes
     const { data: existingExpense, error: fetchError } = await supabase
@@ -361,98 +307,28 @@ export async function updateExpense(id: string, expenseData: any) {
     // Validate required fields - check if values exist or use existing values as fallback
     // This allows partial updates where not all fields are required
     const finalAmount = isNaN(amount) ? existingExpense.amount : amount;
-    const finalDescription = description || existingExpense.description;
-    const finalSpentAt = spent_at || existingExpense.spent_at;
+    const finalExpenseDate = expense_date || existingExpense.expense_date;
     
     if (!finalAmount) {
       throw new Error("Missing required field: amount")
     }
     
-    if (!finalDescription) {
-      throw new Error("Missing required field: description")
-    }
-    
-    if (!finalSpentAt) {
-      throw new Error("Missing required field: spent_at")
-    }
-
-    // Create or update merchant if provided
-    let merchant_id = existingExpense.merchant_id
-    if (merchant_name) {
-      const { data: merchantData, error: merchantError } = await supabase
-        .from("merchants")
-        .upsert({
-          name: merchant_name,
-          category: category
-        }, {
-          onConflict: 'name',
-          ignoreDuplicates: false
-        })
-        .select()
-        .single()
-
-      if (!merchantError && merchantData) {
-        merchant_id = merchantData.id
-        
-        // Update merchant intelligence data
-        try {
-          const { data: merchantInsights } = await supabase
-            .from("merchants")
-            .select("avg_monthly_spend, insights")
-            .eq("id", merchant_id)
-            .single()
-            
-          if (merchantInsights) {
-            // Calculate new average monthly spend
-            const oldAvg = merchantInsights.avg_monthly_spend || 0
-            const oldInsights = merchantInsights.insights || {}
-            const transactionCount = oldInsights.transaction_count || 1 // Minimum 1 to avoid divide by zero
-            const newAvg = (oldAvg * transactionCount + amount) / (transactionCount + 1)
-            
-            // Update merchant with new insights
-            await supabase
-              .from("merchants")
-              .update({
-                avg_monthly_spend: newAvg,
-                insights: {
-                  ...oldInsights,
-                  transaction_count: transactionCount + 1,
-                  last_transaction_date: new Date().toISOString(),
-                  categories: [...(oldInsights.categories || []), category].filter(Boolean)
-                }
-              })
-              .eq("id", merchant_id)
-          }
-        } catch (insightError) {
-          console.error("Error updating merchant insights:", insightError)
-          // Continue even if merchant insight update fails
-        }
-      }
-    }
-
-    // Create location point if latitude and longitude are provided
-    let location = existingExpense.location
-    if (latitude !== null && longitude !== null) {
-      // For PostGIS geography(Point, 4326) type, we need to use the correct format
-      // Supabase expects a WKT (Well-Known Text) string for geography types
-      location = `POINT(${longitude} ${latitude})`
+    if (!finalExpenseDate) {
+      throw new Error("Missing required field: expense_date")
     }
 
     // Update the expense
     const updateData: any = {
       amount,
-      category: category, // schema uses category as text field, not category_id
-      description,
-      location,
-      spent_at: new Date(spent_at).toISOString(),
-      is_recurring,
+      budget_item_id,
+      expense_date: new Date(finalExpenseDate).toISOString(),
+      location_name,
+      location_geo,
+      recurrence,
       is_impulse,
-      merchant_id,
-      merchant_name,
       notes,
-      split_with_name,
-      split_amount,
-      warranty_expiry: warranty_expiry ? new Date(warranty_expiry).toISOString() : null
+      warranty_expiration_date: warranty_expiration_date ? new Date(warranty_expiration_date).toISOString() : null,
+      receipt_url,
     }
     const { data, error } = await supabase
       .from("expenses")
@@ -467,133 +343,33 @@ export async function updateExpense(id: string, expenseData: any) {
       throw new Error("Failed to update expense")
     }
     
-    // Process receipt if provided
-    if (data.receipt_url) {
-      try {
-        // Check if there's an existing receipt
-        const { data: existingReceipt } = await supabase
-          .from('receipts')
-          .select('id, image_url')
-          .eq('expense_id', id)
-          .single()
-          
-        // Upload receipt image to storage
-        const filename = `${user.id}/${id}/${Date.now()}-receipt`
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('receipts')
-          .upload(filename, data.receipt_url)
-          
-        if (uploadError) throw uploadError
-        
-        // Get public URL for the uploaded image
-        const { data: urlData } = supabase.storage
-          .from('receipts')
-          .getPublicUrl(filename)
-          
-        if (existingReceipt) {
-          // Update existing receipt
-          const { error: receiptError } = await supabase
-            .from('receipts')
-            .update({
-              image_url: urlData?.publicUrl,
-              warranty_expiry: warranty_expiry ? new Date(warranty_expiry).toISOString() : null,
-              receipt_date: new Date(spent_at).toISOString().split('T')[0]
-            })
-            .eq('id', existingReceipt.id)
-            
-          if (receiptError) throw receiptError
-          
-          // Delete old receipt file if it exists
-          if (existingReceipt.image_url) {
-            const oldPath = existingReceipt.image_url.split('/').slice(-2).join('/')
-            await supabase.storage.from('receipts').remove([oldPath])
-          }
-        } else {
-          // Create new receipt record
-          const { error: receiptError } = await supabase
-            .from('receipts')
-            .insert({
-              expense_id: id,
-              image_url: urlData?.publicUrl,
-              warranty_expiry: warranty_expiry ? new Date(warranty_expiry).toISOString() : null,
-              receipt_date: new Date(spent_at).toISOString().split('T')[0]
-            })
-            
-          if (receiptError) throw receiptError
-        }
-      } catch (receiptError) {
-        console.error("Error processing receipt:", receiptError)
-        // Continue even if receipt processing fails
-      }
-    }
-    
-    // Process split expense if applicable
-    if (split_with_name && split_amount) {
-      try {
-        // Check if there's an existing split
-        const { data: existingSplit } = await supabase
-          .from('expense_splits')
-          .select('id')
-          .eq('expense_id', id)
-          .single()
-          
-        if (existingSplit) {
-          // Update existing split
-          const { error: splitError } = await supabase
-            .from('expense_splits')
-            .update({
-              shared_with_name: split_with_name,
-              amount: split_amount,
-              status: 'pending' // Reset status since details changed
-            })
-            .eq('id', existingSplit.id)
-            
-          if (splitError) throw splitError
-        } else {
-          // Create new split
-          const { error: splitError } = await supabase
-            .from('expense_splits')
-            .insert({
-              expense_id: id,
-              shared_with_name: split_with_name,
-              amount: split_amount,
-              status: 'pending'
-            })
-            
-          if (splitError) throw splitError
-        }
-      } catch (splitError) {
-        console.error("Error processing split expense:", splitError)
-        // Continue even if split processing fails
+    // Update category links if provided
+    if (category_ids && category_ids.length > 0) {
+      // Delete existing category links
+      await supabase
+        .from("expense_category_links")
+        .delete()
+        .eq("expense_id", id)
+
+      // Insert new category links
+      const categoryLinks = category_ids.map(categoryId => ({
+        expense_id: id,
+        category_id: categoryId
+      }))
+
+      const { error: categoryLinkError } = await supabase
+        .from("expense_category_links")
+        .insert(categoryLinks)
+
+      if (categoryLinkError) {
+        console.error("Error linking categories to expense:", categoryLinkError)
       }
     }
 
-    // Update merchant intelligence if merchant name changed or amount changed
-    if (merchant_name && (merchant_name !== existingExpense.merchant_name || amount !== existingExpense.amount)) {
-      try {
-        await updateMerchantIntelligence(
-          user.id,
-          merchant_name,
-          amount,
-          spent_at,
-          category
-        )
-        // Also revalidate merchant intelligence pages
-        revalidatePath("/merchants")
-      } catch (error) {
-        console.error("Error updating merchant intelligence:", error)
-        // Continue even if merchant intelligence update fails
-      }
-    }
-
-    // Revalidate all paths that display expense data
+    // Revalidate the expenses page
     revalidatePath("/expenses")
     revalidatePath(`/expenses/${id}`)
     revalidatePath("/dashboard")
-    revalidatePath("/categories")
-    revalidatePath("/analytics")
-    revalidatePath("/receipts")
-    revalidatePath("/splits")
 
     return data
   } catch (error) {
@@ -606,6 +382,10 @@ export async function updateExpense(id: string, expenseData: any) {
 export async function deleteExpense(id: string) {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return { data: null, error: new Error("Supabase client not initialized") }
+    }
+
     const user = await getAuthenticatedUser()
 
     if (!user) {
@@ -615,7 +395,7 @@ export async function deleteExpense(id: string) {
     // First, get the expense details to handle related data
     const { data: expense, error: fetchError } = await supabase
       .from("expenses")
-      .select("id, merchant_id, category, amount")
+      .select("id, merchant, amount")
       .eq("id", id)
       .eq("user_id", user.id)
       .single()
@@ -662,7 +442,7 @@ export async function deleteExpense(id: string) {
     // Handle split expense cleanup
     try {
       await supabase
-        .from("expense_splits")
+        .from("split_expenses")
         .delete()
         .eq("expense_id", id)
     } catch (splitError) {
@@ -704,44 +484,6 @@ export async function deleteExpense(id: string) {
       // Continue with deletion even if memo cleanup fails
     }
 
-    // Update merchant intelligence if applicable
-    if (expense.merchant_id) {
-      try {
-        const { data: merchantData } = await supabase
-          .from("merchants")
-          .select("avg_monthly_spend, insights")
-          .eq("id", expense.merchant_id)
-          .single()
-
-        if (merchantData) {
-          // Update merchant intelligence
-          const oldAvg = merchantData.avg_monthly_spend || 0
-          const oldInsights = merchantData.insights || {}
-          const transactionCount = oldInsights.transaction_count || 1 // Minimum 1 to avoid divide by zero
-          
-          // Recalculate average without this expense
-          const newAvg = transactionCount > 1 
-            ? ((oldAvg * transactionCount) - expense.amount) / (transactionCount - 1)
-            : 0
-
-          await supabase
-            .from("merchants")
-            .update({
-              avg_monthly_spend: newAvg,
-              insights: {
-                ...oldInsights,
-                transaction_count: Math.max(0, (transactionCount - 1)),
-                last_deleted_at: new Date().toISOString()
-              }
-            })
-            .eq("id", expense.merchant_id)
-        }
-      } catch (merchantError) {
-        console.error("Error updating merchant data after deletion:", merchantError)
-        // Continue with deletion even if merchant update fails
-      }
-    }
-
     // Finally, delete the expense
     const { data, error } = await supabase
       .from("expenses")
@@ -757,10 +499,6 @@ export async function deleteExpense(id: string) {
     // Revalidate all paths that display expense data
     revalidatePath("/expenses")
     revalidatePath("/dashboard")
-    revalidatePath("/categories")
-    revalidatePath("/analytics")
-    revalidatePath("/receipts")
-    revalidatePath("/splits")
 
     return { success: true, message: "Expense and all related data deleted successfully" }
   } catch (error) {
@@ -773,6 +511,10 @@ export async function deleteExpense(id: string) {
 export async function getExpensesByPeriod(period: "current" | "day" | "week" | "month" | "year" = "month") {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return { data: null, error: new Error("Supabase client not initialized") }
+    }
+
     const user = await getAuthenticatedUser()
 
     if (!user) {
@@ -806,11 +548,15 @@ export async function getExpensesByPeriod(period: "current" | "day" | "week" | "
     // Query expenses directly with date range
     const { data, error } = await supabase
       .from("expenses")
-      .select("*")
+      .select(`
+        *,
+        categories:expense_categories(id, name, parent_id),
+        splits:split_expenses(id, shared_with_user, amount, note)
+      `)
       .eq("user_id", user.id)
-      .gte("spent_at", startDate)
-      .lte("spent_at", now.toISOString())
-      .order("spent_at", { ascending: false })
+      .gte("expense_date", startDate)
+      .lte("expense_date", now.toISOString())
+      .order("expense_date", { ascending: false })
 
     if (error) {
       console.error("Error fetching expenses by period:", error)
@@ -849,26 +595,33 @@ export async function getExpensesByPeriod(period: "current" | "day" | "week" | "
 }
 
 // Get expenses by category
-export async function getExpensesByCategory(categoryId: string) {
+export async function getExpensesByCategory(categoryId: string | null) {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return { data: null, error: new Error("Supabase client not initialized") }
+    }
+
     const user = await getAuthenticatedUser()
 
     if (!user) {
       return []
     }
 
+    if (!categoryId) {
+      return []
+    }
+
     const { data, error } = await supabase
-      .from("transactions")
+      .from("expenses")
       .select(`
         *,
-        account:accounts(id, name, type, institution),
-        category:categories(id, name, color, icon, is_income)
+        categories:expense_categories(id, name, parent_id),
+        splits:split_expenses(id, shared_with_user, amount, note)
       `)
       .eq("user_id", user.id)
-      .eq("is_income", false)
       .eq("category_id", categoryId)
-      .order("date", { ascending: false })
+      .order("expense_date", { ascending: false })
 
     if (error) {
       console.error("Error fetching expenses by category:", error)
@@ -886,6 +639,10 @@ export async function getExpensesByCategory(categoryId: string) {
 export async function getExpensesByMerchant(merchant: string) {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return { data: null, error: new Error("Supabase client not initialized") }
+    }
+
     const user = await getAuthenticatedUser()
 
     if (!user) {
@@ -893,16 +650,15 @@ export async function getExpensesByMerchant(merchant: string) {
     }
 
     const { data, error } = await supabase
-      .from("transactions")
+      .from("expenses")
       .select(`
         *,
-        account:accounts(id, name, type, institution),
-        category:categories(id, name, color, icon, is_income)
+        categories:expense_categories(id, name, parent_id),
+        splits:split_expenses(id, shared_with_user, amount, note)
       `)
       .eq("user_id", user.id)
-      .eq("is_income", false)
-      .ilike("description", `%${merchant}%`)
-      .order("date", { ascending: false })
+      .ilike("merchant", `%${merchant}%`)
+      .order("expense_date", { ascending: false })
 
     if (error) {
       console.error("Error fetching expenses by merchant:", error)
@@ -920,6 +676,10 @@ export async function getExpensesByMerchant(merchant: string) {
 export async function getExpensesWithLocation() {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return { data: null, error: new Error("Supabase client not initialized") }
+    }
+
     const user = await getAuthenticatedUser()
 
     if (!user) {
@@ -927,17 +687,15 @@ export async function getExpensesWithLocation() {
     }
 
     const { data, error } = await supabase
-      .from("transactions")
+      .from("expenses")
       .select(`
         *,
-        account:accounts(id, name, type, institution),
-        category:categories(id, name, color, icon, is_income)
+        categories:expense_categories(id, name, parent_id),
+        splits:split_expenses(id, shared_with_user, amount, note)
       `)
       .eq("user_id", user.id)
-      .eq("is_income", false)
-      .not("latitude", "is", null)
-      .not("longitude", "is", null)
-      .order("date", { ascending: false })
+      .not("location_geo", "is", null)
+      .order("expense_date", { ascending: false })
 
     if (error) {
       console.error("Error fetching expenses with location:", error)
@@ -955,6 +713,10 @@ export async function getExpensesWithLocation() {
 export async function getRecurringExpenses() {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return { data: null, error: new Error("Supabase client not initialized") }
+    }
+
     const user = await getAuthenticatedUser()
 
     if (!user) {
@@ -962,24 +724,22 @@ export async function getRecurringExpenses() {
     }
 
     const { data, error } = await supabase
-      .from("transactions")
+      .from("expenses")
       .select(`
         *,
-        account:accounts(id, name, type, institution),
-        category:categories(id, name, color, icon, is_income),
-        recurring_pattern:recurring_patterns(id, frequency, confidence, next_expected_date, is_subscription)
+        categories:expense_categories(id, name, parent_id),
+        splits:split_expenses(id, shared_with_user, amount, note)
       `)
       .eq("user_id", user.id)
-      .eq("is_income", false)
-      .eq("is_recurring", true)
-      .order("date", { ascending: false })
+      .neq("recurrence", "none")
+      .order("expense_date", { ascending: false })
 
     if (error) {
       console.error("Error fetching recurring expenses:", error)
       return []
     }
 
-    return data
+    return data || []
   } catch (error) {
     console.error("Unexpected error in getRecurringExpenses:", error)
     return []
@@ -990,6 +750,10 @@ export async function getRecurringExpenses() {
 export async function getSplitExpenses() {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return { data: null, error: new Error("Supabase client not initialized") }
+    }
+
     const user = await getAuthenticatedUser()
 
     if (!user) {
@@ -1022,6 +786,10 @@ export async function getSplitExpenses() {
 export async function getTimeOfDayAnalysis() {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return { data: null, error: new Error("Supabase client not initialized") }
+    }
+
     const user = await getAuthenticatedUser()
 
     if (!user) {
@@ -1090,6 +858,10 @@ export async function getTimeOfDayAnalysis() {
 async function getRecurringPatterns() {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return { data: null, error: new Error("Supabase client not initialized") }
+    }
+
     const user = await getAuthenticatedUser()
 
     if (!user) {
@@ -1145,6 +917,10 @@ async function getRecurringPatterns() {
 export async function getMerchantIntelligence(merchantId: string) {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return { data: null, error: new Error("Supabase client not initialized") }
+    }
+
     const user = await getAuthenticatedUser()
 
     if (!user) {
@@ -1222,6 +998,10 @@ export async function getMerchantIntelligence(merchantId: string) {
 async function getExpensesWithLocationForMap() {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return []
+    }
+    
     const user = await getAuthenticatedUser()
 
     if (!user) {
@@ -1271,6 +1051,9 @@ async function analyzeRecurringPattern(
 ) {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return
+    }
     
     // Calculate confidence based on consistency of intervals
     const stdDev = calculateStandardDeviation(intervals)
@@ -1340,6 +1123,9 @@ async function analyzeTimeOfDay(
 ) {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return
+    }
 
     // Determine if this is an impulse purchase based on time of day and day of week
     // This is a simple heuristic - evening and weekend purchases are more likely to be impulse

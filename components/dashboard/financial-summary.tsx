@@ -85,58 +85,79 @@ export function FinancialSummary({
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#A569BD', '#5DADE2', '#58D68D']
   
   return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle>Financial Summary</CardTitle>
-        <CardDescription>Overview of your financial health and spending patterns</CardDescription>
+    <Card className="w-full overflow-hidden border shadow-md hover:shadow-lg transition-shadow duration-300">
+      <CardHeader className="bg-gradient-to-r from-blue-50 to-transparent dark:from-blue-950/30 dark:to-transparent border-b">
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center">
+              <BarChart className="h-5 w-5 text-blue-500 mr-2" />
+              Financial Summary
+            </CardTitle>
+            <CardDescription>Overview of your financial health and spending patterns</CardDescription>
+          </div>
+          <div className="bg-blue-100 dark:bg-blue-900/30 p-2 rounded-full">
+            <BarChart className="h-5 w-5 text-blue-500" />
+          </div>
+        </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-5">
         <div className="grid gap-6 md:grid-cols-2">
           {/* Key Financial Metrics */}
-          <div className="space-y-4">
-            <h3 className="text-sm font-medium">Key Metrics</h3>
+          <div className="space-y-5">
+            <h3 className="text-sm font-medium flex items-center">
+              <LineChart className="h-4 w-4 mr-1.5 text-muted-foreground" />
+              Key Metrics
+            </h3>
             <div className="grid gap-3 grid-cols-2">
-              <div className="p-3 bg-muted rounded-lg">
-                <div className="text-sm text-muted-foreground">Income</div>
+              <div className="p-4 bg-gradient-to-br from-green-50 to-green-50/50 dark:from-green-950/30 dark:to-green-950/10 rounded-lg border border-green-100 dark:border-green-900/30 shadow-sm">
+                <div className="text-sm text-muted-foreground mb-1">Income</div>
                 <div className="text-xl font-bold text-green-600">{formatCurrency(totalIncome)}</div>
               </div>
-              <div className="p-3 bg-muted rounded-lg">
-                <div className="text-sm text-muted-foreground">Expenses</div>
+              <div className="p-4 bg-gradient-to-br from-red-50 to-red-50/50 dark:from-red-950/30 dark:to-red-950/10 rounded-lg border border-red-100 dark:border-red-900/30 shadow-sm">
+                <div className="text-sm text-muted-foreground mb-1">Expenses</div>
                 <div className="text-xl font-bold text-red-600">{formatCurrency(totalExpenses)}</div>
               </div>
-              <div className="p-3 bg-muted rounded-lg">
-                <div className="text-sm text-muted-foreground">Net Income</div>
+              <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-50/50 dark:from-blue-950/30 dark:to-blue-950/10 rounded-lg border border-blue-100 dark:border-blue-900/30 shadow-sm">
+                <div className="text-sm text-muted-foreground mb-1">Net Income</div>
                 <div className={`text-xl font-bold ${netIncome >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                   {formatCurrency(netIncome)}
                 </div>
               </div>
-              <div className="p-3 bg-muted rounded-lg">
-                <div className="text-sm text-muted-foreground">Savings Rate</div>
-                <div className={`text-xl font-bold ${savingsRate >= 15 ? 'text-green-600' : savingsRate >= 5 ? 'text-yellow-600' : 'text-red-600'}`}>
+              <div className="p-4 bg-gradient-to-br from-purple-50 to-purple-50/50 dark:from-purple-950/30 dark:to-purple-950/10 rounded-lg border border-purple-100 dark:border-purple-900/30 shadow-sm">
+                <div className="text-sm text-muted-foreground mb-1">Savings Rate</div>
+                <div className={`text-xl font-bold ${savingsRate >= 15 ? 'text-green-600' : savingsRate >= 5 ? 'text-amber-600' : 'text-red-600'}`}>
                   {savingsRate.toFixed(1)}%
                 </div>
               </div>
             </div>
             
             {/* Monthly Trend Chart */}
-            <div>
-              <h3 className="text-sm font-medium mb-3">Monthly Trend</h3>
+            <div className="border rounded-lg p-4 shadow-sm bg-card">
+              <h3 className="text-sm font-medium mb-3 flex items-center">
+                <LineChart className="h-4 w-4 mr-1.5 text-blue-500" />
+                Monthly Trend
+              </h3>
               <div className="h-[200px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart
                     data={monthlyData || []}
                     margin={{ top: 5, right: 5, left: 5, bottom: 5 }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="month" />
-                    <YAxis tickFormatter={(value) => `$${value / 1000}k`} />
-                    <Tooltip formatter={(value) => formatCurrency(value as number)} />
-                    <Legend />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="month" stroke="#6b7280" />
+                    <YAxis tickFormatter={(value) => `$${value / 1000}k`} stroke="#6b7280" />
+                    <Tooltip 
+                      formatter={(value) => formatCurrency(value as number)}
+                      contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)' }}
+                    />
+                    <Legend iconType="circle" />
                     <Line
                       type="monotone"
                       dataKey="income"
                       name="Income"
                       stroke="#22c55e"
+                      strokeWidth={2}
+                      dot={{ r: 4, strokeWidth: 2 }}
                       activeDot={{ r: 8 }}
                     />
                     <Line
@@ -144,6 +165,8 @@ export function FinancialSummary({
                       dataKey="expenses"
                       name="Expenses"
                       stroke="#ef4444"
+                      strokeWidth={2}
+                      dot={{ r: 4, strokeWidth: 2 }}
                       activeDot={{ r: 8 }}
                     />
                   </LineChart>
@@ -153,10 +176,13 @@ export function FinancialSummary({
           </div>
           
           {/* Account and Category Breakdown */}
-          <div className="space-y-4">
+          <div className="space-y-5">
             {/* Account Type Breakdown */}
-            <div>
-              <h3 className="text-sm font-medium mb-3">Account Distribution</h3>
+            <div className="border rounded-lg p-4 shadow-sm bg-card">
+              <h3 className="text-sm font-medium mb-3 flex items-center">
+                <PieChart className="h-4 w-4 mr-1.5 text-purple-500" />
+                Account Distribution
+              </h3>
               <div className="h-[200px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
@@ -175,15 +201,21 @@ export function FinancialSummary({
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(value) => formatCurrency(value as number)} />
+                    <Tooltip 
+                      formatter={(value) => formatCurrency(value as number)}
+                      contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)' }}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
             </div>
             
             {/* Top Spending Categories */}
-            <div>
-              <h3 className="text-sm font-medium mb-3">Top Spending Categories</h3>
+            <div className="border rounded-lg p-4 shadow-sm bg-card">
+              <h3 className="text-sm font-medium mb-3 flex items-center">
+                <BarChart className="h-4 w-4 mr-1.5 text-amber-500" />
+                Top Spending Categories
+              </h3>
               <div className="h-[200px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
@@ -191,11 +223,14 @@ export function FinancialSummary({
                     layout="vertical"
                     margin={{ top: 5, right: 5, left: 50, bottom: 5 }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis type="number" tickFormatter={(value) => `$${value}`} />
-                    <YAxis type="category" dataKey="name" />
-                    <Tooltip formatter={(value) => formatCurrency(value as number)} />
-                    <Bar dataKey="amount" name="Amount">
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis type="number" tickFormatter={(value) => `$${value}`} stroke="#6b7280" />
+                    <YAxis type="category" dataKey="name" stroke="#6b7280" width={100} />
+                    <Tooltip 
+                      formatter={(value) => formatCurrency(value as number)}
+                      contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)' }}
+                    />
+                    <Bar dataKey="amount" name="Amount" radius={[0, 4, 4, 0]}>
                       {topCategories.map((entry, index) => (
                         <Cell 
                           key={`cell-${index}`} 

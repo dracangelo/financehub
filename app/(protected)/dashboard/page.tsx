@@ -23,6 +23,8 @@ import { FinancialInsights } from "@/components/dashboard/financial-insights"
 import { FinancialSummary } from "@/components/dashboard/financial-summary"
 import { InvestmentAnalyticsWidget } from "@/components/dashboard/investment-analytics-widget"
 import { ProjectedFinancesWidget } from "@/components/dashboard/projected-finances"
+import { MobileTabButtons } from "@/components/dashboard/mobile-tab-buttons"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 // We'll use real data from the database instead of sample data
 
@@ -127,8 +129,9 @@ export default async function DashboardPage() {
       : null; // If no history data, pass null to use the component's sample data
 
     return (
-      <div className="space-y-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <div className="container mx-auto px-4 py-6 space-y-8 max-w-7xl">
+        {/* Dashboard Header */}
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between bg-card rounded-lg p-6 shadow-sm border">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
             <p className="text-muted-foreground">Your financial overview and insights</p>
@@ -144,57 +147,85 @@ export default async function DashboardPage() {
           />
         </div>
 
-        {/* Financial Insights and Calendar */}
-        <div className="grid gap-6 md:grid-cols-2">
-          <FinancialInsights 
-            cashflowSummary={cashflowForecast}
-            transactionStats={transactionStats}
-          />
-          <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 mt-4">
-            {/* First row of widgets */}
-            <FinancialSummary 
-              totalIncome={totalIncome}
-              totalExpenses={totalExpenses}
-              netIncome={totalIncome - totalExpenses}
-              categorySpending={formattedCategorySpending}
-            />
+        {/* Main Dashboard Content */}
+        <Tabs defaultValue="overview" className="w-full">
+          <TabsList className="grid w-full grid-cols-3 lg:grid-cols-5 mb-6">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="insights">Insights</TabsTrigger>
+            <TabsTrigger value="planning">Planning</TabsTrigger>
+            <TabsTrigger value="investments" className="hidden lg:block">Investments</TabsTrigger>
+            <TabsTrigger value="assistant" className="hidden lg:block">Assistant</TabsTrigger>
+          </TabsList>
+          
+          {/* Overview Tab */}
+          <TabsContent value="overview" className="space-y-6">
+            {/* Top Row - Financial Insights and Calendar */}
+            <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+              <FinancialInsights 
+                cashflowSummary={cashflowForecast}
+                transactionStats={transactionStats}
+              />
+              <FinancialCalendar initialData={financialCalendarData} />
+            </div>
             
-            <FinancialHealthScore 
-              score={0}
-              factors={[]}
+            {/* Middle Row - Financial Summary and Health Score */}
+            <div className="grid gap-6 grid-cols-1 md:grid-cols-2">
+              <FinancialSummary 
+                totalIncome={totalIncome}
+                totalExpenses={totalExpenses}
+                netIncome={totalIncome - totalExpenses}
+                categorySpending={formattedCategorySpending}
+              />
+              <FinancialHealthScore 
+                score={0}
+                factors={[]}
+              />
+            </div>
+            
+            {/* Income vs Expense Chart */}
+            <IncomeExpenseChart 
+              data={incomeExpenseData} 
+              totalIncome={totalIncome} 
+              totalExpenses={totalExpenses} 
             />
-
-            <FinancialInsights 
-              insights={[]}
-            />
-          </div>
-          <FinancialCalendar initialData={financialCalendarData} />
-        </div>
-
-        {/* Projected Finances Widget */}
-        <ProjectedFinancesWidget projectedFinances={projectedFinances} />
-
-        {/* Additional Visualizations */}
-        <div className="grid gap-6 md:grid-cols-2">
-          <SankeyDiagram />
-          <NetWorthTimeline data={netWorthTimelineData} />
-        </div>
-
-        {/* Income vs Expense Chart */}
-        <IncomeExpenseChart 
-          data={incomeExpenseData} 
-          totalIncome={totalIncome} 
-          totalExpenses={totalExpenses} 
+          </TabsContent>
+          
+          {/* Insights Tab */}
+          <TabsContent value="insights" className="space-y-6">
+            {/* Visualizations */}
+            <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+              <SankeyDiagram />
+              <NetWorthTimeline data={netWorthTimelineData} />
+            </div>
+            
+            {/* Cash Flow Forecast */}
+            <CashFlowForecast data={cashflowForecast.monthlyTrend} />
+          </TabsContent>
+          
+          {/* Planning Tab */}
+          <TabsContent value="planning" className="space-y-6">
+            {/* Projected Finances Widget */}
+            <ProjectedFinancesWidget projectedFinances={projectedFinances} />
+          </TabsContent>
+          
+          {/* Investments Tab */}
+          <TabsContent value="investments" className="space-y-6">
+            {/* Investment Portfolio Analytics */}
+            <InvestmentAnalyticsWidget />
+          </TabsContent>
+          
+          {/* Assistant Tab */}
+          <TabsContent value="assistant" className="space-y-6">
+            {/* Financial Assistant */}
+            <FinancialAssistant />
+          </TabsContent>
+        </Tabs>
+        
+        {/* Mobile Tab Buttons (visible only on small screens) */}
+        <MobileTabButtons 
+          tabIds={['investments', 'assistant']} 
+          tabLabels={['Investments', 'Assistant']} 
         />
-
-        {/* Investment Portfolio Analytics */}
-        <InvestmentAnalyticsWidget />
-
-        {/* Cash Flow Forecast */}
-        <CashFlowForecast data={cashflowForecast.monthlyTrend} />
-
-        {/* Financial Assistant */}
-        <FinancialAssistant />
       </div>
     )
   } catch (error) {

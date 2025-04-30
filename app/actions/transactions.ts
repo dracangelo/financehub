@@ -4,7 +4,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 import { getAuthenticatedUser } from "@/lib/auth"
 import { getExpenses } from "./expenses"
-import { getIncomeSources } from "./income-sources"
+import { getIncomes } from "./income"
 
 export async function getTransactions() {
   try {
@@ -31,7 +31,7 @@ export async function getTransactions() {
       .from("transactions")
       .select(`
         *,
-        account:accounts(id, name, type, institution)
+        account:accounts(id, name, account_type, institution)
       `)
       .eq("user_id", user.id)
       .order("transaction_date", { ascending: false })
@@ -42,12 +42,22 @@ export async function getTransactions() {
     }
 
     // Transform data to match the expected format in the application
-    const transformedData = data?.map(transaction => ({
-      ...transaction,
-      date: transaction.transaction_date,
-      description: transaction.note || '',
-      is_income: transaction.type === 'income',
-    })) || []
+    const transformedData = data?.map(transaction => {
+      // Transform account data if it exists
+      const accountData = transaction.account ? {
+        ...transaction.account,
+        // Map account_type to type for UI compatibility
+        type: transaction.account.account_type
+      } : null;
+      
+      return {
+        ...transaction,
+        date: transaction.transaction_date,
+        description: transaction.note || '',
+        is_income: transaction.type === 'income',
+        account: accountData
+      };
+    }) || []
 
     console.log(`Successfully fetched ${transformedData.length} transactions`)
     return transformedData
@@ -75,7 +85,7 @@ export async function getTransactionById(id: string) {
     .from("transactions")
     .select(`
       *,
-      account:accounts(id, name, type, institution)
+      account:accounts(id, name, account_type, institution)
     `)
     .eq("id", id)
     .eq("user_id", user.id)
@@ -88,11 +98,19 @@ export async function getTransactionById(id: string) {
 
   // Transform data to match the expected format in the application
   if (data) {
+    // Transform account data if it exists
+    const accountData = data.account ? {
+      ...data.account,
+      // Map account_type to type for UI compatibility
+      type: data.account.account_type
+    } : null;
+    
     return {
       ...data,
       date: data.transaction_date,
       description: data.note || '',
-      is_income: data.type === 'income'
+      is_income: data.type === 'income',
+      account: accountData
     }
   }
 
@@ -154,7 +172,7 @@ export async function createTransaction(formData: FormData) {
     })
     .select(`
       *,
-      account:accounts(id, name, type, institution)
+      account:accounts(id, name, account_type, institution)
     `)
 
   if (error) {
@@ -181,7 +199,13 @@ export async function createTransaction(formData: FormData) {
     ...data[0],
     date: data[0].transaction_date,
     description: data[0].note || '',
-    is_income: data[0].type === 'income'
+    is_income: data[0].type === 'income',
+    // Transform account data if it exists
+    account: data[0].account ? {
+      ...data[0].account,
+      // Map account_type to type for UI compatibility
+      type: data[0].account.account_type
+    } : null
   } : null
 
   return transformedData
@@ -268,7 +292,7 @@ export async function updateTransaction(id: string, formData: FormData) {
     .eq("user_id", user.id)
     .select(`
       *,
-      account:accounts(id, name, type, institution)
+      account:accounts(id, name, account_type, institution)
     `)
 
   if (error) {
@@ -288,10 +312,10 @@ export async function updateTransaction(id: string, formData: FormData) {
       console.error("Error updating old account balance:", oldAccountError)
     }
 
-    // Apply the effect to the new account
+    // Add the new transaction to the new account
     const { error: newAccountError } = await supabase.rpc("update_account_balance", {
       p_account_id: accountId,
-      p_amount: newImpact,
+      p_amount: newAmount,
     })
 
     if (newAccountError) {
@@ -381,7 +405,7 @@ export async function getRecentTransactions(limit = 5) {
     .from("transactions")
     .select(`
       *,
-      account:accounts(id, name, type, institution)
+      account:accounts(id, name, account_type, institution)
     `)
     .eq("user_id", user.id)
     .order("transaction_date", { ascending: false })
@@ -393,12 +417,22 @@ export async function getRecentTransactions(limit = 5) {
   }
 
   // Transform data to match the expected format in the application
-  const transformedData = data?.map(transaction => ({
-    ...transaction,
-    date: transaction.transaction_date,
-    description: transaction.note || '',
-    is_income: transaction.type === 'income',
-  })) || []
+  const transformedData = data?.map(transaction => {
+    // Transform account data if it exists
+    const accountData = transaction.account ? {
+      ...transaction.account,
+      // Map account_type to type for UI compatibility
+      type: transaction.account.account_type
+    } : null;
+    
+    return {
+      ...transaction,
+      date: transaction.transaction_date,
+      description: transaction.note || '',
+      is_income: transaction.type === 'income',
+      account: accountData
+    };
+  }) || []
 
   return transformedData
 }
@@ -519,9 +553,9 @@ export async function getTransactionStats(period: "week" | "month" | "year" = "m
     .reduce((max, t) => Math.max(max, t.amount), 0)
   
   // Group transactions by tags for category summary
-  const categorySummary = data.reduce((acc, transaction) => {
+  const categorySummary = data.reduce((acc: Record<string, {tag: string; count: number; amount: number; type: string}>, transaction) => {
     if (transaction.tags && transaction.tags.length > 0) {
-      transaction.tags.forEach(tag => {
+      transaction.tags.forEach((tag: string) => {
         if (!acc[tag]) {
           acc[tag] = {
             tag,
@@ -582,9 +616,9 @@ export async function getCombinedTransactions(): Promise<CombinedTransaction[]> 
       return []
     }
 
-    const [transactions, incomeSources, expenses] = await Promise.all([
+    const [transactions, incomes, expenses] = await Promise.all([
       getTransactions(),
-      getIncomeSources(),
+      getIncomes(),
       getExpenses(),
     ])
 
@@ -594,16 +628,16 @@ export async function getCombinedTransactions(): Promise<CombinedTransaction[]> 
       source_type: "transaction" as const,
     }))
 
-    // Format income sources
-    const formattedIncomeSources = incomeSources.map((income) => ({
+    // Format income sources from the new income schema
+    const formattedIncomeSources = incomes.map((income) => ({
       id: income.id,
-      description: income.name,
+      description: income.source_name,
       amount: income.amount,
-      date: income.date,
+      date: income.start_date,
       is_income: true,
       type: 'income',
       category: {
-        name: income.category || "Income",
+        name: income.category?.name || "Income",
         color: "#10b981",
         icon: "dollar-sign",
         is_income: true,
@@ -614,13 +648,13 @@ export async function getCombinedTransactions(): Promise<CombinedTransaction[]> 
     // Format expenses
     const formattedExpenses = expenses.map((expense) => ({
       id: expense.id,
-      description: expense.name,
+      description: expense.merchant || "Expense",
       amount: expense.amount,
-      date: expense.date,
+      date: expense.expense_date,
       is_income: false,
       type: 'expense',
       category: {
-        name: expense.category || "Expense",
+        name: expense.categories && expense.categories.length > 0 ? expense.categories[0].name : "Expense",
         color: "#ef4444",
         icon: "credit-card",
         is_income: false,

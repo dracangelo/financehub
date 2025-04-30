@@ -152,62 +152,74 @@ export function FinancialInsights({ cashflowSummary, transactionStats }: Financi
   }
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="overflow-hidden border shadow-md hover:shadow-lg transition-shadow duration-300">
+      <CardHeader className="bg-gradient-to-r from-amber-50 to-transparent dark:from-amber-950/30 dark:to-transparent border-b">
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="text-lg">Financial Insights</CardTitle>
+            <CardTitle className="text-lg flex items-center">
+              <Lightbulb className="h-5 w-5 text-amber-500 mr-2" />
+              Financial Insights
+            </CardTitle>
             <CardDescription>Personalized recommendations based on your financial data</CardDescription>
           </div>
-          <Lightbulb className="h-5 w-5 text-yellow-500" />
+          <div className="bg-amber-100 dark:bg-amber-900/30 p-2 rounded-full">
+            <Lightbulb className="h-5 w-5 text-amber-500" />
+          </div>
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
+      <CardContent className="p-5">
+        <div className="space-y-5">
           {insights.map((insight) => (
             <div 
               key={insight.id} 
-              className={`rounded-lg border p-4 ${
-                insight.type === 'positive' ? 'bg-green-50 border-green-200 dark:bg-green-950 dark:border-green-800' :
-                insight.type === 'negative' ? 'bg-red-50 border-red-200 dark:bg-red-950 dark:border-red-800' :
-                insight.type === 'warning' ? 'bg-yellow-50 border-yellow-200 dark:bg-yellow-950 dark:border-yellow-800' :
-                'bg-blue-50 border-blue-200 dark:bg-blue-950 dark:border-blue-800'
+              className={`rounded-lg border p-5 shadow-sm transition-all duration-300 hover:shadow-md ${
+                insight.type === 'positive' ? 'bg-gradient-to-r from-green-50 to-green-50/50 border-green-200 dark:from-green-950/50 dark:to-green-950/20 dark:border-green-800' :
+                insight.type === 'negative' ? 'bg-gradient-to-r from-red-50 to-red-50/50 border-red-200 dark:from-red-950/50 dark:to-red-950/20 dark:border-red-800' :
+                insight.type === 'warning' ? 'bg-gradient-to-r from-amber-50 to-amber-50/50 border-amber-200 dark:from-amber-950/50 dark:to-amber-950/20 dark:border-amber-800' :
+                'bg-gradient-to-r from-blue-50 to-blue-50/50 border-blue-200 dark:from-blue-950/50 dark:to-blue-950/20 dark:border-blue-800'
               }`}
             >
-              <div className="flex items-start justify-between">
-                <div className="flex items-start space-x-3">
-                  {insight.type === 'positive' && <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5" />}
-                  {insight.type === 'negative' && <AlertCircle className="h-5 w-5 text-red-600 mt-0.5" />}
-                  {insight.type === 'warning' && <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />}
-                  {insight.type === 'neutral' && <LineChart className="h-5 w-5 text-blue-600 mt-0.5" />}
+              <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                <div className="flex items-start space-x-4">
+                  <div className={`p-2.5 rounded-full flex-shrink-0 ${
+                    insight.type === 'positive' ? 'bg-green-100 dark:bg-green-900/30' :
+                    insight.type === 'negative' ? 'bg-red-100 dark:bg-red-900/30' :
+                    insight.type === 'warning' ? 'bg-amber-100 dark:bg-amber-900/30' :
+                    'bg-blue-100 dark:bg-blue-900/30'
+                  }`}>
+                    {insight.type === 'positive' && <CheckCircle2 className="h-5 w-5 text-green-600" />}
+                    {insight.type === 'negative' && <AlertCircle className="h-5 w-5 text-red-600" />}
+                    {insight.type === 'warning' && <AlertCircle className="h-5 w-5 text-amber-600" />}
+                    {insight.type === 'neutral' && <LineChart className="h-5 w-5 text-blue-600" />}
+                  </div>
                   
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <h4 className="font-medium">{insight.title}</h4>
+                  <div className="flex-1">
+                    <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                      <h4 className="font-medium text-base">{insight.title}</h4>
                       <Badge variant={
                         insight.type === 'positive' ? 'success' :
                         insight.type === 'negative' ? 'destructive' :
-                        insight.type === 'warning' ? 'warning' :
+                        insight.type === 'warning' ? 'secondary' :
                         'secondary'
-                      }>
+                      } className="ml-0">
                         {insight.type === 'positive' ? 'Good' :
                          insight.type === 'negative' ? 'Action Needed' :
                          insight.type === 'warning' ? 'Warning' :
                          'Info'}
                       </Badge>
                     </div>
-                    <p className="text-sm text-muted-foreground mt-1">{insight.description}</p>
+                    <p className="text-sm text-muted-foreground">{insight.description}</p>
                   </div>
                 </div>
                 
                 {insight.metric && (
-                  <div className="text-right">
-                    <div className="text-sm text-muted-foreground">{insight.metric.label}</div>
-                    <div className="text-lg font-semibold">
+                  <div className="text-right bg-muted/30 p-3 rounded-lg flex-shrink-0 min-w-[120px]">
+                    <div className="text-sm text-muted-foreground font-medium">{insight.metric.label}</div>
+                    <div className="text-lg font-semibold mt-1">
                       {insight.metric.value}
                     </div>
                     {insight.metric.trend && (
-                      <div className="flex items-center justify-end text-xs">
+                      <div className="flex items-center justify-end text-xs mt-1 bg-background/50 rounded-full px-2 py-1">
                         {insight.metric.trend === 'up' && <TrendingUp className="h-3 w-3 text-green-600 mr-1" />}
                         {insight.metric.trend === 'down' && <TrendingDown className="h-3 w-3 text-red-600 mr-1" />}
                         {insight.metric.trendValue && (
@@ -228,10 +240,10 @@ export function FinancialInsights({ cashflowSummary, transactionStats }: Financi
               </div>
               
               {insight.actionText && insight.actionHref && (
-                <div className="mt-3">
-                  <Button variant="link" className="h-auto p-0 text-sm" asChild>
-                    <a href={insight.actionHref} className="flex items-center">
-                      {insight.actionText} <ArrowRight className="h-3 w-3 ml-1" />
+                <div className="mt-4 pt-3 border-t border-dashed">
+                  <Button variant="outline" size="sm" className="w-full sm:w-auto" asChild>
+                    <a href={insight.actionHref} className="flex items-center justify-center">
+                      {insight.actionText} <ArrowRight className="h-3 w-3 ml-1.5" />
                     </a>
                   </Button>
                 </div>

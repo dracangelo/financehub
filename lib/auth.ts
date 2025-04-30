@@ -17,6 +17,10 @@ export const getAuthenticatedUser = cache(async () => {
     const { data, error } = await supabase.auth.getUser()
     
     if (error) {
+      // Don't throw an error for auth session missing - this is expected for unauthenticated users
+      if (error.message.includes("Auth session missing")) {
+        return null
+      }
       console.error("Authentication error:", error.message)
       return null
     }

@@ -8,8 +8,11 @@ export default async function AuthLayout({
   children: React.ReactNode
 }) {
   try {
-    const user = await getAuthenticatedUser()
+    // Try to get the authenticated user, but don't throw an error if not found
+    // This is an auth page, so it's expected that users might not be logged in
+    const user = await getAuthenticatedUser().catch(() => null)
 
+    // If user is authenticated, redirect to dashboard
     if (user) {
       redirect("/dashboard")
     }

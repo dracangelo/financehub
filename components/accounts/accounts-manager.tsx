@@ -213,13 +213,13 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
   const resetFormData = () => {
     setFormData({
       name: "",
-      type: "checking",
+      account_type: "checking",
       balance: "0.00",
       currency: "USD",
       institution: "",
       account_number: "",
       is_active: true,
-      color: "#3b82f6",
+      is_primary: false,
       notes: "",
     });
     setValidationErrors({});
@@ -687,8 +687,7 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-2">
                         <div
-                          className="flex items-center justify-center w-8 h-8 rounded-full"
-                          style={{ backgroundColor: account.color || "#3b82f6" }}
+                          className="flex items-center justify-center w-8 h-8 rounded-full bg-primary"
                         >
                           {getAccountIcon(account.account_type)}
                         </div>
@@ -838,20 +837,7 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
                 )}
               </div>
 
-              <div className="grid gap-2">
-                <Label htmlFor="color">Color</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    id="color"
-                    name="color"
-                    type="color"
-                    className="w-12 h-8 p-1"
-                    value={formData.color}
-                    onChange={handleInputChange}
-                  />
-                  <span className="text-sm text-muted-foreground">Choose a color for this account</span>
-                </div>
-              </div>
+
 
               <div className="grid gap-2">
                 <Label htmlFor="notes">Notes</Label>
@@ -1019,20 +1005,7 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
                 )}
               </div>
 
-              <div className="grid gap-2">
-                <Label htmlFor="edit-color">Color</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    id="edit-color"
-                    name="color"
-                    type="color"
-                    className="w-12 h-8 p-1"
-                    value={formData.color}
-                    onChange={handleInputChange}
-                  />
-                  <span className="text-sm text-muted-foreground">Choose a color for this account</span>
-                </div>
-              </div>
+
 
               <div className="grid gap-2">
                 <Label htmlFor="edit-notes">Notes</Label>
