@@ -8,12 +8,12 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { 
-  Notification, 
   getNotifications, 
   markNotificationAsRead, 
   markAllNotificationsAsRead, 
   deleteNotification 
 } from "@/app/actions/notifications"
+import { Notification } from "@/types/notification"
 
 export function NotificationsContent() {
   const [notifications, setNotifications] = useState<Notification[]>([])
@@ -34,7 +34,7 @@ export function NotificationsContent() {
           setNotifications([])
         } else {
           setNotifications(notifications)
-          setUnreadCount(notifications.filter(n => !n.read).length)
+          setUnreadCount(notifications.filter(n => !n.is_read).length)
           setError(null)
         }
       } catch (err) {
@@ -55,7 +55,7 @@ export function NotificationsContent() {
     
     if (result.success) {
       setNotifications(prev =>
-        prev.map(n => (n.id === id ? { ...n, read: true } : n))
+        prev.map(n => (n.id === id ? { ...n, is_read: true } : n))
       )
       setUnreadCount(count => count - 1)
     } else {
@@ -68,7 +68,7 @@ export function NotificationsContent() {
     const result = await markAllNotificationsAsRead()
     
     if (result.success) {
-      setNotifications(prev => prev.map(n => ({ ...n, read: true })))
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
       setUnreadCount(0)
       toast.success("All notifications marked as read")
     } else {
@@ -83,7 +83,7 @@ export function NotificationsContent() {
     if (result.success) {
       const notification = notifications.find(n => n.id === id)
       setNotifications(prev => prev.filter(n => n.id !== id))
-      if (notification && !notification.read) {
+      if (notification && !notification.is_read) {
         setUnreadCount(count => count - 1)
       }
       toast.success("Notification deleted")
@@ -94,33 +94,22 @@ export function NotificationsContent() {
 
   // Handle notification click
   const handleNotificationClick = (notification: Notification) => {
-    if (!notification.read) {
+    if (!notification.is_read) {
       handleMarkAsRead(notification.id)
-    }
-    
-    if (notification.link) {
-      router.push(notification.link)
     }
   }
 
   // Get notification icon based on type
   const getNotificationIcon = (type: string) => {
-    if (type.includes("watchlist")) return "💹"
-    if (type.includes("budget")) return "💰"
-    if (type.includes("expense")) return "💸"
-    if (type.includes("bill")) return "📅"
-    if (type.includes("investment")) return "📈"
-    return "🔔"
+    if (type === "General Alert") return "🔔"
+    if (type === "Reminder") return "⏰"
+    if (type === "System Update") return "🔄"
+    return "📢"
   }
 
   // Get notification type label
   const getNotificationTypeLabel = (type: string) => {
-    if (type.includes("watchlist")) return "Watchlist"
-    if (type.includes("budget")) return "Budget"
-    if (type.includes("expense")) return "Expense"
-    if (type.includes("bill")) return "Bill"
-    if (type.includes("investment")) return "Investment"
-    return "General"
+    return type || "General"
   }
 
   if (loading) {
@@ -201,23 +190,23 @@ export function NotificationsContent() {
           <Card 
             key={notification.id} 
             className={`w-full hover:bg-accent/10 transition-colors ${
-              notification.read ? "opacity-70" : "border-primary/50"
+              notification.is_read ? "opacity-70" : "border-primary/50"
             }`}
           >
             <CardContent className="p-4">
               <div className="flex items-start gap-4">
                 <div className="text-2xl mt-1">
-                  {getNotificationIcon(notification.type)}
+                  {getNotificationIcon(notification.notification_type || "General Alert")}
                 </div>
                 <div className="flex-1 space-y-2">
                   <div className="flex items-start justify-between">
                     <div>
-                      <h3 className="font-medium">{notification.title}</h3>
+                      <h3 className="font-medium">{notification.notification_type || "Notification"}</h3>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>{getNotificationTypeLabel(notification.type)}</span>
+                        <span>{getNotificationTypeLabel(notification.notification_type || "")}</span>
                         <span>•</span>
                         <span>{new Date(notification.created_at).toLocaleDateString()} {new Date(notification.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                        {!notification.read && (
+                        {!notification.is_read && (
                           <>
                             <span>•</span>
                             <span className="text-primary font-medium">New</span>

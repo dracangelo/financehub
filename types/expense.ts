@@ -1,35 +1,78 @@
+export type RecurrenceFrequency = 'none' | 'weekly' | 'bi_weekly' | 'monthly' | 'quarterly' | 'semi_annual' | 'annual';
+
 export interface Expense {
   id: string;
   user_id: string;
-  merchant_id: string | null;
+  budget_item_id?: string | null;
+  merchant: string;
   amount: number;
-  category: string | null;
-  description: string;
-  location: { type: string; coordinates: number[] } | null;
-  spent_at: string;
-  is_recurring: boolean;
+  currency: string;
+  expense_date: string;
+  location_name?: string | null;
+  location_geo?: { type: string; coordinates: number[] } | null;
+  receipt_url?: string | null;
+  warranty_expiration_date?: string | null;
+  recurrence: RecurrenceFrequency;
+  is_impulse: boolean;
+  notes?: string | null;
   created_at?: string;
   updated_at?: string;
-  merchant?: {
-    id: string;
-    name: string;
-    category?: string | null;
-  } | null;
+  // Relations
+  categories?: ExpenseCategory[];
+  splits?: SplitExpense[];
 }
 
 export interface ExpenseFormData {
-  merchant_name: string | null;
+  merchant: string;
   amount: number;
-  category: string | null;
-  description: string;
-  spent_at: string;
-  latitude: number | null;
-  longitude: number | null;
-  is_recurring: boolean;
-  notes: string | null;
+  currency?: string;
+  expense_date: string;
+  location_name?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  receipt_url?: string | null;
+  warranty_expiration_date?: string | null;
+  recurrence?: RecurrenceFrequency;
+  is_impulse?: boolean;
+  notes?: string | null;
+  budget_item_id?: string | null;
+  categories?: string[];
+  split_with?: SplitExpenseInput[];
 }
 
-export const ExpenseCategories = [
+export interface ExpenseCategory {
+  id: string;
+  user_id: string;
+  name: string;
+  parent_id?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  // UI helpers
+  children?: ExpenseCategory[];
+}
+
+export interface ExpenseCategoryLink {
+  expense_id: string;
+  category_id: string;
+}
+
+export interface SplitExpense {
+  id: string;
+  expense_id: string;
+  shared_with_user: string;
+  amount: number;
+  note?: string | null;
+  created_at?: string;
+}
+
+export interface SplitExpenseInput {
+  user_id: string;
+  amount: number;
+  note?: string | null;
+}
+
+// Default categories for UI
+export const DefaultExpenseCategories = [
   "Food", 
   "Transportation", 
   "Housing", 
@@ -42,4 +85,4 @@ export const ExpenseCategories = [
   "Other"
 ] as const;
 
-export type ExpenseCategory = typeof ExpenseCategories[number];
+export type DefaultExpenseCategory = typeof DefaultExpenseCategories[number];

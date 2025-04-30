@@ -5,60 +5,43 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
 import { formatCurrency } from "@/lib/utils"
-import type { IncomeSource } from "@/types/income"
+import type { Income } from "@/app/actions/income"
 
 interface IncomeSummaryChartProps {
-  sources: IncomeSource[]
+  incomes: Income[]
   variant?: "bar" | "pie"
 }
 
-export function IncomeSummaryChart({ sources, variant = "bar" }: IncomeSummaryChartProps) {
+export function IncomeSummaryChart({ incomes, variant = "bar" }: IncomeSummaryChartProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [chartData, setChartData] = useState<any[]>([])
   const [totalMonthly, setTotalMonthly] = useState(0)
 
   useEffect(() => {
-    if (sources) {
-      processData(sources)
+    if (incomes) {
+      processData(incomes)
     }
-  }, [sources])
+  }, [incomes])
 
-  const processData = (sources: IncomeSource[]) => {
-    // Group by type and calculate monthly amounts
-    const typeMap = new Map<string, number>()
+  const processData = (incomes: Income[]) => {
+    // Group by category and use monthly_equivalent_amount
+    const categoryMap = new Map<string, number>()
     let total = 0
 
-    sources.forEach((source) => {
-      let monthlyAmount = source.amount
+    incomes.forEach((income) => {
+      // Use the monthly_equivalent_amount that's already calculated by the database
+      const monthlyAmount = income.monthly_equivalent_amount || 0
       
-      // Convert to monthly amount based on frequency
-      switch (source.frequency) {
-        case "annually":
-          monthlyAmount /= 12
-          break
-        case "quarterly":
-          monthlyAmount /= 3
-          break
-        case "bi-weekly":
-          monthlyAmount *= 2.17 // Average number of bi-weekly periods in a month
-          break
-        case "weekly":
-          monthlyAmount *= 4.33 // Average number of weeks in a month
-          break
-        case "daily":
-          monthlyAmount *= 30.42 // Average number of days in a month
-          break
-      }
-
-      const type = source.type.replace("-", " ")
-      const currentAmount = typeMap.get(type) || 0
-      typeMap.set(type, currentAmount + monthlyAmount)
+      // Use category name if available, otherwise use "Uncategorized"
+      const categoryName = income.category?.name || "Uncategorized"
+      const currentAmount = categoryMap.get(categoryName) || 0
+      categoryMap.set(categoryName, currentAmount + monthlyAmount)
       total += monthlyAmount
     })
 
     // Convert map to array for chart
-    const data = Array.from(typeMap.entries()).map(([name, value]) => ({
+    const data = Array.from(categoryMap.entries()).map(([name, value]) => ({
       name: name.charAt(0).toUpperCase() + name.slice(1),
       value: Math.round(value * 100) / 100
     }))
@@ -77,10 +60,10 @@ export function IncomeSummaryChart({ sources, variant = "bar" }: IncomeSummaryCh
     return <div className="text-center text-muted-foreground">{error}</div>
   }
 
-  if (sources.length === 0) {
+  if (incomes.length === 0) {
     return (
       <div className="flex h-[150px] items-center justify-center text-center">
-        <p className="text-muted-foreground">No income sources added yet</p>
+        <p className="text-muted-foreground">No income entries added yet</p>
       </div>
     )
   }

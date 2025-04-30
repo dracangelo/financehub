@@ -1,9 +1,12 @@
 export interface Category {
   id: string
   name: string
-  color: string
-  is_income: boolean
+  description?: string
+  parent_category_id?: string
+  is_temporary?: boolean
+  color?: string
   icon?: string
+  is_income?: boolean
 }
 
 export const EXPENSE_CATEGORIES: Category[] = [

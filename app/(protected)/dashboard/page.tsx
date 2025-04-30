@@ -2,6 +2,7 @@ import { getRecentTransactions, getMonthlyIncomeExpenseData, getTransactionStats
 import { getAccountSummary } from "@/app/actions/accounts"
 import { getCategorySpending } from "@/app/actions/categories"
 import { getCashflowForecast } from "@/lib/cashflow-utils"
+import { getProjectedFinances } from "@/lib/projection-utils"
 import { getNetWorth } from "@/app/actions/net-worth"
 import { getAuthenticatedUser } from "@/lib/auth"
 import { redirect } from 'next/navigation'
@@ -21,6 +22,7 @@ import { IncomeExpenseChart } from "@/components/charts/income-expense-chart"
 import { FinancialInsights } from "@/components/dashboard/financial-insights"
 import { FinancialSummary } from "@/components/dashboard/financial-summary"
 import { InvestmentAnalyticsWidget } from "@/components/dashboard/investment-analytics-widget"
+import { ProjectedFinancesWidget } from "@/components/dashboard/projected-finances"
 
 // We'll use real data from the database instead of sample data
 
@@ -42,6 +44,7 @@ export default async function DashboardPage() {
       incomeExpenseData, 
       transactionStats, 
       cashflowForecast,
+      projectedFinances,
       financialCalendarData,
       combinedTransactions,
       netWorthData
@@ -69,6 +72,15 @@ export default async function DashboardPage() {
         savingsRate: 0,
         monthlyTrend: [],
         monthOverMonth: { income: 0, expenses: 0 }
+      })),
+      getProjectedFinances(user?.id).catch(() => ({
+        projectedIncome: 0,
+        projectedExpenses: 0,
+        netCashflow: 0,
+        savingsRate: 0,
+        projectedIncomeBreakdown: [],
+        projectedExpensesBreakdown: [],
+        monthlyTrend: []
       })),
       getFinancialCalendarData().catch(() => []),
       getCombinedTransactions().catch(() => []),
@@ -138,16 +150,35 @@ export default async function DashboardPage() {
             cashflowSummary={cashflowForecast}
             transactionStats={transactionStats}
           />
+          <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 mt-4">
+            {/* First row of widgets */}
+            <FinancialSummary 
+              totalIncome={totalIncome}
+              totalExpenses={totalExpenses}
+              netIncome={totalIncome - totalExpenses}
+              categorySpending={formattedCategorySpending}
+            />
+            
+            <FinancialHealthScore 
+              score={0}
+              factors={[]}
+            />
+
+            <FinancialInsights 
+              insights={[]}
+            />
+          </div>
           <FinancialCalendar initialData={financialCalendarData} />
         </div>
 
-        {/* Financial Summary */}
-        <FinancialSummary 
-          accountSummary={accountSummary}
-          transactionStats={transactionStats}
-          monthlyData={incomeExpenseData}
-          categorySpending={formattedCategorySpending}
-        />
+        {/* Projected Finances Widget */}
+        <ProjectedFinancesWidget projectedFinances={projectedFinances} />
+
+        {/* Additional Visualizations */}
+        <div className="grid gap-6 md:grid-cols-2">
+          <SankeyDiagram />
+          <NetWorthTimeline data={netWorthTimelineData} />
+        </div>
 
         {/* Income vs Expense Chart */}
         <IncomeExpenseChart 
@@ -155,12 +186,6 @@ export default async function DashboardPage() {
           totalIncome={totalIncome} 
           totalExpenses={totalExpenses} 
         />
-
-        {/* Additional Visualizations */}
-        <div className="grid gap-6 md:grid-cols-2">
-          <SankeyDiagram />
-          <NetWorthTimeline data={netWorthTimelineData} />
-        </div>
 
         {/* Investment Portfolio Analytics */}
         <InvestmentAnalyticsWidget />

@@ -10,6 +10,11 @@ export async function getTransactions() {
   try {
     // Make sure to await the client creation
     const supabase = await createServerSupabaseClient()
+    
+    if (!supabase) {
+      console.error("Failed to initialize Supabase client")
+      return []
+    }
 
     // Get the current user
     const user = await getAuthenticatedUser()
@@ -21,24 +26,31 @@ export async function getTransactions() {
 
     console.log("Fetching transactions for user:", user.id)
 
-    // Fix the query to correctly join with categories and accounts tables
+    // Query based on the updated transaction.sql schema
     const { data, error } = await supabase
       .from("transactions")
       .select(`
         *,
-        account:accounts(id, name, type, institution),
-        category:categories(id, name, color, icon, is_income)
+        account:accounts(id, name, type, institution)
       `)
       .eq("user_id", user.id)
-      .order("date", { ascending: false })
+      .order("transaction_date", { ascending: false })
 
     if (error) {
       console.error("Error fetching transactions:", error.message, error.details, error.hint)
       return []
     }
 
-    console.log(`Successfully fetched ${data?.length || 0} transactions`)
-    return data
+    // Transform data to match the expected format in the application
+    const transformedData = data?.map(transaction => ({
+      ...transaction,
+      date: transaction.transaction_date,
+      description: transaction.note || '',
+      is_income: transaction.type === 'income',
+    })) || []
+
+    console.log(`Successfully fetched ${transformedData.length} transactions`)
+    return transformedData
   } catch (error) {
     console.error("Unexpected error in getTransactions:", error)
     return []
@@ -47,6 +59,11 @@ export async function getTransactions() {
 
 export async function getTransactionById(id: string) {
   const supabase = await createServerSupabaseClient()
+
+  if (!supabase) {
+    console.error("Failed to initialize Supabase client")
+    return null
+  }
 
   const user = await getAuthenticatedUser()
 
@@ -58,8 +75,7 @@ export async function getTransactionById(id: string) {
     .from("transactions")
     .select(`
       *,
-      account:accounts(id, name, type, institution),
-      category:categories(id, name, color, icon, is_income)
+      account:accounts(id, name, type, institution)
     `)
     .eq("id", id)
     .eq("user_id", user.id)
@@ -70,11 +86,25 @@ export async function getTransactionById(id: string) {
     return null
   }
 
-  return data
+  // Transform data to match the expected format in the application
+  if (data) {
+    return {
+      ...data,
+      date: data.transaction_date,
+      description: data.note || '',
+      is_income: data.type === 'income'
+    }
+  }
+
+  return null
 }
 
 export async function createTransaction(formData: FormData) {
   const supabase = await createServerSupabaseClient()
+
+  if (!supabase) {
+    throw new Error("Failed to initialize Supabase client")
+  }
 
   const user = await getAuthenticatedUser()
 
@@ -82,26 +112,19 @@ export async function createTransaction(formData: FormData) {
     throw new Error("Authentication required")
   }
 
-  // First, ensure all static categories exist in the database
-  const { ensureStaticCategories } = await import("./categories")
-  const categoriesResult = await ensureStaticCategories()
-  
-  if (!categoriesResult.success) {
-    console.error("Error ensuring categories:", categoriesResult.message)
-  } else {
-    console.log(`Categories ensured: ${categoriesResult.created} new categories created`)
-  }
-
   // Extract form data - only include fields that exist in the database
-  const description = formData.get("description") as string
+  const note = formData.get("description") as string // Using 'description' from form for 'note' field
   const amount = Number.parseFloat(formData.get("amount") as string)
   const isIncome = formData.get("is_income") === "true"
   const accountId = formData.get("account_id") as string
-  const categoryId = formData.get("category_id") as string
-  const date = (formData.get("date") as string) || new Date().toISOString().split("T")[0]
+  const tags = formData.get("tags") ? (formData.get("tags") as string).split(',') : []
+  const date = (formData.get("date") as string) || new Date().toISOString()
+
+  // Determine transaction type based on is_income
+  const type = isIncome ? 'income' : 'expense'
 
   // Validate required fields
-  if (!description || isNaN(amount) || !accountId) {
+  if (!note || isNaN(amount) || !accountId) {
     throw new Error("Description, amount, and account are required")
   }
 
@@ -116,43 +139,18 @@ export async function createTransaction(formData: FormData) {
   if (accountError || !account) {
     throw new Error("Invalid account or account does not belong to user")
   }
-  
-  // Check if we need to use a default category
-  let useCategoryId = categoryId;
-  
-  // If no category is provided
-  if (!categoryId) {
-    // Find an appropriate default category based on transaction type
-    const defaultCategoryName = isIncome ? "Other Income" : "Other";
-    
-    // Check if the default category exists
-    const { data: defaultCategory, error: categoryError } = await supabase
-      .from("categories")
-      .select("id")
-      .eq("name", defaultCategoryName)
-      .eq("is_income", isIncome)
-      .eq("user_id", user.id)
-      .single();
-      
-    if (categoryError || !defaultCategory) {
-      console.error("Error finding default category:", categoryError);
-      throw new Error("Could not find an appropriate category for this transaction");
-    }
-    
-    useCategoryId = defaultCategory.id;
-  }
 
   // Create transaction with only the fields that exist in the database
   const { data, error } = await supabase
     .from("transactions")
     .insert({
       user_id: user.id,
-      description,
-      amount,
-      is_income: isIncome,
       account_id: accountId,
-      category_id: useCategoryId,
-      date: date
+      transaction_date: date,
+      type,
+      amount,
+      note,
+      tags
     })
     .select(`
       *,
@@ -178,21 +176,29 @@ export async function createTransaction(formData: FormData) {
   // Revalidate transactions page
   revalidatePath("/transactions")
 
-  return data[0]
+  // Transform data to match the expected format in the application
+  const transformedData = data?.[0] ? {
+    ...data[0],
+    date: data[0].transaction_date,
+    description: data[0].note || '',
+    is_income: data[0].type === 'income'
+  } : null
+
+  return transformedData
 }
 
 export async function updateTransaction(id: string, formData: FormData) {
   const supabase = await createServerSupabaseClient()
+
+  if (!supabase) {
+    throw new Error("Failed to initialize Supabase client")
+  }
 
   const user = await getAuthenticatedUser()
 
   if (!user) {
     throw new Error("Authentication required")
   }
-  
-  // Ensure all static categories exist in the database
-  const { ensureStaticCategories } = await import("./categories")
-  await ensureStaticCategories()
 
   // Get original transaction to calculate balance adjustment
   const { data: originalTransaction, error: fetchError } = await supabase
@@ -206,21 +212,27 @@ export async function updateTransaction(id: string, formData: FormData) {
     throw new Error("Transaction not found or access denied")
   }
 
-  // Extract form data - only include fields that exist in the database
-  const description = formData.get("description") as string
+  // Extract form data
+  const note = formData.get("description") as string // Using 'description' from form for 'note' field
   const amount = Number.parseFloat(formData.get("amount") as string)
   const isIncome = formData.get("is_income") === "true"
   const accountId = formData.get("account_id") as string
-  const categoryId = formData.get("category_id") as string
-  const date = (formData.get("date") as string) || new Date().toISOString().split("T")[0]
+  const tags = formData.get("tags") ? (formData.get("tags") as string).split(',') : originalTransaction.tags || []
+  const date = formData.get("date") as string || originalTransaction.transaction_date
+
+  // Determine transaction type based on is_income
+  const type = isIncome ? 'income' : 'expense'
 
   // Validate required fields
-  if (!description || isNaN(amount) || !accountId) {
+  if (!note || isNaN(amount) || !accountId) {
     throw new Error("Description, amount, and account are required")
   }
 
-  // Verify account belongs to user if it's changed
-  if (accountId !== originalTransaction.account_id) {
+  // Check if account changed
+  const accountChanged = originalTransaction.account_id !== accountId
+
+  // If account changed, verify new account belongs to user
+  if (accountChanged) {
     const { data: account, error: accountError } = await supabase
       .from("accounts")
       .select("id")
@@ -232,46 +244,25 @@ export async function updateTransaction(id: string, formData: FormData) {
       throw new Error("Invalid account or account does not belong to user")
     }
   }
-  
-  // Check if we need to use a default category
-  let useCategoryId = categoryId;
-  
-  // If no category is provided
-  if (!categoryId) {
-    // Find an appropriate default category based on transaction type
-    const defaultCategoryName = isIncome ? "Other Income" : "Other";
-    
-    // Check if the default category exists
-    const { data: defaultCategory, error: categoryError } = await supabase
-      .from("categories")
-      .select("id")
-      .eq("name", defaultCategoryName)
-      .eq("is_income", isIncome)
-      .eq("user_id", user.id)
-      .single();
-      
-    if (categoryError || !defaultCategory) {
-      console.error("Error finding default category:", categoryError);
-      throw new Error("Could not find an appropriate category for this transaction");
-    }
-    
-    useCategoryId = defaultCategory.id;
-  }
 
   // Calculate balance adjustments
-  const originalImpact = originalTransaction.is_income ? originalTransaction.amount : -originalTransaction.amount
-  const newImpact = isIncome ? amount : -amount
+  const originalAmount = originalTransaction.type === 'income'
+    ? originalTransaction.amount
+    : -originalTransaction.amount
 
-  // Update transaction with only the fields that exist in the database
+  const newAmount = isIncome ? amount : -amount
+
+  // Update transaction
   const { data, error } = await supabase
     .from("transactions")
     .update({
-      description,
-      amount,
-      is_income: isIncome,
       account_id: accountId,
-      category_id: useCategoryId,
-      date: date
+      transaction_date: date,
+      type,
+      amount,
+      note,
+      tags,
+      // updated_at will be handled by the trigger function
     })
     .eq("id", id)
     .eq("user_id", user.id)
@@ -285,27 +276,12 @@ export async function updateTransaction(id: string, formData: FormData) {
     throw new Error("Failed to update transaction")
   }
 
-  // Handle account balance updates
-  if (originalTransaction.account_id === accountId) {
-    // Same account, just update the difference
-    const balanceAdjustment = newImpact - originalImpact
-
-    if (balanceAdjustment !== 0) {
-      const { error: accountError } = await supabase.rpc("update_account_balance", {
-        p_account_id: accountId,
-        p_amount: balanceAdjustment,
-      })
-
-      if (accountError) {
-        console.error("Error updating account balance:", accountError)
-      }
-    }
-  } else {
-    // Different account, update both old and new accounts
-    // Reverse the effect on the old account
+  // Update account balances if needed
+  if (accountChanged) {
+    // Reverse the original transaction from the old account
     const { error: oldAccountError } = await supabase.rpc("update_account_balance", {
       p_account_id: originalTransaction.account_id,
-      p_amount: -originalImpact,
+      p_amount: -originalAmount,
     })
 
     if (oldAccountError) {
@@ -333,13 +309,17 @@ export async function updateTransaction(id: string, formData: FormData) {
 export async function deleteTransaction(id: string) {
   const supabase = await createServerSupabaseClient()
 
+  if (!supabase) {
+    throw new Error("Failed to initialize Supabase client")
+  }
+
   const user = await getAuthenticatedUser()
 
   if (!user) {
     throw new Error("Authentication required")
   }
 
-  // Get transaction details before deletion to update account balance
+  // Get transaction details before deleting
   const { data: transaction, error: fetchError } = await supabase
     .from("transactions")
     .select("*")
@@ -351,24 +331,30 @@ export async function deleteTransaction(id: string) {
     throw new Error("Transaction not found or access denied")
   }
 
-  // Delete transaction
-  const { error } = await supabase.from("transactions").delete().eq("id", id)
+  // Delete the transaction
+  const { error } = await supabase
+    .from("transactions")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", user.id)
 
   if (error) {
     console.error("Error deleting transaction:", error)
     throw new Error("Failed to delete transaction")
   }
 
-  // Update account balance (reverse the transaction effect)
-  const balanceAdjustment = transaction.is_income ? -transaction.amount : transaction.amount
+  // Update account balance - adjust based on transaction type
+  const balanceAdjustment = transaction.type === 'income'
+    ? -transaction.amount
+    : transaction.amount
 
-  const { error: accountError } = await supabase.rpc("update_account_balance", {
+  const { error: balanceError } = await supabase.rpc("update_account_balance", {
     p_account_id: transaction.account_id,
     p_amount: balanceAdjustment,
   })
 
-  if (accountError) {
-    console.error("Error updating account balance:", accountError)
+  if (balanceError) {
+    console.error("Error updating account balance:", balanceError)
   }
 
   // Revalidate transactions page
@@ -380,6 +366,11 @@ export async function deleteTransaction(id: string) {
 export async function getRecentTransactions(limit = 5) {
   const supabase = await createServerSupabaseClient()
 
+  if (!supabase) {
+    console.error("Failed to initialize Supabase client")
+    return []
+  }
+
   const user = await getAuthenticatedUser()
 
   if (!user) {
@@ -390,11 +381,10 @@ export async function getRecentTransactions(limit = 5) {
     .from("transactions")
     .select(`
       *,
-      account:accounts(id, name, type, institution),
-      category:categories(id, name, color, icon, is_income)
+      account:accounts(id, name, type, institution)
     `)
     .eq("user_id", user.id)
-    .order("date", { ascending: false })
+    .order("transaction_date", { ascending: false })
     .limit(limit)
 
   if (error) {
@@ -402,21 +392,50 @@ export async function getRecentTransactions(limit = 5) {
     return []
   }
 
-  return data
+  // Transform data to match the expected format in the application
+  const transformedData = data?.map(transaction => ({
+    ...transaction,
+    date: transaction.transaction_date,
+    description: transaction.note || '',
+    is_income: transaction.type === 'income',
+  })) || []
+
+  return transformedData
 }
 
 export async function getTransactionStats(period: "week" | "month" | "year" = "month") {
   const supabase = await createServerSupabaseClient()
 
+  if (!supabase) {
+    console.error("Failed to initialize Supabase client")
+    return {
+      totalTransactions: 0,
+      totalIncome: 0,
+      totalExpenses: 0,
+      netIncome: 0,
+      averageTransaction: 0,
+      largestIncome: 0,
+      largestExpense: 0,
+      incomeTransactions: 0,
+      expenseTransactions: 0,
+      categorySummary: [],
+    }
+  }
+
   const user = await getAuthenticatedUser()
 
   if (!user) {
     return {
+      totalTransactions: 0,
       totalIncome: 0,
       totalExpenses: 0,
       netIncome: 0,
-      transactionCount: 0,
       averageTransaction: 0,
+      largestIncome: 0,
+      largestExpense: 0,
+      incomeTransactions: 0,
+      expenseTransactions: 0,
+      categorySummary: [],
     }
   }
 
@@ -425,56 +444,110 @@ export async function getTransactionStats(period: "week" | "month" | "year" = "m
   let startDate: Date
 
   if (period === "week") {
-    // Start from the beginning of the week (Sunday)
-    const day = now.getDay() // 0 = Sunday, 6 = Saturday
     startDate = new Date(now)
-    startDate.setDate(now.getDate() - day) // Go back to the start of the week
-    startDate.setHours(0, 0, 0, 0) // Start of the day
+    startDate.setDate(now.getDate() - 7)
   } else if (period === "month") {
-    // Start from the beginning of the month
-    startDate = new Date(now.getFullYear(), now.getMonth(), 1)
+    startDate = new Date(now)
+    startDate.setMonth(now.getMonth() - 1)
   } else {
-    // Start from the beginning of the year
-    startDate = new Date(now.getFullYear(), 0, 1)
+    startDate = new Date(now)
+    startDate.setFullYear(now.getFullYear() - 1)
   }
 
-  // Format date for SQL query
-  const startDateStr = startDate.toISOString().split("T")[0]
-
-  // Get all transactions in the period
   const { data, error } = await supabase
     .from("transactions")
-    .select("*")
+    .select(`*`)
     .eq("user_id", user.id)
-    .gte("date", startDateStr)
-    .order("date", { ascending: false })
+    .gte("transaction_date", startDate.toISOString())
+    .lte("transaction_date", now.toISOString())
 
   if (error) {
     console.error("Error fetching transaction stats:", error)
     return {
+      totalTransactions: 0,
       totalIncome: 0,
       totalExpenses: 0,
       netIncome: 0,
-      transactionCount: 0,
       averageTransaction: 0,
+      largestIncome: 0,
+      largestExpense: 0,
+      incomeTransactions: 0,
+      expenseTransactions: 0,
+      categorySummary: [],
     }
   }
 
-  // Calculate statistics
+  if (!data || data.length === 0) {
+    return {
+      totalTransactions: 0,
+      totalIncome: 0,
+      totalExpenses: 0,
+      netIncome: 0,
+      averageTransaction: 0,
+      largestIncome: 0,
+      largestExpense: 0,
+      incomeTransactions: 0,
+      expenseTransactions: 0,
+      categorySummary: [],
+    }
+  }
+
+  // Calculate statistics based on transaction type instead of is_income field
   const totalIncome = data
-    .filter((t) => t.is_income)
+    .filter((t) => t.type === 'income')
     .reduce((sum, t) => sum + t.amount, 0)
 
   const totalExpenses = data
-    .filter((t) => !t.is_income)
+    .filter((t) => t.type === 'expense')
     .reduce((sum, t) => sum + t.amount, 0)
 
+  const netIncome = totalIncome - totalExpenses
+  const totalTransactions = data.length
+  const averageTransaction = totalTransactions > 0 ? (totalIncome + totalExpenses) / totalTransactions : 0
+  
+  // Calculate additional statistics
+  const incomeTransactions = data.filter((t) => t.type === 'income').length
+  const expenseTransactions = data.filter((t) => t.type === 'expense').length
+  
+  // Find largest transactions
+  const largestIncome = data
+    .filter((t) => t.type === 'income')
+    .reduce((max, t) => Math.max(max, t.amount), 0)
+    
+  const largestExpense = data
+    .filter((t) => t.type === 'expense')
+    .reduce((max, t) => Math.max(max, t.amount), 0)
+  
+  // Group transactions by tags for category summary
+  const categorySummary = data.reduce((acc, transaction) => {
+    if (transaction.tags && transaction.tags.length > 0) {
+      transaction.tags.forEach(tag => {
+        if (!acc[tag]) {
+          acc[tag] = {
+            tag,
+            count: 0,
+            amount: 0,
+            type: transaction.type
+          }
+        }
+        acc[tag].count += 1
+        acc[tag].amount += transaction.amount
+      })
+    }
+    return acc
+  }, {})
+
   return {
+    totalTransactions,
     totalIncome,
     totalExpenses,
-    netIncome: totalIncome - totalExpenses,
-    transactionCount: data.length,
-    averageTransaction: data.length > 0 ? data.reduce((sum, t) => sum + t.amount, 0) / data.length : 0,
+    netIncome,
+    averageTransaction,
+    largestIncome,
+    largestExpense,
+    incomeTransactions,
+    expenseTransactions,
+    categorySummary: Object.values(categorySummary),
   }
 }
 
@@ -502,67 +575,69 @@ interface CombinedTransaction {
 // Get combined transactions from both income sources and expenses
 export async function getCombinedTransactions(): Promise<CombinedTransaction[]> {
   try {
-    // Get transactions from the transactions table
-    const regularTransactions = await getTransactions()
-    
-    // Get income sources
-    const incomeSources = await getIncomeSources().catch(() => [])
-    
-    // Get expenses
-    const expenses = await getExpenses().catch(() => [])
-    
-    // Map income sources to the combined transaction format
-    const incomeTransactions = incomeSources.map(income => ({
+    const supabase = await createServerSupabaseClient()
+
+    if (!supabase) {
+      console.error("Failed to initialize Supabase client")
+      return []
+    }
+
+    const [transactions, incomeSources, expenses] = await Promise.all([
+      getTransactions(),
+      getIncomeSources(),
+      getExpenses(),
+    ])
+
+    // Format transactions - transactions are already transformed in getTransactions()
+    const formattedTransactions = transactions.map((transaction) => ({
+      ...transaction,
+      source_type: "transaction" as const,
+    }))
+
+    // Format income sources
+    const formattedIncomeSources = incomeSources.map((income) => ({
       id: income.id,
       description: income.name,
       amount: income.amount,
-      date: income.created_at,
+      date: income.date,
       is_income: true,
+      type: 'income',
       category: {
-        name: income.type,
-        color: '#22c55e', // Green color for income
-        is_income: true
+        name: income.category || "Income",
+        color: "#10b981",
+        icon: "dollar-sign",
+        is_income: true,
       },
-      account: income.account_id ? { id: income.account_id } : null,
-      source_type: 'income' as const,
-      frequency: income.frequency,
-      ...income
+      source_type: "income" as const,
     }))
-    
-    // Map expenses to the combined transaction format
-    const expenseTransactions = expenses.map(expense => ({
+
+    // Format expenses
+    const formattedExpenses = expenses.map((expense) => ({
       id: expense.id,
-      description: expense.description,
+      description: expense.name,
       amount: expense.amount,
-      date: expense.spent_at,
+      date: expense.date,
       is_income: false,
-      category: expense.category,
-      category_id: expense.category_id || expense.category, // Include category_id from expense
-      account: expense.account,
-      source_type: 'expense' as const,
-      merchant_name: expense.merchant_name,
-      ...expense
+      type: 'expense',
+      category: {
+        name: expense.category || "Expense",
+        color: "#ef4444",
+        icon: "credit-card",
+        is_income: false,
+      },
+      source_type: "expense" as const,
     }))
-    
-    // Map regular transactions to ensure consistent format
-    const formattedRegularTransactions = regularTransactions.map(transaction => ({
-      ...transaction,
-      source_type: 'transaction' as const
-    }))
-    
-    // Combine all transactions
-    const allTransactions = [
-      ...formattedRegularTransactions,
-      ...incomeTransactions,
-      ...expenseTransactions
-    ]
-    
-    // Sort by date (most recent first)
-    return allTransactions.sort((a, b) => {
-      const dateA = new Date(a.date)
-      const dateB = new Date(b.date)
-      return dateB.getTime() - dateA.getTime()
+
+    // Combine and sort by date
+    const combinedTransactions = [
+      ...formattedTransactions,
+      ...formattedIncomeSources,
+      ...formattedExpenses,
+    ].sort((a, b) => {
+      return new Date(b.date).getTime() - new Date(a.date).getTime()
     })
+    
+    return combinedTransactions
   } catch (error) {
     console.error("Error fetching combined transactions:", error)
     return []
@@ -571,6 +646,12 @@ export async function getCombinedTransactions(): Promise<CombinedTransaction[]> 
 
 export async function getMonthlyIncomeExpenseData(): Promise<MonthlyIncomeExpense[]> {
   const supabase = await createServerSupabaseClient()
+  
+  if (!supabase) {
+    console.error("Failed to initialize Supabase client")
+    return []
+  }
+  
   const user = await getAuthenticatedUser()
 
   if (!user) {
@@ -578,54 +659,65 @@ export async function getMonthlyIncomeExpenseData(): Promise<MonthlyIncomeExpens
   }
 
   // Calculate date range for the past 12 months
-  const now = new Date()
-  const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0) // Last day of current month
-  const startDate = new Date(now.getFullYear() - 1, now.getMonth() + 1, 1) // First day of the same month last year
-
-  // Format dates for SQL query
-  const startDateStr = startDate.toISOString().split("T")[0]
-  const endDateStr = endDate.toISOString().split("T")[0]
+  const today = new Date()
+  const startDate = new Date(today)
+  startDate.setMonth(today.getMonth() - 11) // Go back 11 months for a total of 12 months including current
+  startDate.setDate(1) // Start from the 1st of the month
+  startDate.setHours(0, 0, 0, 0) // Start of the day
 
   // Get all transactions in the period
   const { data, error } = await supabase
     .from("transactions")
     .select("*")
     .eq("user_id", user.id)
-    .gte("date", startDateStr)
-    .lte("date", endDateStr)
-    .order("date", { ascending: true })
+    .gte("transaction_date", startDate.toISOString())
+    .lte("transaction_date", today.toISOString())
+    .order("transaction_date", { ascending: true })
 
   if (error) {
-    console.error("Error fetching monthly income/expense data:", error)
+    console.error("Error fetching monthly data:", error)
     return []
   }
 
-  // Group transactions by month and calculate totals
-  const monthlyData: Record<string, MonthlyIncomeExpense> = {}
-  
-  // Initialize all months in the past year to ensure we have data for every month
+  if (!data || data.length === 0) {
+    return []
+  }
+
+  // Create a map of months with income and expense totals
+  const monthlyData: { [key: string]: MonthlyIncomeExpense } = {}
+
+  // Initialize the past 12 months with zero values
   for (let i = 0; i < 12; i++) {
-    const monthDate = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1)
-    const monthKey = monthDate.toISOString().substring(0, 7) // YYYY-MM format
-    const monthName = monthDate.toLocaleString('default', { month: 'short' })
-    monthlyData[monthKey] = { month: monthName, income: 0, expenses: 0 }
+    const monthDate = new Date(today)
+    monthDate.setMonth(today.getMonth() - 11 + i)
+    
+    const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, "0")}`
+    const monthName = monthDate.toLocaleString("default", { month: "short" })
+    
+    monthlyData[monthKey] = {
+      month: monthName,
+      income: 0,
+      expenses: 0,
+    }
   }
 
   // Aggregate transaction data by month
-  data.forEach(transaction => {
-    const monthKey = transaction.date.substring(0, 7) // YYYY-MM format
+  data.forEach((transaction) => {
+    const date = new Date(transaction.transaction_date)
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+
     if (monthlyData[monthKey]) {
-      if (transaction.is_income) {
+      if (transaction.type === 'income') {
         monthlyData[monthKey].income += transaction.amount
-      } else {
+      } else if (transaction.type === 'expense') {
         monthlyData[monthKey].expenses += transaction.amount
       }
     }
   })
 
   // Convert to array and sort by month
-  return Object.entries(monthlyData)
-    .map(([key, value]) => ({
+  return Object.values(monthlyData)
+    .map((value) => ({
       month: value.month,
       income: value.income,
       expenses: value.expenses
@@ -651,6 +743,13 @@ export interface FinancialCalendarData {
 
 export async function getFinancialCalendarData(): Promise<FinancialCalendarData[]> {
   try {
+    const supabase = await createServerSupabaseClient()
+    
+    if (!supabase) {
+      console.error("Failed to initialize Supabase client")
+      return []
+    }
+    
     // Get combined transactions from income sources and expenses
     const combinedTransactions = await getCombinedTransactions()
     
@@ -671,19 +770,19 @@ export async function getFinancialCalendarData(): Promise<FinancialCalendarData[
         }
       }
       
-      // Add transaction to the appropriate category
-      if (transaction.is_income) {
+      // Add transaction to the appropriate category based on transaction type
+      if (transaction.type === 'income' || transaction.is_income) {
         calendarData[dateKey].income = (calendarData[dateKey].income || 0) + transaction.amount
-      } else {
+      } else if (transaction.type === 'expense' || (!transaction.is_income && transaction.type !== 'transfer')) {
         calendarData[dateKey].expenses = (calendarData[dateKey].expenses || 0) + transaction.amount
       }
       
       // Add event details
       calendarData[dateKey].events?.push({
         id: transaction.id,
-        title: transaction.description,
+        title: transaction.description || transaction.note || '',
         amount: transaction.amount,
-        type: transaction.is_income ? "income" : "expense"
+        type: (transaction.type === 'income' || transaction.is_income) ? "income" : "expense"
       })
     })
     

@@ -11,7 +11,8 @@ import { Badge } from "@/components/ui/badge"
 import { formatCurrency } from "@/lib/utils"
 import { Plus, CreditCard, Home, Car, GraduationCap, Edit, Trash2, Briefcase, Stethoscope } from "lucide-react"
 import { DebtDialog } from "@/components/debt/debt-dialog"
-import { createDebt, deleteDebt, getDebts, updateDebt, type Debt } from "@/app/actions/debts"
+import { Debt } from "@/types/debt"
+import { DebtService } from "@/lib/debt/debt-service"
 import { useToast } from "@/components/ui/use-toast"
 import { Loader2 } from "lucide-react"
 
@@ -32,7 +33,8 @@ export function DebtList() {
   const fetchDebts = async () => {
     try {
       setLoading(true)
-      const fetchedDebts = await getDebts()
+      const debtService = new DebtService()
+      const fetchedDebts = await debtService.getDebts()
       setDebts(fetchedDebts)
     } catch (error) {
       console.error("Error fetching debts:", error)
@@ -77,7 +79,8 @@ export function DebtList() {
   const handleDeleteDebt = async (id: string) => {
     try {
       setDeleting(id)
-      await deleteDebt(id)
+      const debtService = new DebtService()
+      await debtService.deleteDebt(id)
       
       // Remove the debt from the local state
       setDebts(debts.filter(debt => debt.id !== id))
@@ -100,41 +103,28 @@ export function DebtList() {
 
   const handleSaveDebt = async (debt: Debt) => {
     try {
-      const formData = new FormData()
+      const debtService = new DebtService()
       
-      // Map fields to match database schema
-      formData.append("id", debt.id)
-      formData.append("name", debt.name)
-      formData.append("type", debt.type)
-      formData.append("principal", debt.principal.toString())
-      formData.append("interest_rate", debt.interest_rate.toString())
-      formData.append("minimum_payment", debt.minimum_payment.toString())
-      
-      // Add optional fields if they exist
-      if (debt.due_date) {
-        formData.append("due_date", debt.due_date)
-      }
-      
-      if (debt.start_date) {
-        formData.append("start_date", debt.start_date)
-      }
-      
-      if (debt.term_months) {
-        formData.append("term_months", debt.term_months.toString())
-      }
-      
-      console.log("Saving debt with FormData:", Object.fromEntries(formData.entries()))
-      
-      let result
       if (selectedDebt) {
         // Update existing debt
-        result = await updateDebt(debt.id, formData)
+        await debtService.updateDebt(debt.id, {
+          name: debt.name,
+          current_balance: debt.current_balance,
+          interest_rate: debt.interest_rate,
+          minimum_payment: debt.minimum_payment,
+          loan_term: debt.loan_term
+        })
       } else {
         // Create new debt
-        result = await createDebt(formData)
+        await debtService.createDebt({
+          name: debt.name,
+          current_balance: debt.current_balance,
+          interest_rate: debt.interest_rate,
+          minimum_payment: debt.minimum_payment,
+          loan_term: debt.loan_term,
+          due_date: debt.due_date
+        })
       }
-      
-      console.log("Save result:", result)
       
       // Refresh the debts list
       fetchDebts()
@@ -205,7 +195,7 @@ export function DebtList() {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>{formatCurrency(debt.principal)}</TableCell>
+                    <TableCell>{formatCurrency(debt.current_balance)}</TableCell>
                     <TableCell>{debt.interest_rate}%</TableCell>
                     <TableCell>{formatCurrency(debt.minimum_payment)}</TableCell>
                     <TableCell className="text-right">
@@ -235,7 +225,7 @@ export function DebtList() {
           <div className="flex w-full items-center justify-between">
             <div className="text-sm text-muted-foreground">Total Debts: {debts.length}</div>
             <div className="font-medium">
-              Total Balance: {formatCurrency(debts.reduce((sum, debt) => sum + debt.principal, 0))}
+              Total Balance: {formatCurrency(debts.reduce((sum, debt) => sum + debt.current_balance, 0))}
             </div>
           </div>
         </CardFooter>

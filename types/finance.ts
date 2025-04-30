@@ -2,10 +2,13 @@ export interface Category {
   id: string
   user_id: string
   name: string
-  color: string
-  icon: string
-  is_income: boolean
-  is_system: boolean
+  description?: string
+  parent_category_id?: string
+  is_temporary?: boolean
+  color?: string
+  icon?: string
+  is_income?: boolean
+  is_system?: boolean
 
   created_at: string
   updated_at: string

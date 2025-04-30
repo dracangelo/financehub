@@ -36,8 +36,8 @@ export async function middleware(request: NextRequest) {
       }
     )
 
-    // Get the session using getSession instead of getUser for more reliable session handling
-    const { data, error } = await supabase.auth.getSession()
+    // Get the user data using the secure getUser method instead of getSession
+    const { data, error } = await supabase.auth.getUser()
     
     if (error) {
       console.error("Authentication error in middleware:", error.message)
@@ -62,17 +62,18 @@ export async function middleware(request: NextRequest) {
       return response
     }
 
-    const session = data.session
+    // Check if user is authenticated based on user data from getUser()
+    const isAuthenticated = !!data?.user
 
     // If the user is not signed in and the current path is not public,
     // redirect the user to /login
-    if (!session && !isPublicPath(request.nextUrl.pathname)) {
+    if (!isAuthenticated && !isPublicPath(request.nextUrl.pathname)) {
       return NextResponse.redirect(new URL("/login", request.url))
     }
 
     // If the user is signed in and the current path is /login or /register,
     // redirect the user to /dashboard
-    if (session && (request.nextUrl.pathname.startsWith("/login") || request.nextUrl.pathname.startsWith("/register"))) {
+    if (isAuthenticated && (request.nextUrl.pathname.startsWith("/login") || request.nextUrl.pathname.startsWith("/register"))) {
       return NextResponse.redirect(new URL("/dashboard", request.url))
     }
 

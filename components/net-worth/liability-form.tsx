@@ -29,9 +29,8 @@ import { toast } from "sonner"
 
 const liabilityFormSchema = z.object({
   id: z.string().optional(),
-  name: z.string().min(1, "Name is required"),
-  type: z.string().min(1, "Type is required"),
-  amount: z.coerce.number().min(0, "Amount must be a positive number"),
+  liability_type: z.string().min(1, "Liability type is required"),
+  amount_due: z.coerce.number().min(0, "Amount must be a positive number"),
   interest_rate: z.coerce.number().min(0, "Interest rate must be a positive number").optional(),
   due_date: z.string().optional(),
   description: z.string().optional(),
@@ -40,9 +39,8 @@ const liabilityFormSchema = z.object({
 type LiabilityFormValues = z.infer<typeof liabilityFormSchema>
 
 const defaultValues: Partial<LiabilityFormValues> = {
-  name: "",
-  type: "",
-  amount: 0,
+  liability_type: "",
+  amount_due: 0,
   interest_rate: undefined,
   due_date: "",
   description: "",
@@ -50,22 +48,19 @@ const defaultValues: Partial<LiabilityFormValues> = {
 
 const liabilityTypes = [
   { value: "mortgage", label: "Mortgage" },
-  { value: "auto_loan", label: "Auto Loan" },
   { value: "student_loan", label: "Student Loan" },
   { value: "credit_card", label: "Credit Card" },
+  { value: "auto_loan", label: "Auto Loan" },
   { value: "personal_loan", label: "Personal Loan" },
-  { value: "medical_debt", label: "Medical Debt" },
-  { value: "business_loan", label: "Business Loan" },
-  { value: "tax_debt", label: "Tax Debt" },
+  { value: "business_debt", label: "Business Debt" },
   { value: "other", label: "Other Liability" },
 ]
 
 interface LiabilityFormProps {
   liability?: {
     id: string
-    name: string
-    type: string
-    amount: number
+    liability_type: string
+    amount_due: number
     interest_rate?: number
     due_date?: string
     description?: string
@@ -93,9 +88,8 @@ export function LiabilityForm({ liability, onSuccess, onCancel }: LiabilityFormP
         formData.append("id", liability.id)
       }
       
-      formData.append("name", data.name)
-      formData.append("type", data.type)
-      formData.append("amount", data.amount.toString())
+      formData.append("type", data.liability_type)
+      formData.append("amount", data.amount_due.toString())
       
       if (data.interest_rate !== undefined) {
         formData.append("interest_rate", data.interest_rate.toString())
@@ -130,26 +124,11 @@ export function LiabilityForm({ liability, onSuccess, onCancel }: LiabilityFormP
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-        <FormField
-          control={form.control}
-          name="name"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Liability Name</FormLabel>
-              <FormControl>
-                <Input placeholder="Enter liability name" {...field} />
-              </FormControl>
-              <FormDescription>
-                Name of your liability (e.g., Home Mortgage, Car Loan, Credit Card)
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+
         
         <FormField
           control={form.control}
-          name="type"
+          name="liability_type"
           render={({ field }) => (
             <FormItem>
               <FormLabel>Liability Type</FormLabel>
@@ -180,10 +159,10 @@ export function LiabilityForm({ liability, onSuccess, onCancel }: LiabilityFormP
         
         <FormField
           control={form.control}
-          name="amount"
+          name="amount_due"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Amount</FormLabel>
+              <FormLabel>Amount Due</FormLabel>
               <FormControl>
                 <Input 
                   type="number" 

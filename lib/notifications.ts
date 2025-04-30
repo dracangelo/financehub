@@ -1,6 +1,6 @@
 "use server"
 
-import { createNotification } from "@/app/actions/notifications"
+import { createNotification, getNotificationTypes } from "@/app/actions/notifications"
 import { createClient } from "@/lib/supabase/server"
 import { cookies } from "next/headers"
 
@@ -9,16 +9,10 @@ import { cookies } from "next/headers"
  */
 export async function notify({
   type,
-  title,
-  message,
-  link,
-  data
+  message
 }: {
   type: string;
-  title: string;
   message: string;
-  link?: string;
-  data?: any;
 }) {
   const cookieStore = cookies()
   const supabase = createClient(cookieStore)
@@ -31,13 +25,21 @@ export async function notify({
       return { success: false, error: "User not authenticated" }
     }
     
+    // Get notification types
+    const { types, error: typesError } = await getNotificationTypes()
+    
+    if (typesError || types.length === 0) {
+      console.error("Error getting notification types:", typesError)
+      return { success: false, error: "Failed to get notification types" }
+    }
+    
+    // Find the notification type ID based on the type name
+    const notificationType = types.find(t => t.name === type) || types[0]
+    
     const result = await createNotification({
       userId: user.id,
-      type,
-      title,
-      message,
-      link,
-      data
+      notificationTypeId: notificationType.id,
+      message
     })
     
     return { success: !!result.notification, error: result.error }
@@ -64,11 +66,8 @@ export async function notifyWatchlistAlert({
   isAboveTarget: boolean;
 }) {
   return notify({
-    type: "watchlist_alert",
-    title: `${ticker} ${isAboveTarget ? "Above" : "Below"} Target Price`,
-    message: `${companyName} (${ticker}) is now ${isAboveTarget ? "above" : "below"} your target price of $${targetPrice.toFixed(2)} at $${currentPrice.toFixed(2)}.`,
-    link: "/watchlist",
-    data: { ticker, companyName, currentPrice, targetPrice, isAboveTarget }
+    type: "General Alert",
+    message: `${companyName} (${ticker}) is now ${isAboveTarget ? "above" : "below"} your target price of $${targetPrice.toFixed(2)} at $${currentPrice.toFixed(2)}.`
   })
 }
 
@@ -89,13 +88,10 @@ export async function notifyBudgetAlert({
   isOverBudget: boolean;
 }) {
   return notify({
-    type: isOverBudget ? "budget_over_limit" : "budget_approaching_limit",
-    title: isOverBudget ? `${category} Budget Exceeded` : `${category} Budget Approaching Limit`,
+    type: "General Alert",
     message: isOverBudget
       ? `You've spent $${spentAmount.toFixed(2)} on ${category}, which is $${(spentAmount - budgetAmount).toFixed(2)} over your budget of $${budgetAmount.toFixed(2)}.`
-      : `You've spent $${spentAmount.toFixed(2)} on ${category}, which is ${percentage}% of your budget of $${budgetAmount.toFixed(2)}.`,
-    link: "/budgets",
-    data: { category, budgetAmount, spentAmount, percentage, isOverBudget }
+      : `You've spent $${spentAmount.toFixed(2)} on ${category}, which is ${percentage}% of your budget of $${budgetAmount.toFixed(2)}.`
   })
 }
 
@@ -116,13 +112,10 @@ export async function notifyExpenseReminder({
   daysUntilDue?: number;
 }) {
   return notify({
-    type: isDue ? "expense_due" : "expense_upcoming",
-    title: isDue ? `${expenseName} Payment Due Today` : `${expenseName} Payment Due Soon`,
+    type: "Reminder",
     message: isDue
       ? `Your payment of $${amount.toFixed(2)} for ${expenseName} is due today.`
-      : `Your payment of $${amount.toFixed(2)} for ${expenseName} is due in ${daysUntilDue} days on ${new Date(dueDate).toLocaleDateString()}.`,
-    link: "/expenses",
-    data: { expenseName, dueDate, amount, isDue, daysUntilDue }
+      : `Your payment of $${amount.toFixed(2)} for ${expenseName} is due in ${daysUntilDue} days on ${new Date(dueDate).toLocaleDateString()}.`
   })
 }
 
@@ -143,13 +136,10 @@ export async function notifyBillReminder({
   daysUntilDue?: number;
 }) {
   return notify({
-    type: isDue ? "bill_due" : "bill_upcoming",
-    title: isDue ? `${billName} Bill Due Today` : `${billName} Bill Due Soon`,
+    type: "Reminder",
     message: isDue
       ? `Your bill of $${amount.toFixed(2)} for ${billName} is due today.`
-      : `Your bill of $${amount.toFixed(2)} for ${billName} is due in ${daysUntilDue} days on ${new Date(dueDate).toLocaleDateString()}.`,
-    link: "/bills",
-    data: { billName, dueDate, amount, isDue, daysUntilDue }
+      : `Your bill of $${amount.toFixed(2)} for ${billName} is due in ${daysUntilDue} days on ${new Date(dueDate).toLocaleDateString()}.`
   })
 }
 
@@ -171,19 +161,13 @@ export async function notifyInvestmentUpdate({
 }) {
   if (type === "dividend") {
     return notify({
-      type: "investment_dividend",
-      title: `Dividend Payment Received`,
-      message: `You've received a dividend payment of $${amount.toFixed(2)} from ${investmentName}.`,
-      link: "/investments",
-      data: { investmentName, amount, type }
+      type: "General Alert",
+      message: `You've received a dividend payment of $${amount.toFixed(2)} from ${investmentName}.`
     })
   } else {
     return notify({
-      type: "investment_performance",
-      title: `${investmentName} ${isPositive ? "Up" : "Down"} ${percentageChange}%`,
-      message: `Your investment in ${investmentName} has ${isPositive ? "increased" : "decreased"} by ${percentageChange}% (${isPositive ? "+" : "-"}$${amount.toFixed(2)}).`,
-      link: "/investments",
-      data: { investmentName, amount, percentageChange, isPositive, type }
+      type: "General Alert",
+      message: `Your investment in ${investmentName} has ${isPositive ? "increased" : "decreased"} by ${percentageChange}% (${isPositive ? "+" : "-"}$${amount.toFixed(2)}).`
     })
   }
 }

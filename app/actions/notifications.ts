@@ -4,43 +4,13 @@ import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { createAdminSupabaseClient } from "@/lib/supabase/admin"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
+import { Notification, NotificationPreferences, NotificationType } from "@/types/notification"
 
-// Types
-export interface Notification {
-  id: string
-  user_id: string
-  type: string
-  title: string
-  message: string
-  link?: string
-  data?: any
-  read: boolean
-  emailed: boolean
-  created_at: string
-  updated_at: string
-}
-
-export interface NotificationPreferences {
-  id: string
-  user_id: string
-  email_notifications: boolean
-  push_notifications: boolean
-  watchlist_alerts: boolean
-  budget_alerts: boolean
-  expense_reminders: boolean
-  bill_reminders: boolean
-  investment_updates: boolean
-  created_at: string
-  updated_at: string
-}
-
+// Interface for creating notifications
 interface CreateNotificationParams {
   userId: string
-  type: string
-  title: string
+  notificationTypeId: string
   message: string
-  link?: string
-  data?: any
 }
 
 interface SendEmailParams {
@@ -48,6 +18,34 @@ interface SendEmailParams {
   subject: string
   message: string
   html?: string
+}
+
+// Get notification types
+export async function getNotificationTypes() {
+  try {
+    const supabase = await createServerSupabaseClient()
+    
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { types: [], error: "Database connection error" }
+    }
+    
+    // Get notification types
+    const { data: types, error } = await supabase
+      .from("notification_types")
+      .select("*")
+      .order("name", { ascending: true })
+    
+    if (error) {
+      console.error("Error fetching notification types:", error)
+      return { types: [], error: error.message }
+    }
+    
+    return { types: types as NotificationType[], error: null }
+  } catch (error) {
+    console.error("Unexpected error in getNotificationTypes:", error)
+    return { types: [], error: "An unexpected error occurred" }
+  }
 }
 
 // Get user's notifications
@@ -69,11 +67,10 @@ export async function getNotifications() {
       return { notifications: [], error: "User not authenticated" }
     }
     
-    // Get notifications
+    // Get notifications with type information
     const { data: notifications, error } = await supabase
-      .from("notifications")
+      .from("user_notification_history")
       .select("*")
-      .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(50)
     
@@ -82,9 +79,71 @@ export async function getNotifications() {
       return { notifications: [], error: error.message }
     }
     
-    return { notifications: notifications as Notification[], error: null }
+    // Map the results to match our frontend expectations
+    const mappedNotifications = notifications.map(notification => ({
+      id: notification.notification_id,
+      user_id: user.id,
+      notification_type_id: notification.notification_type,
+      notification_type: notification.notification_type,
+      message: notification.message,
+      is_read: notification.is_read,
+      created_at: notification.created_at,
+      updated_at: notification.updated_at
+    }));
+    
+    return { notifications: mappedNotifications as Notification[], error: null }
   } catch (error) {
     console.error("Unexpected error in getNotifications:", error)
+    return { notifications: [], error: "An unexpected error occurred" }
+  }
+}
+
+// Get user's unread notifications
+export async function getUnreadNotifications() {
+  try {
+    const supabase = await createServerSupabaseClient()
+    
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { notifications: [], error: "Database connection error" }
+    }
+    
+    // Get current user
+    const { data, error: userError } = await supabase.auth.getUser()
+    const user = data?.user
+    
+    if (userError || !user) {
+      console.error("Error getting user:", userError)
+      return { notifications: [], error: "User not authenticated" }
+    }
+    
+    // Get unread notifications
+    const { data: notifications, error } = await supabase
+      .from("user_notifications")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(10)
+    
+    if (error) {
+      console.error("Error fetching unread notifications:", error)
+      return { notifications: [], error: error.message }
+    }
+    
+    // Map the results to match our frontend expectations
+    const mappedNotifications = notifications.map(notification => ({
+      id: notification.notification_id,
+      user_id: user.id,
+      notification_type_id: notification.notification_type,
+      notification_type: notification.notification_type,
+      message: notification.message,
+      is_read: notification.is_read,
+      created_at: notification.created_at,
+      updated_at: notification.updated_at
+    }));
+    
+    return { notifications: mappedNotifications as Notification[], error: null }
+  } catch (error) {
+    console.error("Unexpected error in getUnreadNotifications:", error)
     return { notifications: [], error: "An unexpected error occurred" }
   }
 }
@@ -112,13 +171,9 @@ export async function createNotification(params: CreateNotificationParams) {
       .from("notifications")
       .insert({
         user_id: params.userId,
-        type: params.type,
-        title: params.title,
+        notification_type_id: params.notificationTypeId,
         message: params.message,
-        link: params.link || null,
-        data: params.data || null,
-        read: false,
-        emailed: false,
+        is_read: false
       })
       .select()
       .single()
@@ -126,23 +181,6 @@ export async function createNotification(params: CreateNotificationParams) {
     if (error) {
       console.error("Error creating notification:", error)
       return { success: false, error: error.message }
-    }
-    
-    // Check if user wants email notifications
-    const { data: preferences, error: prefError } = await supabase
-      .from("notification_preferences")
-      .select("*")
-      .eq("user_id", params.userId)
-      .single()
-    
-    if (!prefError && preferences && preferences.email_notifications) {
-      // Send email notification
-      await sendEmailNotification({
-        userId: params.userId,
-        subject: params.title,
-        message: params.message,
-        html: `<h1>${params.title}</h1><p>${params.message}</p>${params.link ? `<a href="${params.link}">View Details</a>` : ''}`,
-      })
     }
     
     revalidatePath("/notifications")
@@ -175,7 +213,7 @@ export async function markNotificationAsRead(id: string) {
     // Update notification
     const { error } = await supabase
       .from("notifications")
-      .update({ read: true })
+      .update({ is_read: true })
       .eq("id", id)
       .eq("user_id", user.id)
     
@@ -214,9 +252,9 @@ export async function markAllNotificationsAsRead() {
     // Update all notifications
     const { error } = await supabase
       .from("notifications")
-      .update({ read: true })
+      .update({ is_read: true })
       .eq("user_id", user.id)
-      .eq("read", false)
+      .eq("is_read", false)
     
     if (error) {
       console.error("Error marking all notifications as read:", error)

@@ -28,10 +28,11 @@ import { Progress } from "@/components/ui/progress"
 interface Account {
   id: string
   name: string
-  type: string
+  account_type: string
   balance: number
   currency: string
   is_active: boolean
+  is_primary: boolean
   institution?: string
   account_number?: string
   notes?: string
@@ -39,6 +40,10 @@ interface Account {
   icon?: string
   created_at: string
   updated_at: string | null
+  // Cash flow data
+  total_inflow?: number
+  total_outflow?: number
+  net_cash_position?: number
 }
 
 interface Category {
@@ -146,12 +151,14 @@ export function AccountDetail({ account, transactions }: AccountDetailProps) {
         return <CreditCard className="h-5 w-5" />
       case "savings":
         return <PiggyBank className="h-5 w-5" />
-      case "credit":
+      case "credit_card":
         return <CreditCard className="h-5 w-5" />
       case "investment":
         return <DollarSign className="h-5 w-5" />
       case "loan":
         return <Building className="h-5 w-5" />
+      case "cash":
+        return <Wallet className="h-5 w-5" />
       default:
         return <Wallet className="h-5 w-5" />
     }
@@ -166,9 +173,14 @@ export function AccountDetail({ account, transactions }: AccountDetailProps) {
             <Badge variant={account.is_active ? "default" : "outline"} className="capitalize">
               {account.is_active ? "Active" : "Inactive"}
             </Badge>
+            {account.is_primary && (
+              <Badge variant="secondary" className="capitalize">
+                Primary
+              </Badge>
+            )}
             <p className="text-muted-foreground flex items-center gap-1">
-              {getAccountIcon(account.type)}
-              <span className="capitalize">{account.type} Account</span>
+              {getAccountIcon(account.account_type)}
+              <span className="capitalize">{account.account_type.replace('_', ' ')} Account</span>
             </p>
             {account.institution && (
               <p className="text-muted-foreground text-sm">

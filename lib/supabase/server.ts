@@ -132,8 +132,8 @@ export async function createServerSupabaseClient(context?: {
           cookies: {
             get(name: string) {
               try {
-                const cookie = appRouterCookies.get(name);
-                return cookie?.value;
+                if (!appRouterCookies) return undefined;
+                return appRouterCookies.get(name)?.value;
               } catch (error) {
                 console.error('Error getting cookie:', error)
                 return undefined

@@ -37,7 +37,7 @@ export async function getNetWorth() {
 
     // Get assets
     const { data: assets, error: assetsError } = await supabase
-      .from("networth_assets")
+      .from("assets")
       .select("*")
       .eq("user_id", userId)
 
@@ -48,7 +48,7 @@ export async function getNetWorth() {
 
     // Get liabilities
     const { data: liabilities, error: liabilitiesError } = await supabase
-      .from("networth_liabilities")
+      .from("liabilities")
       .select("*")
       .eq("user_id", userId)
 
@@ -59,10 +59,10 @@ export async function getNetWorth() {
 
     // Get net worth snapshots
     const { data: snapshots, error: snapshotsError } = await supabase
-      .from("networth_snapshots")
+      .from("net_worth_tracker")
       .select("*")
       .eq("user_id", userId)
-      .order("month", { ascending: true })
+      .order("date_recorded", { ascending: true })
       .limit(12)
 
     if (snapshotsError && snapshotsError.code !== "PGRST116") {
@@ -76,7 +76,7 @@ export async function getNetWorth() {
     const snapshotItems = snapshots || []
 
     const totalAssets = assetItems.reduce((sum, asset) => sum + (asset.value || 0), 0)
-    const totalLiabilities = liabilityItems.reduce((sum, liability) => sum + (liability.amount || 0), 0)
+    const totalLiabilities = liabilityItems.reduce((sum, liability) => sum + (liability.amount_due || 0), 0)
     const netWorth = totalAssets - totalLiabilities
 
     // Group assets by type
@@ -113,7 +113,7 @@ export async function getNetWorth() {
     if (snapshotItems && snapshotItems.length > 0) {
       // Use actual snapshot data if available
       formattedHistory = snapshotItems.map(item => ({
-        date: item.month,
+        date: new Date(item.date_recorded).toISOString().substring(0, 7),
         netWorth: item.net_worth || 0,
         assets: item.total_assets || 0,
         liabilities: item.total_liabilities || 0
@@ -144,14 +144,14 @@ export async function getNetWorth() {
         // Use async/await with try/catch instead of Promise.then().catch()
         (async () => {
           try {
-            await supabase.from("networth_snapshots").upsert({
+            await supabase.from("net_worth_tracker").insert({
               id: snapshotId,
               user_id: userId,
-              month: currentMonth,
+              date_recorded: new Date().toISOString(),
               total_assets: totalAssets,
               total_liabilities: totalLiabilities,
+              net_worth: netWorth,
               created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
             });
             console.log("Updated net worth snapshot for current month");
           } catch (err) {
@@ -210,14 +210,14 @@ export async function addAsset(formData: FormData) {
   const assetId = uuidv4()
   
   try {
-    const { error } = await supabase.from("networth_assets").insert({
+    const { error } = await supabase.from("assets").insert({
       id: assetId,
       user_id: userId,
-      name,
-      type,
+      asset_type: type,
       value,
       description,
-      acquired_at: acquiredAt,
+      acquisition_date: acquiredAt,
+      is_liquid: type === 'cash' || type === 'stocks' || type === 'cryptocurrency',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
@@ -251,13 +251,13 @@ export async function updateAsset(formData: FormData) {
 
   try {
     const { error } = await supabase
-      .from("networth_assets")
+      .from("assets")
       .update({
-        name,
-        type,
+        asset_type: type,
         value,
         description,
-        acquired_at: acquiredAt,
+        acquisition_date: acquiredAt,
+        is_liquid: type === 'cash' || type === 'stocks' || type === 'cryptocurrency',
         updated_at: new Date().toISOString(),
       })
       .eq("id", assetId)
@@ -285,7 +285,7 @@ export async function deleteAsset(assetId: string) {
 
   try {
     const { error } = await supabase
-      .from("networth_assets")
+      .from("assets")
       .delete()
       .eq("id", assetId)
       .eq("user_id", userId)
@@ -320,12 +320,11 @@ export async function addLiability(formData: FormData) {
   const liabilityId = uuidv4()
   
   try {
-    const { error } = await supabase.from("networth_liabilities").insert({
+    const { error } = await supabase.from("liabilities").insert({
       id: liabilityId,
       user_id: userId,
-      name,
-      type,
-      amount,
+      liability_type: type,
+      amount_due: amount,
       interest_rate: interestRate,
       due_date: dueDate,
       description,
@@ -363,11 +362,10 @@ export async function updateLiability(formData: FormData) {
 
   try {
     const { error } = await supabase
-      .from("networth_liabilities")
+      .from("liabilities")
       .update({
-        name,
-        type,
-        amount,
+        liability_type: type,
+        amount_due: amount,
         interest_rate: interestRate,
         due_date: dueDate,
         description,
@@ -398,7 +396,7 @@ export async function deleteLiability(liabilityId: string) {
 
   try {
     const { error } = await supabase
-      .from("networth_liabilities")
+      .from("liabilities")
       .delete()
       .eq("id", liabilityId)
       .eq("user_id", userId)
@@ -426,7 +424,7 @@ async function updateNetWorthSnapshot(userId: string) {
   try {
     // Get current assets total
     const { data: assets, error: assetsError } = await supabase
-      .from("public.networth_assets")
+      .from("assets")
       .select("value")
       .eq("user_id", userId)
 
@@ -437,8 +435,8 @@ async function updateNetWorthSnapshot(userId: string) {
 
     // Get current liabilities total
     const { data: liabilities, error: liabilitiesError } = await supabase
-      .from("public.networth_liabilities")
-      .select("amount")
+      .from("liabilities")
+      .select("amount_due")
       .eq("user_id", userId)
 
     if (liabilitiesError) {
@@ -447,17 +445,18 @@ async function updateNetWorthSnapshot(userId: string) {
     }
 
     const totalAssets = (assets || []).reduce((sum, asset) => sum + (asset.value || 0), 0)
-    const totalLiabilities = (liabilities || []).reduce((sum, liability) => sum + (liability.amount || 0), 0)
+    const totalLiabilities = (liabilities || []).reduce((sum, liability) => sum + (liability.amount_due || 0), 0)
 
     // Current date in YYYY-MM format
     const currentMonth = new Date().toISOString().substring(0, 7)
 
     // Check if we already have an entry for this month
     const { data, error } = await supabase
-      .from("networth_snapshots")
+      .from("net_worth_tracker")
       .select("*")
       .eq("user_id", userId)
-      .eq("month", currentMonth)
+      .gte("date_recorded", `${currentMonth}-01`)
+      .lt("date_recorded", `${currentMonth}-31`)
       .single()
 
     if (error && error.code !== "PGRST116") {
@@ -468,11 +467,11 @@ async function updateNetWorthSnapshot(userId: string) {
     if (data) {
       // Update existing snapshot
       const { error: updateError } = await supabase
-        .from("networth_snapshots")
+        .from("net_worth_tracker")
         .update({
           total_assets: totalAssets,
           total_liabilities: totalLiabilities,
-          updated_at: new Date().toISOString(),
+          net_worth: totalAssets - totalLiabilities
         })
         .eq("id", data.id)
 
@@ -482,14 +481,14 @@ async function updateNetWorthSnapshot(userId: string) {
     } else {
       // Create new snapshot
       const snapshotId = uuidv4()
-      const { error: insertError } = await supabase.from("networth_snapshots").insert({
+      const { error: insertError } = await supabase.from("net_worth_tracker").insert({
         id: snapshotId,
         user_id: userId,
-        month: currentMonth,
+        date_recorded: new Date().toISOString(),
         total_assets: totalAssets,
         total_liabilities: totalLiabilities,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        net_worth: totalAssets - totalLiabilities,
+        created_at: new Date().toISOString()
       })
 
       if (insertError) {

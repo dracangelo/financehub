@@ -3,6 +3,143 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export interface Database {
   public: {
     Tables: {
+      users: {
+        Row: {
+          id: string
+          username: string
+          full_name: string | null
+          email: string | null
+          phone: string | null
+          avatar_url: string | null
+          date_of_birth: string | null
+          gender: string | null
+          is_email_verified: boolean
+          mfa_enabled: boolean
+          mfa_type: string | null
+          is_biometrics_enabled: boolean
+          biometric_type: string | null
+          suspicious_login_flag: boolean
+          last_login_at: string | null
+          session_timeout_minutes: number
+          emergency_access_enabled: boolean
+          emergency_contact_name: string | null
+          emergency_contact_phone: string | null
+          emergency_contact_relationship: string | null
+          has_consented: boolean
+          consent_updated_at: string | null
+          privacy_level: string
+          local_data_only: boolean
+          allow_data_analysis: boolean
+          data_retention_policy: string
+          locale: string
+          currency_code: string
+          timezone: string
+          theme: string
+          date_format: string
+          notification_preferences: Json
+          onboarding_completed: boolean
+          onboarding_step: string | null
+          user_role: string
+          permission_scope: Json
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+          referral_code: string | null
+          signup_source: string | null
+          marketing_opt_in: boolean
+          last_active_at: string | null
+        }
+        Insert: {
+          id: string
+          username: string
+          full_name?: string | null
+          email?: string | null
+          phone?: string | null
+          avatar_url?: string | null
+          date_of_birth?: string | null
+          gender?: string | null
+          is_email_verified?: boolean
+          mfa_enabled?: boolean
+          mfa_type?: string | null
+          is_biometrics_enabled?: boolean
+          biometric_type?: string | null
+          suspicious_login_flag?: boolean
+          last_login_at?: string | null
+          session_timeout_minutes?: number
+          emergency_access_enabled?: boolean
+          emergency_contact_name?: string | null
+          emergency_contact_phone?: string | null
+          emergency_contact_relationship?: string | null
+          has_consented?: boolean
+          consent_updated_at?: string | null
+          privacy_level?: string
+          local_data_only?: boolean
+          allow_data_analysis?: boolean
+          data_retention_policy?: string
+          locale?: string
+          currency_code?: string
+          timezone?: string
+          theme?: string
+          date_format?: string
+          notification_preferences?: Json
+          onboarding_completed?: boolean
+          onboarding_step?: string | null
+          user_role?: string
+          permission_scope?: Json
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+          referral_code?: string | null
+          signup_source?: string | null
+          marketing_opt_in?: boolean
+          last_active_at?: string | null
+        }
+        Update: {
+          id?: string
+          username?: string
+          full_name?: string | null
+          email?: string | null
+          phone?: string | null
+          avatar_url?: string | null
+          date_of_birth?: string | null
+          gender?: string | null
+          is_email_verified?: boolean
+          mfa_enabled?: boolean
+          mfa_type?: string | null
+          is_biometrics_enabled?: boolean
+          biometric_type?: string | null
+          suspicious_login_flag?: boolean
+          last_login_at?: string | null
+          session_timeout_minutes?: number
+          emergency_access_enabled?: boolean
+          emergency_contact_name?: string | null
+          emergency_contact_phone?: string | null
+          emergency_contact_relationship?: string | null
+          has_consented?: boolean
+          consent_updated_at?: string | null
+          privacy_level?: string
+          local_data_only?: boolean
+          allow_data_analysis?: boolean
+          data_retention_policy?: string
+          locale?: string
+          currency_code?: string
+          timezone?: string
+          theme?: string
+          date_format?: string
+          notification_preferences?: Json
+          onboarding_completed?: boolean
+          onboarding_step?: string | null
+          user_role?: string
+          permission_scope?: Json
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+          referral_code?: string | null
+          signup_source?: string | null
+          marketing_opt_in?: boolean
+          last_active_at?: string | null
+        }
+      }
       accounts: {
         Row: {
           id: string

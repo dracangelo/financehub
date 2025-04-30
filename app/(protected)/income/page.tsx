@@ -1,10 +1,8 @@
 import { Suspense } from "react"
 import { Skeleton } from "@/components/ui/skeleton"
-import { IncomeSourcesList } from "@/components/income/income-sources-list"
+import { IncomeList } from "@/components/income/income-list"
 import { IncomeSummaryChart } from "@/components/income/income-summary-chart"
-import { getIncomeSources } from "@/app/actions/income-sources"
-import { createServerComponentClient } from "@supabase/auth-helpers-nextjs"
-import { cookies } from "next/headers"
+import { getIncomes, calculateIncomeDiversification } from "@/app/actions/income"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { IncomeAnalyticsClient } from "@/components/income/income-analytics-client"
 
@@ -15,19 +13,19 @@ export const revalidate = 0
 async function IncomeOverviewContent() {
   // Use current timestamp to ensure we get fresh data
   const timestamp = Date.now()
-  const sources = await getIncomeSources(timestamp)
+  const incomes = await getIncomes(timestamp)
 
   return (
     <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6">
       <h2 className="text-xl font-semibold mb-4">Income Overview</h2>
       <p className="text-muted-foreground mb-2">
-        Track and manage your income sources here.
+        Track and manage your income entries here.
       </p>
       <p className="text-sm text-muted-foreground mb-4">
-        Note: All amounts are normalized to monthly values (e.g., annual income is divided by 12, weekly income is multiplied by 4.33)
+        Note: All amounts show monthly equivalent values automatically calculated based on recurrence frequency
       </p>
-      <IncomeSummaryChart sources={sources} />
-      <IncomeSourcesList initialSources={sources} />
+      <IncomeSummaryChart incomes={incomes} />
+      <IncomeList initialIncomes={incomes} />
     </div>
   )
 }
@@ -35,11 +33,13 @@ async function IncomeOverviewContent() {
 async function IncomeAnalyticsContent() {
   // Use current timestamp to ensure we get fresh data
   const timestamp = Date.now()
-  const sources = await getIncomeSources(timestamp)
+  const incomes = await getIncomes(timestamp)
+  const diversificationScore = await calculateIncomeDiversification()
   
   return (
     <IncomeAnalyticsClient 
-      sources={sources}
+      incomes={incomes}
+      diversificationScore={diversificationScore}
     />
   )
 }

@@ -29,42 +29,41 @@ import { toast } from "sonner"
 
 const assetFormSchema = z.object({
   id: z.string().optional(),
-  name: z.string().min(1, "Name is required"),
-  type: z.string().min(1, "Type is required"),
+  asset_type: z.string().min(1, "Asset type is required"),
   value: z.coerce.number().min(0, "Value must be a positive number"),
-  acquired_at: z.string().optional(),
+  acquisition_date: z.string().optional(),
   description: z.string().optional(),
+  is_liquid: z.boolean().optional(),
 })
 
 type AssetFormValues = z.infer<typeof assetFormSchema>
 
 const defaultValues: Partial<AssetFormValues> = {
-  name: "",
-  type: "",
+  asset_type: "",
   value: 0,
-  acquired_at: "",
+  acquisition_date: "",
   description: "",
+  is_liquid: false,
 }
 
 const assetTypes = [
   { value: "cash", label: "Cash & Savings" },
-  { value: "investment", label: "Investments" },
+  { value: "stocks", label: "Stocks" },
+  { value: "bonds", label: "Bonds" },
   { value: "real_estate", label: "Real Estate" },
-  { value: "vehicle", label: "Vehicles" },
-  { value: "retirement", label: "Retirement Accounts" },
+  { value: "cryptocurrency", label: "Cryptocurrency" },
   { value: "business", label: "Business Interests" },
-  { value: "personal", label: "Personal Property" },
   { value: "other", label: "Other Assets" },
 ]
 
 interface AssetFormProps {
   asset?: {
     id: string
-    name: string
-    type: string
+    asset_type: string
     value: number
-    acquired_at?: string
+    acquisition_date?: string
     description?: string
+    is_liquid?: boolean
   }
   onSuccess?: () => void
   onCancel?: () => void
@@ -89,12 +88,11 @@ export function AssetForm({ asset, onSuccess, onCancel }: AssetFormProps) {
         formData.append("id", asset.id)
       }
       
-      formData.append("name", data.name)
-      formData.append("type", data.type)
+      formData.append("type", data.asset_type)
       formData.append("value", data.value.toString())
       
-      if (data.acquired_at) {
-        formData.append("acquired_at", data.acquired_at)
+      if (data.acquisition_date) {
+        formData.append("acquired_at", data.acquisition_date)
       }
       
       if (data.description) {
@@ -122,26 +120,11 @@ export function AssetForm({ asset, onSuccess, onCancel }: AssetFormProps) {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-        <FormField
-          control={form.control}
-          name="name"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Asset Name</FormLabel>
-              <FormControl>
-                <Input placeholder="Enter asset name" {...field} />
-              </FormControl>
-              <FormDescription>
-                Name of your asset (e.g., Savings Account, Home, Car)
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+
         
         <FormField
           control={form.control}
-          name="type"
+          name="asset_type"
           render={({ field }) => (
             <FormItem>
               <FormLabel>Asset Type</FormLabel>
@@ -196,7 +179,7 @@ export function AssetForm({ asset, onSuccess, onCancel }: AssetFormProps) {
         
         <FormField
           control={form.control}
-          name="acquired_at"
+          name="acquisition_date"
           render={({ field }) => (
             <FormItem>
               <FormLabel>Date Acquired (Optional)</FormLabel>

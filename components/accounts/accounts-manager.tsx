@@ -40,16 +40,17 @@ import { createAccount, updateAccount, deleteAccount } from "@/app/actions/accou
 import { Plus, Edit, Trash2, Loader2, Search, CreditCard, Wallet, Building, PiggyBank, DollarSign, ArrowUpDown, Filter, RefreshCw, ExternalLink, BarChart, Eye } from "lucide-react"
 
 // Define account types for better type safety
-type AccountType = 'checking' | 'savings' | 'credit' | 'investment' | 'loan' | 'cash' | 'other';
+type AccountType = 'checking' | 'savings' | 'credit_card' | 'investment' | 'loan' | 'cash' | 'other';
 type CurrencyCode = 'USD' | 'EUR' | 'GBP' | 'JPY' | 'CAD' | 'AUD' | 'CHF' | 'CNY' | 'INR' | 'BRL';
 
 interface Account {
   id: string
   name: string
-  type: AccountType | string // Using union type to support both predefined types and custom types
+  account_type: AccountType | string // Using union type to support both predefined types and custom types
   balance: number
   currency: CurrencyCode | string // Using union type to support both predefined currencies and custom ones
   is_active: boolean
+  is_primary: boolean
   institution?: string
   account_number?: string
   notes?: string
@@ -57,6 +58,10 @@ interface Account {
   icon?: string
   created_at: string
   updated_at: string
+  // Cash flow data from the view
+  total_inflow?: number
+  total_outflow?: number
+  net_cash_position?: number
   // Track transaction counts for quick summary (optional)
   transaction_count?: number
   // Track last transaction date (optional)
@@ -69,13 +74,13 @@ interface AccountsManagerProps {
 
 interface AccountFormData {
   name: string
-  type: string
+  account_type: string
   balance: string
   currency: string
   institution: string
   account_number: string
   is_active: boolean
-  color: string
+  is_primary: boolean
   notes: string
 }
 
@@ -108,13 +113,13 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
   // Form state
   const [formData, setFormData] = useState<AccountFormData>({
     name: "",
-    type: "checking",
+    account_type: "checking",
     balance: "0.00",
     currency: "USD",
     institution: "",
     account_number: "",
     is_active: true,
-    color: "#3b82f6",
+    is_primary: false,
     notes: "",
   })
 
@@ -141,10 +146,10 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
         summary.currencyBreakdown[account.currency] += account.balance;
         
         // Add to type breakdown
-        if (!summary.typeBreakdown[account.type]) {
-          summary.typeBreakdown[account.type] = 0;
+        if (!summary.typeBreakdown[account.account_type]) {
+          summary.typeBreakdown[account.account_type] = 0;
         }
-        summary.typeBreakdown[account.type] += account.balance;
+        summary.typeBreakdown[account.account_type] += account.balance;
       }
     });
     
@@ -160,14 +165,14 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
         const searchLower = searchTerm.toLowerCase();
         const matchesSearch = 
           account.name.toLowerCase().includes(searchLower) ||
-          account.type.toLowerCase().includes(searchLower) ||
+          account.account_type.toLowerCase().includes(searchLower) ||
           (account.institution && account.institution.toLowerCase().includes(searchLower));
           
         if (!matchesSearch) return false;
       }
       
       // Apply account type filter
-      if (filterType && account.type !== filterType) {
+      if (filterType && account.account_type !== filterType) {
         return false;
       }
       
@@ -191,7 +196,7 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
           comparison = a.balance - b.balance;
           break;
         case 'type':
-          comparison = a.type.localeCompare(b.type);
+          comparison = a.account_type.localeCompare(b.account_type);
           break;
         case 'created_at':
           comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
@@ -248,13 +253,13 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
     setCurrentAccount(account)
     setFormData({
       name: account.name,
-      type: account.type,
+      account_type: account.account_type,
       balance: account.balance.toString(),
       currency: account.currency,
       institution: account.institution || "",
       account_number: account.account_number || "",
       is_active: account.is_active,
-      color: account.color || "#3b82f6",
+      is_primary: account.is_primary,
       notes: account.notes || "",
     })
     setIsEditDialogOpen(true)
@@ -685,18 +690,25 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
                           className="flex items-center justify-center w-8 h-8 rounded-full"
                           style={{ backgroundColor: account.color || "#3b82f6" }}
                         >
-                          {getAccountIcon(account.type)}
+                          {getAccountIcon(account.account_type)}
                         </div>
                         {account.name}
                       </div>
                     </TableCell>
-                    <TableCell>{formatAccountType(account.type)}</TableCell>
+                    <TableCell>{formatAccountType(account.account_type)}</TableCell>
                     <TableCell>{account.institution || "-"}</TableCell>
                     <TableCell>{formatCurrency(account.balance, account.currency)}</TableCell>
                     <TableCell>
-                      <Badge variant={account.is_active ? "default" : "secondary"}>
-                        {account.is_active ? "Active" : "Inactive"}
-                      </Badge>
+                      <div className="flex items-center gap-1">
+                        <Badge variant={account.is_active ? "default" : "outline"} className="text-xs">
+                          {account.is_active ? "Active" : "Inactive"}
+                        </Badge>
+                        {account.is_primary && (
+                          <Badge variant="secondary" className="text-xs">
+                            Primary
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex space-x-2">
@@ -747,11 +759,11 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="type">
+                <Label htmlFor="account_type">
                   Account Type <span className="text-red-500">*</span>
                 </Label>
-                <Select value={formData.type} onValueChange={(value) => handleSelectChange("type", value)}>
-                  <SelectTrigger id="type">
+                <Select value={formData.account_type} onValueChange={(value) => handleSelectChange("account_type", value)}>
+                  <SelectTrigger id="account_type">
                     <SelectValue placeholder="Select account type" />
                   </SelectTrigger>
                   <SelectContent>
@@ -860,6 +872,15 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
                 />
                 <Label htmlFor="is_active">Active Account</Label>
               </div>
+
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="is_primary"
+                  checked={formData.is_primary}
+                  onCheckedChange={(checked) => handleCheckboxChange("is_primary", checked === true)}
+                />
+                <Label htmlFor="is_primary">Primary Account</Label>
+              </div>
             </div>
             <DialogFooter className="flex-shrink-0 py-2 mt-2 border-t sticky bottom-0 bg-background z-10">
               <Button
@@ -902,7 +923,7 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
                 <Input
                   id="edit-name"
                   name="name"
-                  placeholder="e.g., Chase Checking"
+                  placeholder="e.g., Checking Account"
                   value={formData.name}
                   onChange={handleInputChange}
                   required
@@ -914,11 +935,11 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="edit-type">
+                <Label htmlFor="edit-account_type">
                   Account Type <span className="text-red-500">*</span>
                 </Label>
-                <Select value={formData.type} onValueChange={(value) => handleSelectChange("type", value)}>
-                  <SelectTrigger id="edit-type">
+                <Select value={formData.account_type} onValueChange={(value) => handleSelectChange("account_type", value)}>
+                  <SelectTrigger id="edit-account_type" className={validationErrors.account_type ? "border-red-500" : ""}>
                     <SelectValue placeholder="Select account type" />
                   </SelectTrigger>
                   <SelectContent>
@@ -931,6 +952,9 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
                     <SelectItem value="other">Other</SelectItem>
                   </SelectContent>
                 </Select>
+                {validationErrors.account_type && (
+                  <p className="text-sm text-red-500 mt-1">{validationErrors.account_type}</p>
+                )}
               </div>
 
               <div className="grid gap-2">

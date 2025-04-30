@@ -30,48 +30,45 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import { createExpense, updateExpense } from "@/app/actions/expenses";
+import { createExpense, updateExpense, createSplitExpense } from "@/app/actions/expenses";
 import { uploadReceipt } from "@/lib/receipt-utils";
-import { createSplitExpenseFromForm, getUsersForSplitExpense } from "@/lib/split-expense-utils";
-import { Expense } from "@/types/expense";
+import { getUsersForSplitExpense } from "@/lib/split-expense-utils";
+import { Expense, ExpenseCategory, RecurrenceFrequency } from "@/types/expense";
 import { Category } from "@/lib/constants/categories";
 import { searchLocationByName, getAddressFromCoordinates } from "@/lib/geocoding";
 
 // Form schema
 const expenseFormSchema = z.object({
-  merchant_name: z.string().optional().nullable(),
+  merchant: z.string().min(1, "Merchant name is required"),
   amount: z.coerce.number().positive("Amount must be a positive number"),
-  category_id: z.string({
-    required_error: "Please select a category",
-  }),
-  description: z.string().min(1, "Description is required"),
-  spent_at: z.date({
+  currency: z.string().default("USD"),
+  category_ids: z.array(z.string()).optional(),
+  budget_item_id: z.string().optional().nullable(),
+  expense_date: z.date({
     required_error: "A date is required",
   }),
+  location_name: z.string().optional().nullable(),
   latitude: z.number().optional().nullable(),
   longitude: z.number().optional().nullable(),
-  is_recurring: z.boolean().default(false),
+  recurrence: z.enum(['none', 'weekly', 'bi_weekly', 'monthly', 'quarterly', 'semi_annual', 'annual']).default('none'),
   is_impulse: z.boolean().default(false),
   notes: z.string().optional().nullable(),
   receipt_image: z.any().optional().nullable(),
-  warranty_expiry: z.date().optional().nullable(),
-  split_with_name: z.string().optional().nullable(),
+  warranty_expiration_date: z.date().optional().nullable(),
+  split_with_user: z.string().optional().nullable(),
   split_amount: z.coerce.number().optional().nullable(),
+  split_note: z.string().optional().nullable(),
 });
 
 type ExpenseFormValues = z.infer<typeof expenseFormSchema>;
 type FieldValues = z.infer<typeof expenseFormSchema>;
 
 interface ExtendedExpense extends Expense {
-  merchant_name?: string;
   latitude?: number | null;
   longitude?: number | null;
-  is_impulse?: boolean;
-  notes?: string;
-  warranty_expiry?: string | null;
-  split_with_name?: string;
+  split_with_user?: string;
   split_amount?: number | null;
-  receipt_url?: string;
+  split_note?: string | null;
 }
 
 interface ExpenseFormProps {
@@ -106,20 +103,23 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseFormSchema),
     defaultValues: {
-      merchant_name: expense?.merchant_name || "",
+      merchant: expense?.merchant || "",
       amount: expense?.amount || "",
-      category_id: expense?.category || "",
-      description: expense?.description || "",
-      spent_at: expense?.spent_at ? new Date(expense.spent_at) : new Date(),
+      currency: expense?.currency || "USD",
+      category_ids: expense?.categories?.map(cat => cat.id) || [],
+      budget_item_id: expense?.budget_item_id || null,
+      expense_date: expense?.expense_date ? new Date(expense.expense_date) : new Date(),
+      location_name: expense?.location_name || "",
       latitude: expense?.latitude || null,
       longitude: expense?.longitude || null,
-      is_recurring: expense?.is_recurring || false,
+      recurrence: expense?.recurrence || "none",
       is_impulse: expense?.is_impulse || false,
       notes: expense?.notes || "",
       receipt_image: null,
-      warranty_expiry: expense?.warranty_expiry ? new Date(expense.warranty_expiry) : null,
-      split_with_name: expense?.split_with_name || "",
-      split_amount: expense?.split_amount || null,
+      warranty_expiration_date: expense?.warranty_expiration_date ? new Date(expense.warranty_expiration_date) : null,
+      split_with_user: expense?.splits?.[0]?.shared_with_user || "",
+      split_amount: expense?.splits?.[0]?.amount || null,
+      split_note: expense?.splits?.[0]?.note || null,
     },
   });
 
@@ -143,30 +143,39 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
   useEffect(() => {
     if (expense && isEditing) {
       form.reset({
-        merchant_name: expense.merchant_name || expense.merchant?.name || "",
+        merchant: expense.merchant || "",
         amount: expense.amount || 0,
-        category_id: expense.category || "",
-        description: expense.description || "",
-        spent_at: new Date(expense.spent_at),
+        currency: expense.currency || "USD",
+        category_ids: expense.categories?.map(cat => cat.id) || [],
+        budget_item_id: expense.budget_item_id || null,
+        expense_date: new Date(expense.expense_date),
+        location_name: expense.location_name || "",
         latitude: expense.latitude || null,
         longitude: expense.longitude || null,
-        is_recurring: expense.is_recurring || false,
+        recurrence: expense.recurrence || "none",
         is_impulse: expense.is_impulse || false,
         notes: expense.notes || "",
         receipt_image: null,
-        warranty_expiry: expense.warranty_expiry ? new Date(expense.warranty_expiry) : null,
-        split_with_name: expense.split_with_name || "",
-        split_amount: expense.split_amount || null,
+        warranty_expiration_date: expense.warranty_expiration_date ? new Date(expense.warranty_expiration_date) : null,
+        split_with_user: expense.splits?.[0]?.shared_with_user || "",
+        split_amount: expense.splits?.[0]?.amount || null,
+        split_note: expense.splits?.[0]?.note || null,
       });
 
       // Set location if available
       if (expense.latitude && expense.longitude) {
         setLocationEnabled(true);
+        setLocationSearchQuery(expense.location_name || "");
       }
 
       // Set receipt preview if available
       if (expense.receipt_url) {
         setReceiptPreview(expense.receipt_url);
+      }
+
+      // Set split options if available
+      if (expense.splits && expense.splits.length > 0) {
+        setShowSplitOptions(true);
       }
     }
   }, [expense, isEditing, form]);
@@ -293,21 +302,20 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
     try {
       // Prepare the expense data
       const expenseData = {
-        merchant_name: data.merchant_name || null,
+        merchant: data.merchant,
         amount: Number(data.amount),
-        category_id: data.category_id,
-        description: data.description,
-        spent_at: data.spent_at,
-        location: data.latitude && data.longitude
-          ? { latitude: Number(data.latitude), longitude: Number(data.longitude) }
+        currency: data.currency,
+        category_ids: data.category_ids || [],
+        budget_item_id: data.budget_item_id,
+        expense_date: data.expense_date,
+        location_name: data.location_name || locationSearchQuery || null,
+        location_geo: data.latitude && data.longitude
+          ? { type: 'Point', coordinates: [Number(data.longitude), Number(data.latitude)] }
           : null,
-        is_recurring: data.is_recurring,
+        recurrence: data.recurrence,
         is_impulse: data.is_impulse,
         notes: data.notes || null,
-        warranty_expiry: data.warranty_expiry || null,
-        // Add split expense data if applicable
-        split_with_name: showSplitOptions ? data.split_with_name : null,
-        split_amount: showSplitOptions && data.split_amount ? Number(data.split_amount) : null,
+        warranty_expiration_date: data.warranty_expiration_date || null,
       };
 
       let expenseId;
@@ -340,34 +348,22 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
       }
 
       // Handle split expense creation if applicable
-      // Note: We've already included split_with_name and split_amount in the main expense data
-      // This is a fallback in case the direct approach didn't work
-      if (showSplitOptions && data.split_with_name && data.split_amount && expenseId) {
+      if (showSplitOptions && data.split_with_user && data.split_amount && expenseId) {
         try {
-          // Check if the split information was successfully saved with the expense
-          const { data: updatedExpense } = await supabase
-            .from("expenses")
-            .select("split_with_name, split_amount")
-            .eq("id", expenseId)
-            .single();
-            
-          // If split information is missing, use the createSplitExpenseFromForm function
-          if (!updatedExpense?.split_with_name || updatedExpense?.split_amount === null) {
-            console.log("Split expense columns not found, using alternative approach");
-            await createSplitExpenseFromForm({
-              expenseId,
-              splitWithName: data.split_with_name,
-              splitAmount: Number(data.split_amount),
-              description: data.description,
-            });
-          } else {
-            console.log("Split expense saved successfully");
-          }
+          // Create a split expense record
+          await createSplitExpense({
+            expense_id: expenseId,
+            shared_with_user: data.split_with_user,
+            amount: Number(data.split_amount),
+            note: data.split_note || null
+          });
+          
+          console.log("Split expense created successfully");
         } catch (splitError) {
           console.error("Error creating split expense:", splitError);
           toast({
             title: "Split Expense Failed",
-            description: "The expense was saved, but we couldn't create the split record. Please run the add_split_expense_columns.sql migration.",
+            description: "The expense was saved, but we couldn't create the split record.",
             variant: "destructive",
           });
         }
@@ -403,7 +399,7 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
           {/* Merchant Name */}
           <FormField
             control={form.control}
-            name="merchant_name"
+            name="merchant"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Merchant Name <span className="text-red-500">*</span></FormLabel>
@@ -456,48 +452,65 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
           {/* Category */}
           <FormField
             control={form.control}
-            name="category_id"
+            name="category_ids"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Category <span className="text-red-500">*</span></FormLabel>
-                <Select 
-                  onValueChange={field.onChange} 
-                  defaultValue={field.value}
-                >
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a category" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {categories.map((category) => (
-                      <SelectItem key={category.id} value={category.id}>
-                        <div className="flex items-center">
-                          <div 
-                            className="w-3 h-3 rounded-full mr-2" 
-                            style={{ backgroundColor: category.color || '#888' }}
-                          />
-                          {category.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <FormLabel>Categories <span className="text-red-500">*</span></FormLabel>
+                <div className="space-y-2">
+                  {categories.map((category) => (
+                    <div key={category.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`category-${category.id}`}
+                        checked={field.value?.includes(category.id)}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            field.onChange([...(field.value || []), category.id]);
+                          } else {
+                            field.onChange(
+                              field.value?.filter((value) => value !== category.id) || []
+                            );
+                          }
+                        }}
+                      />
+                      <Label 
+                        htmlFor={`category-${category.id}`}
+                        className="flex items-center"
+                      >
+                        <div 
+                          className="w-3 h-3 rounded-full mr-2" 
+                          style={{ backgroundColor: category.color || '#888' }}
+                        />
+                        {category.name}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
                 <FormMessage />
               </FormItem>
             )}
           />
 
-          {/* Description */}
+          {/* Budget Item */}
           <FormField
             control={form.control}
-            name="description"
+            name="budget_item_id"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Description <span className="text-red-500">*</span></FormLabel>
-                <FormControl>
-                  <Input type="text" placeholder="What did you purchase?" {...field} />
-                </FormControl>
+                <FormLabel>Budget Item</FormLabel>
+                <Select 
+                  onValueChange={field.onChange} 
+                  defaultValue={field.value || undefined}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Link to budget item (optional)" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {/* You would fetch and map budget items here */}
+                  </SelectContent>
+                </Select>
                 <FormMessage />
               </FormItem>
             )}
@@ -508,7 +521,7 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
           {/* Date */}
           <FormField
             control={form.control}
-            name="spent_at"
+            name="expense_date"
             render={({ field }) => (
               <FormItem className="flex flex-col">
                 <FormLabel>Date <span className="text-red-500">*</span></FormLabel>
@@ -679,7 +692,7 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
               {/* Warranty Expiry */}
               <FormField
                 control={form.control}
-                name="warranty_expiry"
+                name="warranty_expiration_date"
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
                     <FormLabel>Warranty Expiry</FormLabel>
@@ -723,21 +736,33 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
           <div className="flex flex-wrap gap-6">
             <FormField
               control={form.control}
-              name="is_recurring"
+              name="recurrence"
               render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                  <FormControl>
-                    <Checkbox
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                  <div className="space-y-1 leading-none">
-                    <FormLabel>Recurring Expense</FormLabel>
-                    <FormDescription>
-                      This expense occurs regularly
-                    </FormDescription>
-                  </div>
+                <FormItem>
+                  <FormLabel>Recurrence</FormLabel>
+                  <Select 
+                    onValueChange={field.onChange} 
+                    defaultValue={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select recurrence pattern" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="none">None (One-time)</SelectItem>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                      <SelectItem value="bi_weekly">Bi-weekly</SelectItem>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                      <SelectItem value="quarterly">Quarterly</SelectItem>
+                      <SelectItem value="semi_annual">Semi-Annual</SelectItem>
+                      <SelectItem value="annual">Annual</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    How often this expense recurs
+                  </FormDescription>
+                  <FormMessage />
                 </FormItem>
               )}
             />
@@ -779,19 +804,29 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
               <div className="rounded-md border p-4 space-y-4">
                 <FormField
                   control={form.control}
-                  name="split_with_name"
+                  name="split_with_user"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Split With</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="text"
-                          placeholder="Enter person's name"
-                          {...field}
-                        />
-                      </FormControl>
+                      <Select 
+                        onValueChange={field.onChange} 
+                        defaultValue={field.value || undefined}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a user" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {availableUsers.map((user) => (
+                            <SelectItem key={user.id} value={user.id}>
+                              {user.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormDescription>
-                        Name of the person you're splitting with
+                        User you're splitting this expense with
                       </FormDescription>
                       <FormMessage />
                     </FormItem>

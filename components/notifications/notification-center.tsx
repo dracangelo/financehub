@@ -10,7 +10,8 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
-import { Notification, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification } from "@/app/actions/notifications"
+import { markNotificationAsRead, markAllNotificationsAsRead, deleteNotification, getUnreadNotifications } from "@/app/actions/notifications"
+import { Notification } from "@/types/notification"
 
 export function NotificationCenter() {
   const [notifications, setNotifications] = useState<Notification[]>([])
@@ -22,32 +23,22 @@ export function NotificationCenter() {
   // Fetch notifications
   useEffect(() => {
     const fetchNotifications = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
       try {
-        const { data, error } = await supabase
-          .from("notifications")
-          .select("*")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: false })
-          .limit(10)
-
+        const { notifications, error } = await getUnreadNotifications()
+        
         if (error) {
-          if (error.code === "42P01") {
-            // Table doesn't exist yet, just return empty array
-            setNotifications([])
-            setUnreadCount(0)
-            return
-          }
           console.error("Error fetching notifications:", error)
+          setNotifications([])
+          setUnreadCount(0)
           return
         }
-
-        setNotifications(data)
-        setUnreadCount(data.filter((n: Notification) => !n.read).length)
+        
+        setNotifications(notifications)
+        setUnreadCount(notifications.length)
       } catch (error) {
         console.error("Unexpected error fetching notifications:", error)
+        setNotifications([])
+        setUnreadCount(0)
       }
     }
 
@@ -63,10 +54,12 @@ export function NotificationCenter() {
           schema: "public",
           table: "notifications",
         },
-        (payload) => {
-          setNotifications(prev => [payload.new as Notification, ...prev])
-          setUnreadCount(count => count + 1)
-          toast.info(payload.new.title, {
+        async (payload) => {
+          // Refetch notifications to get the proper notification type
+          fetchNotifications()
+          
+          // Show toast notification
+          toast.info("New Notification", {
             description: payload.new.message,
           })
         }
@@ -84,7 +77,7 @@ export function NotificationCenter() {
     
     if (result.success) {
       setNotifications(prev =>
-        prev.map(n => (n.id === id ? { ...n, read: true } : n))
+        prev.map(n => (n.id === id ? { ...n, is_read: true } : n))
       )
       setUnreadCount(count => count - 1)
     } else {
@@ -97,7 +90,7 @@ export function NotificationCenter() {
     const result = await markAllNotificationsAsRead()
     
     if (result.success) {
-      setNotifications(prev => prev.map(n => ({ ...n, read: true })))
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
       setUnreadCount(0)
     } else {
       toast.error("Failed to mark all notifications as read")
@@ -111,7 +104,7 @@ export function NotificationCenter() {
     if (result.success) {
       const notification = notifications.find(n => n.id === id)
       setNotifications(prev => prev.filter(n => n.id !== id))
-      if (notification && !notification.read) {
+      if (notification && !notification.is_read) {
         setUnreadCount(count => count - 1)
       }
     } else {
@@ -121,24 +114,20 @@ export function NotificationCenter() {
 
   // Handle notification click
   const handleNotificationClick = (notification: Notification) => {
-    if (!notification.read) {
+    if (!notification.is_read) {
       handleMarkAsRead(notification.id)
     }
     
-    if (notification.link) {
-      router.push(notification.link)
-      setIsOpen(false)
-    }
+    // For now, we don't have links in the new schema
+    setIsOpen(false)
   }
 
   // Get notification icon based on type
   const getNotificationIcon = (type: string) => {
-    if (type.includes("watchlist")) return "💹"
-    if (type.includes("budget")) return "💰"
-    if (type.includes("expense")) return "💸"
-    if (type.includes("bill")) return "📅"
-    if (type.includes("investment")) return "📈"
-    return "🔔"
+    if (type === "General Alert") return "🔔"
+    if (type === "Reminder") return "⏰"
+    if (type === "System Update") return "🔄"
+    return "📢"
   }
 
   return (
@@ -184,20 +173,20 @@ export function NotificationCenter() {
                     <div
                       key={notification.id}
                       className={`flex items-start gap-2 p-3 rounded-md hover:bg-accent/50 cursor-pointer transition-colors ${
-                        notification.read ? "opacity-70" : "bg-accent/20"
+                        notification.is_read ? "opacity-70" : "bg-accent/20"
                       }`}
                       onClick={() => handleNotificationClick(notification)}
                     >
                       <div className="text-lg mt-0.5">
-                        {getNotificationIcon(notification.type)}
+                        {getNotificationIcon(notification.notification_type || "General Alert")}
                       </div>
                       <div className="flex-1 space-y-1">
                         <div className="flex items-start justify-between">
                           <p className="text-sm font-medium leading-none">
-                            {notification.title}
+                            {notification.notification_type || "Notification"}
                           </p>
                           <div className="flex gap-1">
-                            {!notification.read && (
+                            {!notification.is_read && (
                               <Button
                                 variant="ghost"
                                 size="icon"

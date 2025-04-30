@@ -10,22 +10,14 @@ import { ArrowUpRight, TrendingUp, DollarSign, Calendar, BarChart3 } from "lucid
 // Import client components with dynamic imports
 const DiversificationWheel = dynamic(() => import("@/components/income/diversification-wheel").then(mod => mod.DiversificationWheel), { ssr: false })
 
+import type { Income } from "@/app/actions/income"
+
 interface IncomeAnalyticsClientProps {
-  sources: any[]
+  incomes: Income[]
+  diversificationScore: number
 }
 
-// Function to normalize income to monthly amount
-const normalizeToMonthly = (amount: number, frequency: string): number => {
-  switch (frequency) {
-    case "daily": return amount * 30.42; // Average days in a month
-    case "weekly": return amount * 4.33; // Average weeks in a month
-    case "bi-weekly": return amount * 2.17; // Bi-weekly periods in a month
-    case "monthly": return amount;
-    case "annually": return amount / 12;
-    case "one-time": return amount / 12; // Spread one-time income over a year
-    default: return amount;
-  }
-};
+// No need for normalization function as the database already calculates monthly_equivalent_amount
 
 // Function to format currency
 const formatCurrency = (amount: number): string => {
@@ -43,51 +35,51 @@ const COLORS = [
   "#5DADE2", "#48C9B0", "#F4D03F", "#EB984E", "#EC7063"
 ];
 
-export function IncomeAnalyticsClient({ sources }: IncomeAnalyticsClientProps) {
+export function IncomeAnalyticsClient({ incomes, diversificationScore }: IncomeAnalyticsClientProps) {
   const [activeTab, setActiveTab] = useState<string>("overview");
 
-  // Calculate monthly and annual income
-  const monthlyIncome = sources.reduce((sum, source) => {
-    return sum + normalizeToMonthly(Number(source.amount), source.frequency);
+  // Calculate monthly and annual income using monthly_equivalent_amount
+  const monthlyIncome = incomes.reduce((sum, income) => {
+    return sum + (income.monthly_equivalent_amount || 0);
   }, 0);
 
   const annualIncome = monthlyIncome * 12;
 
-  // Prepare data for type distribution chart
-  const typeDistributionData = React.useMemo(() => {
-    if (!sources || sources.length === 0) return [];
+  // Prepare data for category distribution chart
+  const categoryDistributionData = React.useMemo(() => {
+    if (!incomes || incomes.length === 0) return [];
     
-    const typeDistribution: Record<string, number> = {};
+    const categoryDistribution: Record<string, number> = {};
     
-    sources.forEach((source) => {
-      const normalizedAmount = normalizeToMonthly(Number(source.amount), source.frequency);
-      typeDistribution[source.type] = (typeDistribution[source.type] || 0) + normalizedAmount;
+    incomes.forEach((income) => {
+      const categoryName = income.category?.name || "Uncategorized";
+      categoryDistribution[categoryName] = (categoryDistribution[categoryName] || 0) + (income.monthly_equivalent_amount || 0);
     });
     
-    return Object.entries(typeDistribution).map(([type, amount]) => ({
-      name: type.charAt(0).toUpperCase() + type.slice(1), // Capitalize type
+    return Object.entries(categoryDistribution).map(([category, amount]) => ({
+      name: category.charAt(0).toUpperCase() + category.slice(1), // Capitalize category
       value: amount,
     }));
-  }, [sources]);
+  }, [incomes]);
 
-  // Prepare data for frequency distribution chart
-  const frequencyDistributionData = React.useMemo(() => {
-    if (!sources || sources.length === 0) return [];
+  // Prepare data for recurrence distribution chart
+  const recurrenceDistributionData = React.useMemo(() => {
+    if (!incomes || incomes.length === 0) return [];
     
-    const frequencyDistribution: Record<string, number> = {};
+    const recurrenceDistribution: Record<string, number> = {};
     
-    sources.forEach((source) => {
-      const normalizedAmount = normalizeToMonthly(Number(source.amount), source.frequency);
-      frequencyDistribution[source.frequency] = (frequencyDistribution[source.frequency] || 0) + normalizedAmount;
+    incomes.forEach((income) => {
+      recurrenceDistribution[income.recurrence] = (recurrenceDistribution[income.recurrence] || 0) + (income.monthly_equivalent_amount || 0);
     });
     
-    return Object.entries(frequencyDistribution).map(([frequency, amount]) => {
-      // Format the frequency name for display
-      let name = frequency;
-      switch (frequency) {
-        case "bi-weekly": name = "Bi-Weekly"; break;
-        case "one-time": name = "One-Time"; break;
-        default: name = frequency.charAt(0).toUpperCase() + frequency.slice(1);
+    return Object.entries(recurrenceDistribution).map(([recurrence, amount]) => {
+      // Format the recurrence name for display
+      let name = recurrence;
+      switch (recurrence) {
+        case "none": name = "One-Time"; break;
+        case "bi_weekly": name = "Bi-Weekly"; break;
+        case "semi_annual": name = "Semi-Annual"; break;
+        default: name = recurrence.charAt(0).toUpperCase() + recurrence.slice(1);
       }
       
       return {
@@ -95,21 +87,20 @@ export function IncomeAnalyticsClient({ sources }: IncomeAnalyticsClientProps) {
         value: amount,
       };
     });
-  }, [sources]);
+  }, [incomes]);
 
-  // Prepare data for income stability chart (monthly vs one-time)
+  // Prepare data for income stability chart (recurring vs one-time)
   const stabilityData = React.useMemo(() => {
-    if (!sources || sources.length === 0) return { recurring: 0, oneTime: 0 };
+    if (!incomes || incomes.length === 0) return [];
     
     let recurring = 0;
     let oneTime = 0;
     
-    sources.forEach((source) => {
-      const normalizedAmount = normalizeToMonthly(Number(source.amount), source.frequency);
-      if (source.frequency === "one-time") {
-        oneTime += normalizedAmount;
+    incomes.forEach((income) => {
+      if (income.recurrence === "none") {
+        oneTime += (income.monthly_equivalent_amount || 0);
       } else {
-        recurring += normalizedAmount;
+        recurring += (income.monthly_equivalent_amount || 0);
       }
     });
     
@@ -117,18 +108,18 @@ export function IncomeAnalyticsClient({ sources }: IncomeAnalyticsClientProps) {
       { name: "Recurring", value: recurring },
       { name: "One-Time", value: oneTime }
     ];
-  }, [sources]);
+  }, [incomes]);
 
   // Prepare data for income by source bar chart
   const incomeBySourceData = React.useMemo(() => {
-    if (!sources || sources.length === 0) return [];
+    if (!incomes || incomes.length === 0) return [];
     
-    return sources.map(source => ({
-      name: source.name,
-      monthly: normalizeToMonthly(Number(source.amount), source.frequency),
-      type: source.type
+    return incomes.map(income => ({
+      name: income.source_name,
+      monthly: income.monthly_equivalent_amount || 0,
+      category: income.category?.name || "Uncategorized"
     })).sort((a, b) => b.monthly - a.monthly).slice(0, 10); // Top 10 sources
-  }, [sources]);
+  }, [incomes]);
 
   // Prepare data for monthly trend (simulated data since we don't have historical data)
   const monthlyTrendData = React.useMemo(() => {
@@ -179,7 +170,7 @@ export function IncomeAnalyticsClient({ sources }: IncomeAnalyticsClientProps) {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  From {sources.length} income source{sources.length !== 1 ? 's' : ''}
+                  From {incomes.length} income source{incomes.length !== 1 ? 's' : ''}
                 </p>
               </CardContent>
             </Card>
@@ -243,13 +234,19 @@ export function IncomeAnalyticsClient({ sources }: IncomeAnalyticsClientProps) {
                         tickFormatter={(value) => `$${value.toFixed(0)}`}
                       />
                       <Tooltip 
-                        formatter={(value) => [`$${Number(value).toFixed(2)}`, "Monthly"]}
+                        formatter={(value) => formatCurrency(value as number)}
                         labelFormatter={(label) => `Source: ${label}`}
                       />
                       <Bar 
                         dataKey="monthly" 
                         name="Monthly Amount" 
-                        fill="#8884d8" 
+                        fill="#0088FE" 
+                        radius={[4, 4, 0, 0]}
+                      />
+                      <Bar 
+                        dataKey="category" 
+                        name="Category" 
+                        fill="#00C49F" 
                         radius={[4, 4, 0, 0]}
                       />
                     </BarChart>
@@ -262,7 +259,7 @@ export function IncomeAnalyticsClient({ sources }: IncomeAnalyticsClientProps) {
               </CardContent>
             </Card>
             
-            <DiversificationWheel sources={sources} />
+            <DiversificationWheel sources={incomes} />
           </div>
         </TabsContent>
         
@@ -275,34 +272,27 @@ export function IncomeAnalyticsClient({ sources }: IncomeAnalyticsClientProps) {
                 <CardDescription>Distribution of income across different types</CardDescription>
               </CardHeader>
               <CardContent>
-                {typeDistributionData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={300}>
+                <div className="h-[200px]">
+                  <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
-                        data={typeDistributionData}
+                        data={categoryDistributionData}
+                        dataKey="value"
+                        nameKey="name"
                         cx="50%"
                         cy="50%"
-                        labelLine={false}
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                        outerRadius={100}
+                        outerRadius={80}
                         fill="#8884d8"
-                        dataKey="value"
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                       >
-                        {typeDistributionData.map((entry, index) => (
+                        {categoryDistributionData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip 
-                        formatter={(value) => [`$${Number(value).toFixed(2)}`, "Monthly"]}
-                      />
-                      <Legend />
+                      <Tooltip formatter={(value) => formatCurrency(value as number)} />
                     </PieChart>
                   </ResponsiveContainer>
-                ) : (
-                  <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-                    No income sources found
-                  </div>
-                )}
+                </div>
               </CardContent>
             </Card>
             
@@ -312,34 +302,27 @@ export function IncomeAnalyticsClient({ sources }: IncomeAnalyticsClientProps) {
                 <CardDescription>How your income is distributed by payment frequency</CardDescription>
               </CardHeader>
               <CardContent>
-                {frequencyDistributionData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={300}>
+                <div className="h-[200px]">
+                  <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
-                        data={frequencyDistributionData}
+                        data={recurrenceDistributionData}
+                        dataKey="value"
+                        nameKey="name"
                         cx="50%"
                         cy="50%"
-                        labelLine={false}
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                        outerRadius={100}
+                        outerRadius={80}
                         fill="#8884d8"
-                        dataKey="value"
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                       >
-                        {frequencyDistributionData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[(index + 3) % COLORS.length]} />
+                        {recurrenceDistributionData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip 
-                        formatter={(value) => [`$${Number(value).toFixed(2)}`, "Monthly"]}
-                      />
-                      <Legend />
+                      <Tooltip formatter={(value) => formatCurrency(value as number)} />
                     </PieChart>
                   </ResponsiveContainer>
-                ) : (
-                  <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-                    No income sources found
-                  </div>
-                )}
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -367,9 +350,7 @@ export function IncomeAnalyticsClient({ sources }: IncomeAnalyticsClientProps) {
                         <Cell fill="#4CAF50" />
                         <Cell fill="#FF9800" />
                       </Pie>
-                      <Tooltip 
-                        formatter={(value) => [`$${Number(value).toFixed(2)}`, "Monthly"]}
-                      />
+                      <Tooltip formatter={(value) => formatCurrency(value as number)} />
                       <Legend />
                     </PieChart>
                   </ResponsiveContainer>
@@ -434,7 +415,7 @@ export function IncomeAnalyticsClient({ sources }: IncomeAnalyticsClientProps) {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" />
                   <YAxis tickFormatter={(value) => `$${value.toFixed(0)}`} />
-                  <Tooltip formatter={(value) => [`$${Number(value).toFixed(2)}`, "Income"]} />
+                  <Tooltip formatter={(value) => formatCurrency(value as number)} />
                   <Legend />
                   <Line 
                     type="monotone" 
@@ -469,8 +450,8 @@ export function IncomeAnalyticsClient({ sources }: IncomeAnalyticsClientProps) {
                   />
                 </LineChart>
               </ResponsiveContainer>
-              <div className="mt-4 text-sm text-muted-foreground text-center">
-                <p>Note: Future months show projected income based on current sources</p>
+              <div className="text-sm text-muted-foreground mt-2">
+                Diversification score: {diversificationScore.toFixed(2)}%
               </div>
             </CardContent>
           </Card>
@@ -499,11 +480,11 @@ export function IncomeAnalyticsClient({ sources }: IncomeAnalyticsClientProps) {
                 <div className="space-y-2">
                   <h3 className="font-medium">Growth Recommendations:</h3>
                   <ul className="space-y-2">
-                    {sources.length === 0 ? (
+                    {incomes.length === 0 ? (
                       <li className="text-muted-foreground">Add income sources to see recommendations</li>
                     ) : (
                       <>
-                        {typeDistributionData.length < 3 && (
+                        {categoryDistributionData.length < 3 && (
                           <li className="flex items-start">
                             <TrendingUp className="h-5 w-5 text-green-500 mr-2 mt-0.5" />
                             <span>Diversify your income with additional income types</span>

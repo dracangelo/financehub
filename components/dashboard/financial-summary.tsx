@@ -19,24 +19,29 @@ import {
 } from "recharts"
 
 interface FinancialSummaryProps {
-  accountSummary: {
+  // Support both the original interface and the simplified props
+  accountSummary?: {
     totalBalance: number
     accountCount: number
     currencyBreakdown: { [key: string]: number }
     typeBreakdown: { [key: string]: number }
   }
-  transactionStats: {
+  transactionStats?: {
     totalIncome: number
     totalExpenses: number
     netIncome: number
     transactionCount: number
     averageTransaction: number
   }
-  monthlyData: Array<{
+  monthlyData?: Array<{
     month: string
     income: number
     expenses: number
   }>
+  // Direct props as passed from dashboard page
+  totalIncome?: number
+  totalExpenses?: number
+  netIncome?: number
   categorySpending: Array<{
     name: string
     amount: number
@@ -48,18 +53,28 @@ export function FinancialSummary({
   accountSummary, 
   transactionStats, 
   monthlyData, 
+  totalIncome: directTotalIncome, 
+  totalExpenses: directTotalExpenses, 
+  netIncome: directNetIncome, 
   categorySpending 
 }: FinancialSummaryProps) {
+  // Use either direct props or transactionStats
+  const totalIncome = directTotalIncome ?? transactionStats?.totalIncome ?? 0
+  const totalExpenses = directTotalExpenses ?? transactionStats?.totalExpenses ?? 0
+  const netIncome = directNetIncome ?? transactionStats?.netIncome ?? (totalIncome - totalExpenses)
+  
   // Calculate financial health metrics
-  const savingsRate = transactionStats.totalIncome > 0 
-    ? (transactionStats.netIncome / transactionStats.totalIncome) * 100 
+  const savingsRate = totalIncome > 0 
+    ? (netIncome / totalIncome) * 100 
     : 0
   
   // Prepare data for account type breakdown chart
-  const accountTypeData = Object.entries(accountSummary.typeBreakdown).map(([type, amount]) => ({
-    name: type,
-    value: amount,
-  }))
+  const accountTypeData = accountSummary?.typeBreakdown 
+    ? Object.entries(accountSummary.typeBreakdown).map(([type, amount]) => ({
+        name: type,
+        value: amount,
+      }))
+    : []
   
   // Prepare data for category spending chart
   const topCategories = [...categorySpending]
@@ -83,16 +98,16 @@ export function FinancialSummary({
             <div className="grid gap-3 grid-cols-2">
               <div className="p-3 bg-muted rounded-lg">
                 <div className="text-sm text-muted-foreground">Income</div>
-                <div className="text-xl font-bold text-green-600">{formatCurrency(transactionStats.totalIncome)}</div>
+                <div className="text-xl font-bold text-green-600">{formatCurrency(totalIncome)}</div>
               </div>
               <div className="p-3 bg-muted rounded-lg">
                 <div className="text-sm text-muted-foreground">Expenses</div>
-                <div className="text-xl font-bold text-red-600">{formatCurrency(transactionStats.totalExpenses)}</div>
+                <div className="text-xl font-bold text-red-600">{formatCurrency(totalExpenses)}</div>
               </div>
               <div className="p-3 bg-muted rounded-lg">
                 <div className="text-sm text-muted-foreground">Net Income</div>
-                <div className={`text-xl font-bold ${transactionStats.netIncome >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {formatCurrency(transactionStats.netIncome)}
+                <div className={`text-xl font-bold ${netIncome >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {formatCurrency(netIncome)}
                 </div>
               </div>
               <div className="p-3 bg-muted rounded-lg">
@@ -109,7 +124,7 @@ export function FinancialSummary({
               <div className="h-[200px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart
-                    data={monthlyData}
+                    data={monthlyData || []}
                     margin={{ top: 5, right: 5, left: 5, bottom: 5 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" />
@@ -146,7 +161,7 @@ export function FinancialSummary({
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={accountTypeData}
+                      data={accountTypeData || []}
                       cx="50%"
                       cy="50%"
                       labelLine={false}

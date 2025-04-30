@@ -1,18 +1,100 @@
-export type BudgetModelType = "traditional" | "50-30-20" | "zero-based" | "envelope"
+export type BudgetModelType = "traditional" | "zero_based" | "fifty_thirty_twenty" | "envelope" | "custom"
 export type RiskLevel = "low" | "medium" | "high"
+export type BudgetRole = "owner" | "editor" | "viewer"
 
-export interface BudgetCategory {
+// Database schema interfaces
+export interface Budget {
+  id: string
+  user_id: string
   name: string
-  percentage: number
-  amount: number
-  subcategories?: BudgetCategory[]
-  priority?: number
-  historical?: {
-    average: number
-    frequency: number
-  }
+  description?: string
+  model: BudgetModelType
+  start_date: string
+  end_date: string
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  // Additional fields for UI
+  categories?: BudgetCategory[]
+  income?: number
+  total_allocated?: number
 }
 
+export interface BudgetCategory {
+  id?: string
+  budget_id?: string
+  name: string
+  description?: string
+  parent_category_id?: string | null
+  created_at?: string
+  updated_at?: string
+  // Additional fields for UI
+  amount?: number
+  amount_allocated?: number
+  percentage?: number
+  subcategories?: BudgetCategory[]
+  items?: BudgetItem[]
+}
+
+export interface BudgetItem {
+  id?: string
+  category_id: string
+  amount: number
+  actual_amount?: number
+  notes?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface SharedBudget {
+  id: string
+  budget_id: string
+  user_id: string
+  role: BudgetRole
+  created_at?: string
+  updated_at?: string
+}
+
+export interface BudgetScenario {
+  id: string
+  budget_id: string
+  name: string
+  notes?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface BudgetAdjustment {
+  id: string
+  item_id: string
+  amount_change: number
+  reason?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface BudgetTemplate {
+  id: string
+  name: string
+  description?: string
+  model: BudgetModelType
+  is_default: boolean
+  created_at?: string
+  updated_at?: string
+  // Additional fields for UI
+  categories?: BudgetCategory[]
+  defaultAllocation?: {
+    [key: string]: number // category name -> percentage
+  }
+  recommendedIncome?: {
+    min: number
+    max: number
+  }
+  timeline?: string
+  tags?: string[]
+}
+
+// UI models
 export interface BudgetModel {
   type: BudgetModelType
   name: string
@@ -46,21 +128,4 @@ export interface FinancialGoal {
   deadline?: Date
   priority: number
   currentProgress: number
-}
-
-export interface BudgetTemplate {
-  id: string
-  name: string
-  description: string
-  type: BudgetModelType
-  categories: BudgetCategory[]
-  defaultAllocation: {
-    [key: string]: number // category name -> percentage
-  }
-  recommendedIncome: {
-    min: number
-    max: number
-  }
-  timeline: string // e.g., "6 months", "1 year"
-  tags: string[]
 }
