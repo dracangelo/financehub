@@ -57,8 +57,42 @@ export function IncomeForm({ income, isEditing = false }: IncomeFormProps) {
   const [previewingNotes, setPreviewingNotes] = useState<boolean>(false)
   
   // Deductions and side hustles
-  const [deductions, setDeductions] = useState<Array<{name: string, amount: number, tax_class: TaxType}>>([])
-  const [hustles, setHustles] = useState<Array<{name: string, amount: number}>>([])
+  const [deductions, setDeductions] = useState<Array<{name: string, amount: number, tax_class: TaxType}>>([]);
+  const [hustles, setHustles] = useState<Array<{name: string, amount: number}>>([]);
+  
+  // Load existing deductions and hustles when editing
+  useEffect(() => {
+    if (isEditing && income) {
+      console.log("Loading existing income data for editing:", income);
+      
+      // Load deductions if they exist
+      if (income.deductions && Array.isArray(income.deductions)) {
+        console.log("Loading deductions:", income.deductions);
+        const formattedDeductions = income.deductions.map(d => ({
+          name: d.name,
+          amount: d.amount,
+          tax_class: d.tax_class as TaxType
+        }));
+        setDeductions(formattedDeductions);
+        console.log("Formatted deductions set to state:", formattedDeductions);
+      } else {
+        console.log("No deductions found or invalid format");
+      }
+      
+      // Load hustles if they exist
+      if (income.hustles && Array.isArray(income.hustles)) {
+        console.log("Loading side hustles:", income.hustles);
+        const formattedHustles = income.hustles.map(h => ({
+          name: h.hustle_name,
+          amount: h.hustle_amount
+        }));
+        setHustles(formattedHustles);
+        console.log("Formatted hustles set to state:", formattedHustles);
+      } else {
+        console.log("No side hustles found or invalid format");
+      }
+    }
+  }, [isEditing, income]);
   
   // Load income categories
   useEffect(() => {
@@ -148,13 +182,12 @@ export function IncomeForm({ income, isEditing = false }: IncomeFormProps) {
       formData.append("tax_class", taxClass)
       
       // Add deductions and hustles as JSON strings
-      if (deductions.length > 0) {
-        formData.append("deductions", JSON.stringify(deductions))
-      }
+      // Always include deductions and hustles arrays, even if empty
+      console.log("Submitting deductions:", deductions);
+      formData.append("deductions", JSON.stringify(deductions));
       
-      if (hustles.length > 0) {
-        formData.append("hustles", JSON.stringify(hustles))
-      }
+      console.log("Submitting hustles:", hustles);
+      formData.append("hustles", JSON.stringify(hustles));
       
       // Create or update income
       if (isEditing && income?.id) {
@@ -195,7 +228,14 @@ export function IncomeForm({ income, isEditing = false }: IncomeFormProps) {
   
   // Add a new deduction
   function addDeduction() {
-    setDeductions([...deductions, { name: "", amount: 0, tax_class: "pre_tax" }])
+    // Create a new deduction with default values
+    const newDeduction = { name: "", amount: 0, tax_class: "pre_tax" as TaxType };
+    setDeductions([...deductions, newDeduction]);
+    // Switch to the deductions tab when adding a new deduction
+    setFormTab("deductions");
+    
+    // Log for debugging
+    console.log("Added new deduction, current deductions:", [...deductions, newDeduction]);
   }
   
   // Remove a deduction
@@ -207,14 +247,25 @@ export function IncomeForm({ income, isEditing = false }: IncomeFormProps) {
   
   // Update a deduction
   function updateDeduction(index: number, field: string, value: any) {
-    const newDeductions = [...deductions]
-    newDeductions[index] = { ...newDeductions[index], [field]: value }
-    setDeductions(newDeductions)
+    const newDeductions = [...deductions];
+    newDeductions[index] = { ...newDeductions[index], [field]: value };
+    setDeductions(newDeductions);
+    
+    // Log for debugging
+    console.log(`Updated deduction ${index}, field: ${field}, value: ${value}`);
+    console.log("Current deductions:", newDeductions);
   }
   
   // Add a new side hustle
   function addHustle() {
-    setHustles([...hustles, { name: "", amount: 0 }])
+    // Create a new side hustle with default values
+    const newHustle = { name: "", amount: 0 };
+    setHustles([...hustles, newHustle]);
+    // Switch to the side hustles tab when adding a new one
+    setFormTab("hustles");
+    
+    // Log for debugging
+    console.log("Added new side hustle, current hustles:", [...hustles, newHustle]);
   }
   
   // Remove a side hustle
@@ -226,9 +277,13 @@ export function IncomeForm({ income, isEditing = false }: IncomeFormProps) {
   
   // Update a side hustle
   function updateHustle(index: number, field: string, value: any) {
-    const newHustles = [...hustles]
-    newHustles[index] = { ...newHustles[index], [field]: value }
-    setHustles(newHustles)
+    const newHustles = [...hustles];
+    newHustles[index] = { ...newHustles[index], [field]: value };
+    setHustles(newHustles);
+    
+    // Log for debugging
+    console.log(`Updated hustle ${index}, field: ${field}, value: ${value}`);
+    console.log("Current hustles:", newHustles);
   }
   
   return (

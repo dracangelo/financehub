@@ -21,7 +21,9 @@ export const metadata = {
 }
 
 export default async function EditIncomePage({ params }: EditIncomePageProps) {
-  const income = await getIncomeById(params.id)
+  // Ensure params is properly awaited before accessing its properties
+  const { id } = params
+  const income = await getIncomeById(id)
   
   if (!income) {
     notFound()

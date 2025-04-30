@@ -113,6 +113,50 @@ export function IncomeAnalyticsClient({ incomes, diversificationScore }: IncomeA
       };
     });
   }, [incomes]);
+  
+  // Prepare data for frequency distribution analysis
+  const frequencyDistributionData = React.useMemo(() => {
+    if (!incomes || incomes.length === 0) return [];
+    
+    // Group incomes by frequency/recurrence
+    const frequencyMap = new Map<string, number>();
+    
+    incomes.forEach(income => {
+      let frequency = "";
+      switch (income.recurrence) {
+        case "weekly": frequency = "Weekly"; break;
+        case "bi_weekly": frequency = "Every 2 Weeks"; break;
+        case "monthly": frequency = "Monthly"; break;
+        case "quarterly": frequency = "Quarterly"; break;
+        case "semi_annual": frequency = "Bi-Annually"; break;
+        case "annual": frequency = "Yearly"; break;
+        default: frequency = "One-Time";
+      }
+      
+      const monthlyAmount = income.monthly_equivalent_amount || 0;
+      
+      if (frequencyMap.has(frequency)) {
+        frequencyMap.set(frequency, frequencyMap.get(frequency)! + monthlyAmount);
+      } else {
+        frequencyMap.set(frequency, monthlyAmount);
+      }
+    });
+    
+    // Convert to array format for chart and sort by frequency
+    const frequencyOrder = {
+      "Weekly": 1,
+      "Every 2 Weeks": 2,
+      "Monthly": 3,
+      "Quarterly": 4,
+      "Bi-Annually": 5,
+      "Yearly": 6,
+      "One-Time": 7
+    };
+    
+    return Array.from(frequencyMap.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => frequencyOrder[a.name as keyof typeof frequencyOrder] - frequencyOrder[b.name as keyof typeof frequencyOrder]);
+  }, [incomes]);
 
   // Prepare data for income stability chart (recurring vs one-time)
   const stabilityData = React.useMemo(() => {

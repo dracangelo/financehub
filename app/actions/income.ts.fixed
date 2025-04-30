@@ -43,10 +43,6 @@ export interface Income {
   category?: IncomeCategory;
   deductions?: IncomeDeduction[];
   hustles?: IncomeHustle[];
-  // Additional calculated fields
-  total_deductions?: number;
-  total_hustles?: number;
-  adjusted_amount?: number;
 }
 
 export interface IncomeCategory {
@@ -76,26 +72,6 @@ export interface IncomeHustle {
   created_at: string;
 }
 
-// Helper function to convert amounts to monthly equivalent based on recurrence
-function convertToMonthlyAmount(amount: number, recurrence: IncomeRecurrenceFrequency): number {
-  switch (recurrence) {
-    case "weekly":
-      return amount * 52 / 12;
-    case "bi_weekly":
-      return amount * 26 / 12;
-    case "monthly":
-      return amount;
-    case "quarterly":
-      return amount / 3;
-    case "semi_annual":
-      return amount / 6;
-    case "annual":
-      return amount / 12;
-    default:
-      return amount;
-  }
-}
-
 // Get all income entries for the current user
 export async function getIncomes(timestamp?: number) {
   try {
@@ -109,54 +85,20 @@ export async function getIncomes(timestamp?: number) {
       .from("incomes")
       .select(`
         *,
-        category:income_categories(id, name),
-        deductions:income_deductions(*),
-        hustles:income_hustles(*)
+        category:income_categories(id, name)
       `)
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
     if (error) {
       console.error("Error fetching incomes:", error);
-      return [];
-    }
-
-    // Process each income to calculate adjusted amounts with deductions and side hustles
-    if (data && data.length > 0) {
-      data.forEach(income => {
-        // Calculate total deductions
-        let totalDeductions = 0;
-        if (income.deductions && Array.isArray(income.deductions)) {
-          totalDeductions = income.deductions.reduce((sum: number, deduction: any) => {
-            return sum + (deduction.amount || 0);
-          }, 0);
-        }
-        
-        // Calculate total side hustles
-        let totalHustles = 0;
-        if (income.hustles && Array.isArray(income.hustles)) {
-          totalHustles = income.hustles.reduce((sum: number, hustle: any) => {
-            return sum + (hustle.hustle_amount || 0);
-          }, 0);
-        }
-        
-        // Adjust the base amount with deductions and side hustles
-        const adjustedAmount = income.amount - totalDeductions + totalHustles;
-        
-        // Recalculate monthly equivalent with the adjusted amount
-        income.monthly_equivalent_amount = convertToMonthlyAmount(adjustedAmount, income.recurrence);
-        
-        // Add calculated fields for UI display
-        income.total_deductions = totalDeductions;
-        income.total_hustles = totalHustles;
-        income.adjusted_amount = adjustedAmount;
-      });
+      throw new Error("Failed to fetch incomes");
     }
 
     return data || [];
   } catch (error) {
     console.error("Error in getIncomes:", error);
-    return [];
+    throw error;
   }
 }
 
@@ -184,36 +126,6 @@ export async function getIncomeById(id: string) {
     if (error) {
       console.error("Error fetching income:", error);
       throw new Error("Failed to fetch income");
-    }
-
-    // Calculate adjusted amount with deductions and side hustles
-    if (data) {
-      // Calculate total deductions
-      let totalDeductions = 0;
-      if (data.deductions && Array.isArray(data.deductions)) {
-        totalDeductions = data.deductions.reduce((sum: number, deduction: any) => {
-          return sum + (deduction.amount || 0);
-        }, 0);
-      }
-      
-      // Calculate total side hustles
-      let totalHustles = 0;
-      if (data.hustles && Array.isArray(data.hustles)) {
-        totalHustles = data.hustles.reduce((sum: number, hustle: any) => {
-          return sum + (hustle.hustle_amount || 0);
-        }, 0);
-      }
-      
-      // Adjust the base amount with deductions and side hustles
-      const adjustedAmount = data.amount - totalDeductions + totalHustles;
-      
-      // Recalculate monthly equivalent with the adjusted amount
-      data.monthly_equivalent_amount = convertToMonthlyAmount(adjustedAmount, data.recurrence);
-      
-      // Add calculated fields for UI display
-      data.total_deductions = totalDeductions;
-      data.total_hustles = totalHustles;
-      data.adjusted_amount = adjustedAmount;
     }
 
     return data;
@@ -360,50 +272,6 @@ export async function createIncome(formData: FormData) {
     const isTaxable = formData.get("is_taxable") === "true";
     const taxClass = formData.get("tax_class") as TaxType || "post_tax";
 
-    // Parse deductions and side hustles if they exist
-    let totalDeductions = 0;
-    let totalHustles = 0;
-    
-    // Process deductions
-    const deductionsJson = formData.get("deductions") as string;
-    let deductions: any[] = [];
-    if (deductionsJson) {
-      try {
-        deductions = JSON.parse(deductionsJson);
-        if (Array.isArray(deductions) && deductions.length > 0) {
-          // Calculate total deductions amount
-          totalDeductions = deductions.reduce((sum, deduction) => {
-            return sum + (deduction.amount || 0);
-          }, 0);
-        }
-      } catch (e) {
-        console.error("Error parsing deductions for monthly calculation:", e);
-      }
-    }
-    
-    // Process side hustles
-    const hustlesJson = formData.get("hustles") as string;
-    let hustles: any[] = [];
-    if (hustlesJson) {
-      try {
-        hustles = JSON.parse(hustlesJson);
-        if (Array.isArray(hustles) && hustles.length > 0) {
-          // Calculate total side hustles amount
-          totalHustles = hustles.reduce((sum, hustle) => {
-            return sum + (hustle.amount || 0);
-          }, 0);
-        }
-      } catch (e) {
-        console.error("Error parsing side hustles for monthly calculation:", e);
-      }
-    }
-    
-    // Calculate adjusted amount with deductions and side hustles
-    const adjustedAmount = amount - totalDeductions + totalHustles;
-    
-    // Calculate monthly equivalent amount with the adjusted amount
-    const monthlyEquivalentAmount = convertToMonthlyAmount(adjustedAmount, recurrence);
-
     const incomeData = {
       user_id: userId,
       source_name: sourceName,
@@ -415,8 +283,7 @@ export async function createIncome(formData: FormData) {
       recurrence,
       start_date: startDate,
       end_date: endDate,
-      notes,
-      monthly_equivalent_amount: monthlyEquivalentAmount
+      notes
     };
 
     console.log("Income data to insert:", incomeData);
@@ -432,20 +299,16 @@ export async function createIncome(formData: FormData) {
     }
 
     // Process deductions if any
-    if (deductions.length > 0) {
+    const deductionsJson = formData.get("deductions") as string;
+    if (deductionsJson) {
       try {
-        // Filter out any invalid deductions (empty name or zero amount)
-        const validDeductions = deductions.filter(d => d.name && d.amount > 0);
-        
-        if (validDeductions.length > 0) {
-          // Log for debugging
-          console.log("Saving deductions:", validDeductions);
-          
-          const deductionsToInsert = validDeductions.map(deduction => ({
+        const deductions = JSON.parse(deductionsJson);
+        if (Array.isArray(deductions) && deductions.length > 0) {
+          const deductionsToInsert = deductions.map(deduction => ({
             income_id: data[0].id,
             name: deduction.name,
             amount: deduction.amount,
-            tax_class: deduction.tax_class || "pre_tax"
+            tax_class: deduction.tax_class
           }));
 
           const { error: deductionsError } = await supabase
@@ -454,26 +317,20 @@ export async function createIncome(formData: FormData) {
 
           if (deductionsError) {
             console.error("Error adding deductions:", deductionsError);
-          } else {
-            console.log(`Successfully added ${validDeductions.length} deductions`);
           }
         }
       } catch (e) {
-        console.error("Error processing deductions:", e);
+        console.error("Error parsing deductions:", e);
       }
     }
 
     // Process side hustles if any
-    if (hustles.length > 0) {
+    const hustlesJson = formData.get("hustles") as string;
+    if (hustlesJson) {
       try {
-        // Filter out any invalid hustles (empty name or zero amount)
-        const validHustles = hustles.filter(h => h.name && h.amount > 0);
-        
-        if (validHustles.length > 0) {
-          // Log for debugging
-          console.log("Saving side hustles:", validHustles);
-          
-          const hustlesToInsert = validHustles.map(hustle => ({
+        const hustles = JSON.parse(hustlesJson);
+        if (Array.isArray(hustles) && hustles.length > 0) {
+          const hustlesToInsert = hustles.map(hustle => ({
             user_id: userId,
             income_id: data[0].id,
             hustle_name: hustle.name,
@@ -486,12 +343,10 @@ export async function createIncome(formData: FormData) {
 
           if (hustlesError) {
             console.error("Error adding side hustles:", hustlesError);
-          } else {
-            console.log(`Successfully added ${validHustles.length} side hustles`);
           }
         }
       } catch (e) {
-        console.error("Error processing side hustles:", e);
+        console.error("Error parsing side hustles:", e);
       }
     }
 
@@ -569,50 +424,6 @@ export async function updateIncome(id: string, formData: FormData) {
     const taxClass = formData.get("tax_class") as TaxType;
     if (taxClass) updateData.tax_class = taxClass;
 
-    // Parse deductions and side hustles if they exist
-    let totalDeductions = 0;
-    let totalHustles = 0;
-    
-    // Process deductions
-    const deductionsJson = formData.get("deductions") as string;
-    let deductions: any[] = [];
-    if (deductionsJson) {
-      try {
-        deductions = JSON.parse(deductionsJson);
-        if (Array.isArray(deductions) && deductions.length > 0) {
-          // Calculate total deductions amount
-          totalDeductions = deductions.reduce((sum, deduction) => {
-            return sum + (deduction.amount || 0);
-          }, 0);
-        }
-      } catch (e) {
-        console.error("Error parsing deductions for monthly calculation:", e);
-      }
-    }
-    
-    // Process side hustles
-    const hustlesJson = formData.get("hustles") as string;
-    let hustles: any[] = [];
-    if (hustlesJson) {
-      try {
-        hustles = JSON.parse(hustlesJson);
-        if (Array.isArray(hustles) && hustles.length > 0) {
-          // Calculate total side hustles amount
-          totalHustles = hustles.reduce((sum, hustle) => {
-            return sum + (hustle.amount || 0);
-          }, 0);
-        }
-      } catch (e) {
-        console.error("Error parsing side hustles for monthly calculation:", e);
-      }
-    }
-    
-    // Calculate adjusted amount with deductions and side hustles
-    const adjustedAmount = updateData.amount - totalDeductions + totalHustles;
-    
-    // Calculate monthly equivalent amount with the adjusted amount
-    updateData.monthly_equivalent_amount = convertToMonthlyAmount(adjustedAmount, updateData.recurrence || recurrence);
-
     console.log("Income data to update:", updateData);
 
     // Update the income
@@ -628,10 +439,9 @@ export async function updateIncome(id: string, formData: FormData) {
     }
 
     // Handle deductions updates
+    const deductionsJson = formData.get("deductions") as string;
     if (deductionsJson) {
       try {
-        console.log("Processing deductions JSON:", deductionsJson);
-        
         // First delete existing deductions
         const { error: deleteError } = await supabase
           .from("income_deductions")
@@ -640,25 +450,21 @@ export async function updateIncome(id: string, formData: FormData) {
           
         if (deleteError) {
           console.error("Error deleting existing deductions:", deleteError);
-        } else {
-          console.log("Successfully deleted existing deductions for income ID:", id);
         }
 
         // Then add new ones
+        const deductions = JSON.parse(deductionsJson);
         if (Array.isArray(deductions) && deductions.length > 0) {
           // Filter out any invalid deductions (empty name or zero amount)
           const validDeductions = deductions.filter(d => d.name && d.amount > 0);
-          console.log("Valid deductions after filtering:", validDeductions);
           
           if (validDeductions.length > 0) {
             const deductionsToInsert = validDeductions.map(deduction => ({
               income_id: id,
               name: deduction.name,
               amount: deduction.amount,
-              tax_class: deduction.tax_class || "pre_tax" // Ensure tax_class has a default value
+              tax_class: deduction.tax_class
             }));
-            
-            console.log("Deductions to insert:", deductionsToInsert);
             
             const { error: deductionsError } = await supabase
               .from("income_deductions")
@@ -666,27 +472,18 @@ export async function updateIncome(id: string, formData: FormData) {
 
             if (deductionsError) {
               console.error("Error adding deductions:", deductionsError);
-            } else {
-              console.log(`Successfully added ${validDeductions.length} deductions for income ID: ${id}`);
             }
-          } else {
-            console.log("No valid deductions to add after filtering");
           }
-        } else {
-          console.log("No deductions to add or invalid array format");
         }
       } catch (e) {
         console.error("Error processing deductions:", e);
       }
-    } else {
-      console.log("No deductions JSON data provided");
     }
 
     // Handle side hustles updates
+    const hustlesJson = formData.get("hustles") as string;
     if (hustlesJson) {
       try {
-        console.log("Processing side hustles JSON:", hustlesJson);
-        
         // First delete existing hustles
         const { error: deleteError } = await supabase
           .from("income_hustles")
@@ -695,15 +492,13 @@ export async function updateIncome(id: string, formData: FormData) {
           
         if (deleteError) {
           console.error("Error deleting existing side hustles:", deleteError);
-        } else {
-          console.log("Successfully deleted existing side hustles for income ID:", id);
         }
 
         // Then add new ones
+        const hustles = JSON.parse(hustlesJson);
         if (Array.isArray(hustles) && hustles.length > 0) {
           // Filter out any invalid hustles (empty name or zero amount)
           const validHustles = hustles.filter(h => h.name && h.amount > 0);
-          console.log("Valid hustles after filtering:", validHustles);
           
           if (validHustles.length > 0) {
             const hustlesToInsert = validHustles.map(hustle => ({
@@ -713,28 +508,18 @@ export async function updateIncome(id: string, formData: FormData) {
               hustle_amount: hustle.amount
             }));
             
-            console.log("Side hustles to insert:", hustlesToInsert);
-            
             const { error: hustlesError } = await supabase
               .from("income_hustles")
               .insert(hustlesToInsert);
 
             if (hustlesError) {
               console.error("Error adding side hustles:", hustlesError);
-            } else {
-              console.log(`Successfully added ${validHustles.length} side hustles for income ID: ${id}`);
             }
-          } else {
-            console.log("No valid side hustles to add after filtering");
           }
-        } else {
-          console.log("No side hustles to add or invalid array format");
         }
       } catch (e) {
         console.error("Error processing side hustles:", e);
       }
-    } else {
-      console.log("No side hustles JSON data provided");
     }
 
     revalidatePath("/income");
@@ -793,89 +578,50 @@ export async function deleteIncome(id: string) {
   }
 }
 
-// Calculate income diversification score using a client-side implementation
+// Calculate income diversification score using the database function
 export async function calculateIncomeDiversification() {
   try {
-    // Get all incomes to calculate diversification
-    const incomes = await getIncomes();
-    
-    if (!incomes || incomes.length === 0) {
-      return 0; // No diversification if no income sources
+    const userId = await getCurrentUserId();
+    const supabase = await createServerSupabaseClient();
+    if (!supabase) {
+      throw new Error("Failed to create Supabase client");
     }
-    
-    if (incomes.length === 1) {
-      return 25; // Base diversification for a single income source
-    }
-    
-    // Calculate total monthly income - monthly_equivalent_amount already includes deductions and hustles
-    const totalMonthlyIncome = incomes.reduce((sum, income) => {
-      return sum + (income.monthly_equivalent_amount || 0);
-    }, 0);
-    
-    if (totalMonthlyIncome <= 0) {
+
+    const { data, error } = await supabase
+      .rpc('calculate_income_diversification', { user_id_param: userId });
+
+    if (error) {
+      console.error("Error calculating diversification:", error);
       return 0;
     }
-    
-    // Group incomes by category
-    const categoryMap = new Map<string, number>();
-    
-    incomes.forEach(income => {
-      const categoryName = income.category?.name || "Uncategorized";
-      const monthlyAmount = income.monthly_equivalent_amount || 0;
-      
-      if (categoryMap.has(categoryName)) {
-        categoryMap.set(categoryName, categoryMap.get(categoryName)! + monthlyAmount);
-      } else {
-        categoryMap.set(categoryName, monthlyAmount);
-      }
-    });
-    
-    // Calculate Herfindahl-Hirschman Index (HHI) - a measure of market concentration
-    // Lower HHI means better diversification
-    let hhi = 0;
-    
-    categoryMap.forEach((amount, category) => {
-      const marketShare = amount / totalMonthlyIncome;
-      hhi += marketShare * marketShare;
-    });
-    
-    // Convert HHI to a diversification score (0-100)
-    // HHI ranges from 1/n (perfect diversification) to 1 (complete concentration)
-    // where n is the number of categories
-    const minHHI = 1 / categoryMap.size;
-    const normalizedHHI = (hhi - minHHI) / (1 - minHHI);
-    
-    // Convert to a 0-100 score where 100 is perfect diversification
-    const diversificationScore = Math.round((1 - normalizedHHI) * 100);
-    
-    // Apply some adjustments based on number of income sources
-    const sourceCountBonus = Math.min(incomes.length * 5, 25);
-    
-    // Final score is a weighted combination
-    const finalScore = Math.min(Math.round(diversificationScore * 0.75 + sourceCountBonus), 100);
-    
-    return finalScore;
+
+    return data || 0;
   } catch (error) {
     console.error("Error in calculateIncomeDiversification:", error);
-    return 50; // Return a default middle value on error
+    return 0;
   }
 }
 
 // Get total monthly income
 export async function getTotalMonthlyIncome() {
   try {
-    // Get all incomes - monthly_equivalent_amount already includes deductions and side hustles
-    const incomes = await getIncomes();
-    
-    if (!incomes || incomes.length === 0) {
+    const userId = await getCurrentUserId();
+    const supabase = await createServerSupabaseClient();
+    if (!supabase) {
+      throw new Error("Failed to create Supabase client");
+    }
+
+    const { data, error } = await supabase
+      .from("incomes")
+      .select("monthly_equivalent_amount")
+      .eq("user_id", userId);
+
+    if (error) {
+      console.error("Error fetching monthly income:", error);
       return 0;
     }
-    
-    // Sum up all monthly equivalent amounts
-    const total = incomes.reduce((sum, income) => {
-      return sum + (income.monthly_equivalent_amount || 0);
-    }, 0);
-    
+
+    const total = data.reduce((sum, income) => sum + (income.monthly_equivalent_amount || 0), 0);
     return total;
   } catch (error) {
     console.error("Error in getTotalMonthlyIncome:", error);
