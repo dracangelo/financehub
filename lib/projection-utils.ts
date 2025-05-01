@@ -22,6 +22,9 @@ export interface ProjectedIncomeSource {
   sourceType: string
   frequency: string
   nextPaymentDate: string | null
+  totalDeductions?: number
+  totalHustles?: number
+  adjustedAmount?: number
 }
 
 export interface ProjectedExpense {
@@ -45,11 +48,13 @@ export async function getProjectedFinances(userId: string): Promise<ProjectedFin
   }
   
   // Get recurring income sources from the new income schema
+  // Only include incomes that are recurring (not one-time) and haven't reached their end date
   const { data: incomeSources, error: incomeError } = await supabase
     .from("incomes")
-    .select("*, category:income_categories(id, name)")
+    .select("*, category:income_categories(id, name), deductions:income_deductions(*), hustles:income_hustles(*)")
     .eq("user_id", userId)
-    .or(`end_date.is.null,end_date.gte.${new Date().toISOString()}`)
+    .neq("recurrence", "none") // Exclude one-time payments
+    .or(`end_date.is.null,end_date.gte.${new Date().toISOString()}`) // Only include active incomes
   
   if (incomeError) {
     console.error("Error fetching incomes:", incomeError)
@@ -71,8 +76,28 @@ export async function getProjectedFinances(userId: string): Promise<ProjectedFin
 
   // Calculate projected monthly income using the monthly_equivalent_amount from the new schema
   const projectedIncomeBreakdown = (incomeSources || []).map(source => {
+    // Calculate total deductions
+    let totalDeductions = 0;
+    if (source.deductions && Array.isArray(source.deductions)) {
+      totalDeductions = source.deductions.reduce((sum: number, deduction: any) => {
+        return sum + (deduction.amount || 0);
+      }, 0);
+    }
+    
+    // Calculate total side hustles
+    let totalHustles = 0;
+    if (source.hustles && Array.isArray(source.hustles)) {
+      totalHustles = source.hustles.reduce((sum: number, hustle: any) => {
+        return sum + (hustle.hustle_amount || 0);
+      }, 0);
+    }
+    
+    // Calculate adjusted amount with deductions and side hustles
+    const adjustedAmount = source.amount - totalDeductions + totalHustles;
+    
     // Use the monthly_equivalent_amount that's already calculated by the database
-    const monthlyAmount = source.monthly_equivalent_amount || normalizeToMonthlyAmount(source.amount, source.recurrence)
+    // If not available, calculate it based on the adjusted amount
+    const monthlyAmount = source.monthly_equivalent_amount || normalizeToMonthlyAmount(adjustedAmount, source.recurrence)
     const nextPaymentDate = calculateNextPaymentDate(source)
     
     return {
@@ -81,7 +106,11 @@ export async function getProjectedFinances(userId: string): Promise<ProjectedFin
       amount: monthlyAmount,
       sourceType: source.category?.name || 'Income',
       frequency: source.recurrence,
-      nextPaymentDate
+      nextPaymentDate,
+      // Add additional fields for UI display
+      totalDeductions,
+      totalHustles,
+      adjustedAmount
     }
   })
 
@@ -213,6 +242,7 @@ function normalizeToMonthlyAmount(amount: number, frequency: string): number {
 
 /**
  * Calculate the next payment date for an income source based on the new income schema
+ * and its recurrence pattern
  */
 function calculateNextPaymentDate(source: any): string | null {
   if (!source.start_date) {
@@ -221,12 +251,111 @@ function calculateNextPaymentDate(source: any): string | null {
 
   const startDate = new Date(source.start_date)
   const today = new Date()
-  const paymentDay = startDate.getDate()
-  const nextPayment = new Date(today.getFullYear(), today.getMonth(), paymentDay)
+  let nextPayment: Date
   
-  // If the payment day has passed this month, move to next month
-  if (nextPayment < today) {
-    nextPayment.setMonth(nextPayment.getMonth() + 1)
+  // Calculate next payment date based on recurrence pattern
+  switch (source.recurrence) {
+    case 'weekly':
+      // Find the next occurrence of the same day of week
+      nextPayment = new Date(today)
+      const dayDiff = startDate.getDay() - today.getDay()
+      nextPayment.setDate(today.getDate() + (dayDiff >= 0 ? dayDiff : dayDiff + 7))
+      // If today is the day but time has passed, move to next week
+      if (nextPayment.toDateString() === today.toDateString()) {
+        nextPayment.setDate(nextPayment.getDate() + 7)
+      }
+      break
+      
+    case 'bi_weekly':
+      // Similar to weekly but with 2-week intervals
+      nextPayment = new Date(today)
+      const startDay = startDate.getDay()
+      const todayDay = today.getDay()
+      
+      // Calculate days since the start date
+      const daysSinceStart = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+      const weeksFromStart = Math.floor(daysSinceStart / 7)
+      
+      if (weeksFromStart % 2 === 0 && startDay >= todayDay) {
+        // We're in a payment week and the payment day hasn't passed
+        nextPayment.setDate(today.getDate() + (startDay - todayDay))
+      } else if (weeksFromStart % 2 === 0) {
+        // We're in a payment week but the payment day has passed
+        nextPayment.setDate(today.getDate() + (startDay - todayDay) + 14)
+      } else {
+        // We're in a non-payment week
+        nextPayment.setDate(today.getDate() + (startDay - todayDay) + (7 - ((weeksFromStart % 2) * 7)))
+      }
+      break
+      
+    case 'monthly':
+      // Use the same day of month
+      const paymentDay = startDate.getDate()
+      nextPayment = new Date(today.getFullYear(), today.getMonth(), paymentDay)
+      
+      // If the payment day has passed this month, move to next month
+      if (nextPayment < today) {
+        nextPayment.setMonth(nextPayment.getMonth() + 1)
+      }
+      break
+      
+    case 'quarterly':
+      // Every 3 months on the same day
+      const quarterPaymentDay = startDate.getDate()
+      const startMonth = startDate.getMonth()
+      
+      // Calculate which month in the quarter this payment falls
+      const monthInQuarter = startMonth % 3
+      
+      // Calculate the next quarter month
+      let nextQuarterMonth = today.getMonth()
+      while ((nextQuarterMonth % 3) !== monthInQuarter || 
+             (nextQuarterMonth === today.getMonth() && quarterPaymentDay < today.getDate())) {
+        nextQuarterMonth++
+      }
+      
+      nextPayment = new Date(today.getFullYear(), nextQuarterMonth, quarterPaymentDay)
+      break
+      
+    case 'semi_annual':
+      // Every 6 months on the same day
+      const semiAnnualPaymentDay = startDate.getDate()
+      const semiAnnualStartMonth = startDate.getMonth()
+      
+      // Calculate which month in the half-year this payment falls
+      const monthInHalfYear = semiAnnualStartMonth % 6
+      
+      // Calculate the next half-year month
+      let nextHalfYearMonth = today.getMonth()
+      while ((nextHalfYearMonth % 6) !== monthInHalfYear || 
+             (nextHalfYearMonth === today.getMonth() && semiAnnualPaymentDay < today.getDate())) {
+        nextHalfYearMonth++
+      }
+      
+      nextPayment = new Date(today.getFullYear(), nextHalfYearMonth, semiAnnualPaymentDay)
+      break
+      
+    case 'annual':
+      // Once a year on the same month and day
+      const annualMonth = startDate.getMonth()
+      const annualDay = startDate.getDate()
+      
+      nextPayment = new Date(today.getFullYear(), annualMonth, annualDay)
+      
+      // If this year's date has passed, move to next year
+      if (nextPayment < today) {
+        nextPayment.setFullYear(nextPayment.getFullYear() + 1)
+      }
+      break
+      
+    default:
+      // Default to monthly behavior
+      const defaultPaymentDay = startDate.getDate()
+      nextPayment = new Date(today.getFullYear(), today.getMonth(), defaultPaymentDay)
+      
+      if (nextPayment < today) {
+        nextPayment.setMonth(nextPayment.getMonth() + 1)
+      }
   }
   
   // If there's an end_date and the next payment is after it, return null

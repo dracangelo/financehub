@@ -3,24 +3,12 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 import { v4 as uuidv4 } from "uuid"
-import { getIncomes, createIncome, updateIncome, deleteIncome, calculateIncomeDiversification as getIncomeDiversificationScore, getAuthenticatedUser } from "./income"
+import { getIncomes, createIncome, updateIncome, deleteIncome, calculateIncomeDiversification as getIncomeDiversificationScore, getCurrentUserId } from "./income"
 import type { Income } from "./income"
 
 // Get the current user ID from the session
-async function getCurrentUserId() {
-  try {
-    const user = await getAuthenticatedUser();
-    
-    if (user?.id) {
-      return user.id;
-    }
-    
-    console.warn("No authenticated user found")
-    throw new Error("No authenticated user found");
-  } catch (error) {
-    console.error("Error getting current user:", error)
-    throw new Error("Failed to get current user")
-  }
+async function getUserId() {
+  return await getCurrentUserId()
 }
 
 // Adapter function to convert from the new Income schema to the old IncomeSource schema
@@ -175,7 +163,7 @@ export async function updateIncomeSource(id: string, formData: FormData) {
   console.log("Form data received:", Object.fromEntries(formData.entries()));
   
   try {
-    const userId = await getCurrentUserId()
+    const userId = await getUserId()
     console.log("Current user ID:", userId);
     
     const supabase = await createServerSupabaseClient()
@@ -415,180 +403,160 @@ export async function deleteIncomeSource(id: string) {
 
 // Compatibility layer for calculateIncomeDiversification
 export async function calculateIncomeDiversification() {
-  const userId = await getCurrentUserId()
-  const supabase = await createServerSupabaseClient()
+  try {
+    console.log("Calling new income diversification calculation")
+    
+    // Call the new implementation
+    const rawScore = await getIncomeDiversificationScore()
+    console.log("Raw diversification score from new implementation:", rawScore)
+    
+    // Get the income data to build the breakdown
+    const incomes = await getIncomes()
+    console.log(`Retrieved ${incomes.length} income sources for diversification breakdown`)
+    
+    if (!incomes || incomes.length === 0) {
+      console.log("No income sources found, returning zero scores")
+      return {
+        overall_score: 0,
+        source_count: 0,
+        primary_dependency: 0,
+        stability_score: 0,
+        growth_potential: 0,
+        breakdown: [],
+      }
+    }
 
-  const { data: sources, error } = await supabase.from("income_sources").select("*").eq("user_id", userId)
+    // Calculate total income using monthly_equivalent_amount
+    const totalIncome = incomes.reduce((sum, income) => {
+      return sum + (income.monthly_equivalent_amount || 0)
+    }, 0)
+    
+    console.log("Total monthly income calculated:", totalIncome)
+    
+    // If total income is zero, return zero scores
+    if (totalIncome <= 0) {
+      console.log("Total income is zero or negative, returning zero scores")
+      return {
+        overall_score: 0,
+        source_count: incomes.length,
+        primary_dependency: 0,
+        stability_score: 0,
+        growth_potential: 0,
+        breakdown: [],
+      }
+    }
 
-  if (error) {
-    console.error("Error fetching income sources:", error)
-    throw new Error("Failed to calculate income diversification")
-  }
-
-  if (!sources || sources.length === 0) {
+    // Calculate breakdown and scores
+    const breakdown = incomes.map((income) => {
+      // Use the monthly_equivalent_amount that already accounts for deductions and side hustles
+      const monthlyAmount = income.monthly_equivalent_amount || 0
+      const percentage = totalIncome > 0 ? (monthlyAmount / totalIncome) * 100 : 0
+      const scoreContribution = Math.round(percentage * 0.8) // Weight the score contribution
+      
+      return {
+        source_id: income.id,
+        source_name: income.source_name,
+        amount: monthlyAmount,
+        percentage: percentage,
+        score_contribution: scoreContribution,
+      }
+    })
+    
+    // Filter out zero-amount entries
+    const validBreakdown = breakdown.filter((item: any) => item.amount > 0)
+    
+    // Sort breakdown by percentage (highest first)
+    validBreakdown.sort((a: any, b: any) => b.percentage - a.percentage)
+    
+    console.log("Income breakdown calculated:", validBreakdown)
+    
+    // Calculate primary dependency (percentage of highest income source)
+    const primaryDependency = validBreakdown.length > 0 ? validBreakdown[0].percentage : 0
+    console.log("Primary dependency calculated:", primaryDependency)
+    
+    // Calculate stability score based on income categories
+    const stabilityScore = Math.min(
+      Math.round(
+        incomes.reduce((score, income) => {
+          // Get category name
+          const categoryName = income.category?.name?.toLowerCase() || ''
+          
+          // Assign stability weights based on income category
+          let stabilityWeight = 0.5 // Default
+          if (categoryName.includes('salary')) stabilityWeight = 1.0
+          else if (categoryName.includes('business')) stabilityWeight = 0.8
+          else if (categoryName.includes('investment')) stabilityWeight = 0.7
+          else if (categoryName.includes('freelance')) stabilityWeight = 0.4
+          
+          // Weight by the proportion of total income
+          const proportion = income.monthly_equivalent_amount / totalIncome
+          return score + stabilityWeight * proportion * 100
+        }, 0)
+      ),
+      100
+    )
+    
+    // Calculate growth potential
+    const growthPotential = Math.min(
+      Math.round(
+        incomes.reduce((score, income) => {
+          // Get category name
+          const categoryName = income.category?.name?.toLowerCase() || ''
+          
+          // Assign growth weights based on income category
+          let growthWeight = 0.5 // Default
+          if (categoryName.includes('business')) growthWeight = 0.9
+          else if (categoryName.includes('investment')) growthWeight = 0.8
+          else if (categoryName.includes('freelance')) growthWeight = 0.7
+          else if (categoryName.includes('salary')) growthWeight = 0.4
+          
+          // Weight by the proportion of total income
+          const proportion = income.monthly_equivalent_amount / totalIncome
+          return score + growthWeight * proportion * 100
+        }, 0)
+      ),
+      100
+    )
+    
+    // Calculate overall diversification score using our raw score from the new implementation
+    // but adjust it based on the UI's expected factors
+    const diversificationFactor = Math.max(0, 100 - primaryDependency)
+    const sourceCountFactor = Math.min(incomes.length * 10, 30) // Up to 30 points for number of sources
+    
+    // Overall score is a weighted combination of factors, but we'll use the raw score as a base
+    let overallScore = rawScore
+    
+    // If raw score seems off, calculate a fallback score
+    if (isNaN(overallScore) || overallScore < 0 || overallScore > 100) {
+      console.log("Raw score is invalid, calculating fallback score")
+      overallScore = Math.round(
+        diversificationFactor * 0.5 + 
+        sourceCountFactor * 0.2 + 
+        stabilityScore * 0.2 + 
+        growthPotential * 0.1
+      )
+    }
+    
+    // Return the results in the expected format
     return {
-      overall_score: 0,
+      overall_score: Math.min(Math.max(overallScore, 0), 100), // Ensure score is between 0-100
+      source_count: incomes.length,
+      primary_dependency: Math.round(primaryDependency),
+      stability_score: stabilityScore,
+      growth_potential: growthPotential,
+      breakdown: validBreakdown,
+    }
+  } catch (error) {
+    console.error("Error in calculateIncomeDiversification compatibility layer:", error)
+    
+    // Return a default response on error
+    return {
+      overall_score: 50, // Default middle value
       source_count: 0,
       primary_dependency: 0,
       stability_score: 0,
       growth_potential: 0,
       breakdown: [],
     }
-  }
-
-  // Calculate total income
-  const totalIncome = sources.reduce((sum, source) => {
-    // Normalize to monthly amount
-    let monthlyAmount = source.amount
-    switch (source.frequency) {
-      case "annually":
-        monthlyAmount /= 12
-        break
-      case "bi-weekly":
-        monthlyAmount *= 2.17 // Average number of bi-weekly periods in a month
-        break
-      case "weekly":
-        monthlyAmount *= 4.33 // Average number of weeks in a month
-        break
-      case "one-time":
-        monthlyAmount /= 12 // Spread one-time income over a year
-        break
-      default:
-        // Default to monthly
-        break
-    }
-    return sum + monthlyAmount
-  }, 0)
-
-  // If total income is zero, return zero scores
-  if (totalIncome <= 0) {
-    return {
-      overall_score: 0,
-      source_count: sources.length,
-      primary_dependency: 0,
-      stability_score: 0,
-      growth_potential: 0,
-      breakdown: [],
-    }
-  }
-
-  // Calculate breakdown and scores
-  const breakdown = sources.map((source) => {
-    // Normalize to monthly amount
-    let monthlyAmount = source.amount
-    switch (source.frequency) {
-      case "annually":
-        monthlyAmount /= 12
-        break
-      case "bi-weekly":
-        monthlyAmount *= 2.17
-        break
-      case "weekly":
-        monthlyAmount *= 4.33
-        break
-      case "one-time":
-        monthlyAmount /= 12 // Spread one-time income over a year
-        break
-      default:
-        // Default to monthly
-        break
-    }
-
-    const percentage = (monthlyAmount / totalIncome) * 100
-
-    // Calculate score contribution based on source type and percentage
-    let scoreContribution = 0
-
-    // Passive income gets higher score
-    if (source.type === "passive" || source.type === "investment") {
-      scoreContribution = percentage * 1.5
-    }
-    // Primary income gets lower score if it's too dominant
-    else if (source.type === "primary" && percentage > 70) {
-      scoreContribution = percentage * 0.5
-    }
-    // Side hustles get bonus points
-    else if (source.type === "side-hustle") {
-      scoreContribution = percentage * 1.2
-    } else {
-      scoreContribution = percentage
-    }
-
-    return {
-      source_id: source.id,
-      source_name: source.name,
-      percentage,
-      score_contribution: scoreContribution,
-    }
-  })
-
-  // Sort by percentage descending
-  breakdown.sort((a, b) => b.percentage - a.percentage)
-
-  // Calculate primary dependency (percentage of largest income source)
-  const primaryDependency = breakdown.length > 0 ? breakdown[0].percentage : 0
-
-  // Calculate stability score based on income types
-  const stabilityScore =
-    sources.reduce((score, source) => {
-      // Stable income types get higher scores
-      if (source.type === "primary" || source.type === "passive") {
-        return score + 10
-      } else if (source.type === "investment") {
-        return score + 5
-      } else {
-        return score + 3
-      }
-    }, 0) / sources.length
-
-  // Calculate growth potential based on income types
-  const growthPotential =
-    sources.reduce((score, source) => {
-      // Growth-oriented income types get higher scores
-      if (source.type === "side-hustle" || source.type === "investment") {
-        return score + 10
-      } else if (source.type === "passive") {
-        return score + 8
-      } else if (source.type === "secondary") {
-        return score + 6
-      } else {
-        return score + 3
-      }
-    }, 0) / sources.length
-
-  // Calculate overall score (0-100)
-  // Ensure at least some points for having income sources
-  const sourceCountScore = Math.min(sources.length * 5, 25)
-  
-  // Adjust primary dependency score to be more generous
-  // If primary dependency is less than 50%, give full points
-  const primaryDependencyScore = primaryDependency < 50 
-    ? 25 
-    : Math.max(25 - ((primaryDependency - 50) / 2), 0)
-  
-  const stabilityScoreNormalized = Math.min(stabilityScore * 2.5, 25)
-  const growthPotentialNormalized = Math.min(growthPotential * 2.5, 25)
-
-  // Ensure minimum score of 10 if there are any income sources
-  const overallScore = Math.max(
-    sourceCountScore + primaryDependencyScore + stabilityScoreNormalized + growthPotentialNormalized,
-    sources.length > 0 ? 10 : 0
-  )
-
-  console.log("Diversification calculation:", {
-    sourceCountScore,
-    primaryDependencyScore,
-    stabilityScoreNormalized,
-    growthPotentialNormalized,
-    overallScore
-  })
-
-  return {
-    overall_score: Math.round(overallScore),
-    source_count: sources.length,
-    primary_dependency: Math.round(primaryDependency),
-    stability_score: Math.round((stabilityScoreNormalized / 25) * 100),
-    growth_potential: Math.round((growthPotentialNormalized / 25) * 100),
-    breakdown,
   }
 }

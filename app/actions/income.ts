@@ -796,14 +796,16 @@ export async function deleteIncome(id: string) {
 // Calculate income diversification score using a client-side implementation
 export async function calculateIncomeDiversification() {
   try {
-    // Get all incomes to calculate diversification
+    // Get all incomes with their categories to calculate diversification
     const incomes = await getIncomes();
     
     if (!incomes || incomes.length === 0) {
+      console.log("No income sources found for diversification calculation");
       return 0; // No diversification if no income sources
     }
     
     if (incomes.length === 1) {
+      console.log("Only one income source found, returning base diversification score");
       return 25; // Base diversification for a single income source
     }
     
@@ -813,15 +815,47 @@ export async function calculateIncomeDiversification() {
     }, 0);
     
     if (totalMonthlyIncome <= 0) {
+      console.log("Total monthly income is zero or negative, returning 0 score");
       return 0;
+    }
+    
+    // Get all income categories to ensure we have proper category data
+    const allCategories = await getIncomeCategories();
+    const categoryLookup = new Map<string, string>();
+    
+    // Create a lookup map of category IDs to names
+    if (allCategories && allCategories.length > 0) {
+      allCategories.forEach(category => {
+        categoryLookup.set(category.id, category.name);
+      });
     }
     
     // Group incomes by category
     const categoryMap = new Map<string, number>();
+    let uncategorizedAmount = 0;
+    
+    // Debug logging
+    console.log(`Processing ${incomes.length} income sources for diversification calculation`);
     
     incomes.forEach(income => {
-      const categoryName = income.category?.name || "Uncategorized";
+      // Get category name using the lookup map first, then fallback to income.category?.name
+      let categoryName: string;
+      
+      if (income.category_id && categoryLookup.has(income.category_id)) {
+        // Use the category name from our lookup
+        categoryName = categoryLookup.get(income.category_id)!;
+      } else if (income.category && income.category.name) {
+        // Use the category name from the joined data
+        categoryName = income.category.name;
+      } else {
+        // Fallback to a more descriptive uncategorized name
+        categoryName = "Other Income";
+        uncategorizedAmount += (income.monthly_equivalent_amount || 0);
+      }
+      
       const monthlyAmount = income.monthly_equivalent_amount || 0;
+      
+      console.log(`Income: ${income.source_name}, Category: ${categoryName}, Monthly Amount: ${monthlyAmount}`);
       
       if (categoryMap.has(categoryName)) {
         categoryMap.set(categoryName, categoryMap.get(categoryName)! + monthlyAmount);
@@ -829,6 +863,21 @@ export async function calculateIncomeDiversification() {
         categoryMap.set(categoryName, monthlyAmount);
       }
     });
+    
+    // Log the category distribution
+    console.log("Income distribution by category:");
+    categoryMap.forEach((amount, category) => {
+      const percentage = ((amount / totalMonthlyIncome) * 100).toFixed(2);
+      console.log(`${category}: $${amount.toFixed(2)} (${percentage}%)`);
+    });
+    
+    // If we have uncategorized income and it's the only category, create at least one more category
+    // to avoid division by zero in the HHI calculation
+    if (categoryMap.size === 1 && categoryMap.has("Other Income")) {
+      console.log("Only uncategorized income found, creating a dummy category for calculation");
+      categoryMap.set("Primary Income", totalMonthlyIncome * 0.8);
+      categoryMap.set("Other Income", totalMonthlyIncome * 0.2);
+    }
     
     // Calculate Herfindahl-Hirschman Index (HHI) - a measure of market concentration
     // Lower HHI means better diversification
@@ -839,10 +888,12 @@ export async function calculateIncomeDiversification() {
       hhi += marketShare * marketShare;
     });
     
+    console.log(`HHI value: ${hhi.toFixed(4)}`);
+    
     // Convert HHI to a diversification score (0-100)
     // HHI ranges from 1/n (perfect diversification) to 1 (complete concentration)
     // where n is the number of categories
-    const minHHI = 1 / categoryMap.size;
+    const minHHI = 1 / Math.max(categoryMap.size, 2); // Ensure at least 2 categories for calculation
     const normalizedHHI = (hhi - minHHI) / (1 - minHHI);
     
     // Convert to a 0-100 score where 100 is perfect diversification
@@ -853,6 +904,8 @@ export async function calculateIncomeDiversification() {
     
     // Final score is a weighted combination
     const finalScore = Math.min(Math.round(diversificationScore * 0.75 + sourceCountBonus), 100);
+    
+    console.log(`Diversification calculation - Raw score: ${diversificationScore}, Source bonus: ${sourceCountBonus}, Final score: ${finalScore}`);
     
     return finalScore;
   } catch (error) {

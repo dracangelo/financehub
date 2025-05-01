@@ -19,6 +19,9 @@ export interface CashflowForecast {
 
 export async function getCashflowForecast(userId: string): Promise<CashflowForecast> {
   const supabase = await createServerSupabaseClient()
+  if (!supabase) {
+    throw new Error("Failed to create Supabase client")
+  }
   
   // Get the last 3 months of data to establish trends
   const threeMonthsAgo = new Date()
@@ -40,11 +43,14 @@ export async function getCashflowForecast(userId: string): Promise<CashflowForec
     .gte("spent_at", threeMonthsAgo.toISOString())
     .order("spent_at", { ascending: true }) as { data: ExpenseWithCategory[] | null }
 
-  // Get recurring income sources
-  const { data: incomeSources } = await supabase
-    .from("income_sources")
-    .select("*")
+  // Get recurring income sources from the new income schema
+  // Only include incomes that are recurring (not one-time) and haven't reached their end date
+  const { data: incomes } = await supabase
+    .from("incomes")
+    .select("*, category:income_categories(id, name), deductions:income_deductions(*), hustles:income_hustles(*)")
     .eq("user_id", userId)
+    .neq("recurrence", "none") // Exclude one-time payments
+    .or(`end_date.is.null,end_date.gte.${new Date().toISOString()}`) // Only include active incomes
 
   // Group transactions by month
   const monthlyData = expenses?.reduce((acc: any, expense) => {
@@ -60,13 +66,36 @@ export async function getCashflowForecast(userId: string): Promise<CashflowForec
     return acc
   }, {}) || {}
 
-  // Add recurring income to monthly data
-  incomeSources?.forEach(source => {
-    const monthlyAmount = normalizeToMonthlyAmount(source.amount, source.frequency)
+  // Add recurring income to monthly data using the new income schema
+  incomes?.forEach(income => {
+    // Calculate total deductions
+    let totalDeductions = 0;
+    if (income.deductions && Array.isArray(income.deductions)) {
+      totalDeductions = income.deductions.reduce((sum: number, deduction: any) => {
+        return sum + (deduction.amount || 0);
+      }, 0);
+    }
+    
+    // Calculate total side hustles
+    let totalHustles = 0;
+    if (income.hustles && Array.isArray(income.hustles)) {
+      totalHustles = income.hustles.reduce((sum: number, hustle: any) => {
+        return sum + (hustle.hustle_amount || 0);
+      }, 0);
+    }
+    
+    // Calculate adjusted amount with deductions and side hustles
+    const adjustedAmount = income.amount - totalDeductions + totalHustles;
+    
+    // Use the monthly_equivalent_amount that's already calculated by the database
+    // If not available, calculate it based on the adjusted amount
+    const monthlyAmount = income.monthly_equivalent_amount || normalizeToMonthlyAmount(adjustedAmount, income.recurrence);
+    
+    // Add to each month's income
     Object.keys(monthlyData).forEach(month => {
-      monthlyData[month].income += monthlyAmount
-    })
-  })
+      monthlyData[month].income += monthlyAmount;
+    });
+  });
 
   // Calculate monthly trends
   const monthlyTrend = Object.entries(monthlyData)
@@ -97,11 +126,22 @@ export async function getCashflowForecast(userId: string): Promise<CashflowForec
       : 0
   }
 
-  // Calculate projections based on trends
-  const projectedIncome = calculateProjection(monthlyTrend.map(m => m.income))
-  const projectedExpenses = calculateProjection(monthlyTrend.map(m => m.expenses))
-  const netCashflow = projectedIncome - projectedExpenses
-  const savingsRate = projectedIncome > 0 ? (netCashflow / projectedIncome) * 100 : 0
+  // Calculate projections based on trends and recurring incomes
+  let projectedIncome = 0;
+  
+  // If we have recurring incomes, use their sum as the projected income
+  if (incomes && incomes.length > 0) {
+    projectedIncome = incomes.reduce((sum, income) => {
+      return sum + (income.monthly_equivalent_amount || 0);
+    }, 0);
+  } else {
+    // Fallback to trend-based projection if no recurring incomes
+    projectedIncome = calculateProjection(monthlyTrend.map(m => m.income));
+  }
+  
+  const projectedExpenses = calculateProjection(monthlyTrend.map(m => m.expenses));
+  const netCashflow = projectedIncome - projectedExpenses;
+  const savingsRate = projectedIncome > 0 ? (netCashflow / projectedIncome) * 100 : 0;
 
   return {
     projectedIncome,

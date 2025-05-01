@@ -5,10 +5,10 @@ import dynamic from "next/dynamic"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from "recharts"
-import { ArrowUpRight, TrendingUp, DollarSign, Calendar, BarChart3 } from "lucide-react"
+import { ArrowUpRight, TrendingUp, DollarSign, Calendar, BarChart3, PieChart as PieChartIcon } from "lucide-react"
 
 // Import client components with dynamic imports
-const DiversificationWheel = dynamic(() => import("@/components/income/diversification-wheel").then(mod => mod.DiversificationWheel), { ssr: false })
+const DiversificationScore = dynamic(() => import("@/components/income/diversification-score").then(mod => mod.DiversificationScore), { ssr: false })
 
 import type { Income } from "@/app/actions/income"
 
@@ -16,8 +16,6 @@ interface IncomeAnalyticsClientProps {
   incomes: Income[]
   diversificationScore: number
 }
-
-// No need for normalization function as the database already calculates monthly_equivalent_amount
 
 // Function to format currency
 const formatCurrency = (amount: number): string => {
@@ -37,6 +35,9 @@ const COLORS = [
 
 export function IncomeAnalyticsClient({ incomes, diversificationScore }: IncomeAnalyticsClientProps) {
   const [activeTab, setActiveTab] = useState<string>("overview");
+  
+  // Log the diversification score to help debug
+  console.log("Diversification score received in IncomeAnalyticsClient:", diversificationScore);
 
   // Calculate monthly and annual income using monthly_equivalent_amount
   const monthlyIncome = incomes.reduce((sum, income) => {
@@ -49,7 +50,7 @@ export function IncomeAnalyticsClient({ incomes, diversificationScore }: IncomeA
   const categoryDistributionData = React.useMemo(() => {
     if (!incomes || incomes.length === 0) return [];
     
-    // Group by category
+    // Group incomes by category
     const categoryMap = new Map<string, number>();
     
     incomes.forEach(income => {
@@ -64,54 +65,46 @@ export function IncomeAnalyticsClient({ incomes, diversificationScore }: IncomeA
     });
     
     // Convert to array format for chart
-    return Array.from(categoryMap.entries()).map(([name, value]) => ({
-      name,
-      value
-    }));
+    return Array.from(categoryMap.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
   }, [incomes]);
   
-  // Prepare data for type distribution chart (using source_name as type)
-  const typeDistributionData = React.useMemo(() => {
-    if (!incomes || incomes.length === 0) return [];
-    
-    const categoryDistribution: Record<string, number> = {};
-    
-    incomes.forEach((income) => {
-      const categoryName = income.category?.name || "Uncategorized";
-      categoryDistribution[categoryName] = (categoryDistribution[categoryName] || 0) + (income.monthly_equivalent_amount || 0);
-    });
-    
-    return Object.entries(categoryDistribution).map(([category, amount]) => ({
-      name: category.charAt(0).toUpperCase() + category.slice(1), // Capitalize category
-      value: amount,
-    }));
-  }, [incomes]);
-
   // Prepare data for recurrence distribution chart
   const recurrenceDistributionData = React.useMemo(() => {
     if (!incomes || incomes.length === 0) return [];
     
-    const recurrenceDistribution: Record<string, number> = {};
+    // Group incomes by recurrence
+    const recurrenceMap = new Map<string, number>();
     
-    incomes.forEach((income) => {
-      recurrenceDistribution[income.recurrence] = (recurrenceDistribution[income.recurrence] || 0) + (income.monthly_equivalent_amount || 0);
-    });
-    
-    return Object.entries(recurrenceDistribution).map(([recurrence, amount]) => {
-      // Format the recurrence name for display
-      let name = recurrence;
-      switch (recurrence) {
-        case "none": name = "One-Time"; break;
-        case "bi_weekly": name = "Bi-Weekly"; break;
-        case "semi_annual": name = "Semi-Annual"; break;
-        default: name = recurrence.charAt(0).toUpperCase() + recurrence.slice(1);
-      }
+    incomes.forEach(income => {
+      const recurrence = income.recurrence;
+      const monthlyAmount = income.monthly_equivalent_amount || 0;
       
-      return {
-        name,
-        value: amount,
-      };
+      if (recurrenceMap.has(recurrence)) {
+        recurrenceMap.set(recurrence, recurrenceMap.get(recurrence)! + monthlyAmount);
+      } else {
+        recurrenceMap.set(recurrence, monthlyAmount);
+      }
     });
+    
+    // Convert to array format for chart
+    return Array.from(recurrenceMap.entries())
+      .map(([recurrence, amount]) => {
+        // Format the recurrence name for display
+        let name = recurrence;
+        switch (recurrence) {
+          case "none": name = "One-Time"; break;
+          case "bi_weekly": name = "Bi-Weekly"; break;
+          case "semi_annual": name = "Semi-Annual"; break;
+          default: name = recurrence.charAt(0).toUpperCase() + recurrence.slice(1);
+        }
+        
+        return {
+          name,
+          value: amount,
+        };
+      });
   }, [incomes]);
   
   // Prepare data for frequency distribution analysis
@@ -200,168 +193,123 @@ export function IncomeAnalyticsClient({ incomes, diversificationScore }: IncomeA
       // This is just for visualization purposes
       let multiplier = 1;
       
-      // Add some variation to make the chart interesting
+      // Add some variation based on month
       if (index < currentMonth) {
-        // Past months have slightly lower income (simulated growth)
-        multiplier = 0.85 + (index / currentMonth) * 0.15;
-      } else if (index > currentMonth) {
-        // Future months are projections (slight growth trend)
-        multiplier = 1 + ((index - currentMonth) / (12 - currentMonth)) * 0.1;
+        // Past months (slight variations)
+        multiplier = 0.85 + (Math.random() * 0.3);
+      } else if (index === currentMonth) {
+        // Current month (actual data)
+        multiplier = 1;
+      } else {
+        // Future months (projected with growth)
+        const monthsAhead = index - currentMonth;
+        multiplier = 1 + (monthsAhead * 0.02) + (Math.random() * 0.05);
       }
       
       return {
         name: month,
-        income: monthlyIncome * multiplier,
-        current: index === currentMonth
+        income: Math.round(monthlyIncome * multiplier),
       };
     });
   }, [monthlyIncome]);
 
   return (
-    <div className="space-y-6">
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+    <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6">
+      <h2 className="text-xl font-semibold mb-4">Income Analytics</h2>
+      <p className="text-muted-foreground mb-6">
+        Analyze your income sources, trends, and diversification metrics.
+      </p>
+      
+      <Tabs defaultValue="overview" value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="mb-6">
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="distributions">Distributions</TabsTrigger>
-          <TabsTrigger value="trends">Trends & Projections</TabsTrigger>
+          <TabsTrigger value="sources">Sources</TabsTrigger>
+          <TabsTrigger value="trends">Trends</TabsTrigger>
+          <TabsTrigger value="diversification">Diversification</TabsTrigger>
         </TabsList>
         
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6">
+          {/* Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950 dark:to-indigo-950">
+            <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Monthly Income</CardDescription>
-                <CardTitle className="text-2xl flex items-center">
-                  <DollarSign className="h-5 w-5 text-blue-500 mr-1" />
-                  {formatCurrency(monthlyIncome)}
+                <CardTitle className="text-sm font-medium flex items-center">
+                  <DollarSign className="h-4 w-4 mr-2 text-primary" />
+                  Monthly Income
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground">
+                <div className="text-2xl font-bold">{formatCurrency(monthlyIncome)}</div>
+                <p className="text-xs text-muted-foreground">
                   From {incomes.length} income source{incomes.length !== 1 ? 's' : ''}
                 </p>
               </CardContent>
             </Card>
             
-            <Card className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950 dark:to-emerald-950">
+            <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Annual Income</CardDescription>
-                <CardTitle className="text-2xl flex items-center">
-                  <Calendar className="h-5 w-5 text-green-500 mr-1" />
-                  {formatCurrency(annualIncome)}
+                <CardTitle className="text-sm font-medium flex items-center">
+                  <Calendar className="h-4 w-4 mr-2 text-primary" />
+                  Annual Income
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Projected yearly earnings
-                </p>
+                <div className="text-2xl font-bold">{formatCurrency(annualIncome)}</div>
+                <p className="text-xs text-muted-foreground">Projected yearly total</p>
               </CardContent>
             </Card>
             
-            <Card className="bg-gradient-to-br from-purple-50 to-fuchsia-50 dark:from-purple-950 dark:to-fuchsia-950">
+            <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Primary Income Type</CardDescription>
-                <CardTitle className="text-2xl capitalize">
-                  {typeDistributionData.length > 0 ? 
-                    typeDistributionData.sort((a, b) => b.value - a.value)[0].name : 
-                    "None"}
+                <CardTitle className="text-sm font-medium flex items-center">
+                  <TrendingUp className="h-4 w-4 mr-2 text-primary" />
+                  Average Source
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  {typeDistributionData.length > 0 ? 
-                    `${Math.round((typeDistributionData.sort((a, b) => b.value - a.value)[0].value / monthlyIncome) * 100)}% of total income` : 
-                    "Add income sources to see distribution"}
-                </p>
+                <div className="text-2xl font-bold">
+                  {incomes.length > 0 ? formatCurrency(monthlyIncome / incomes.length) : formatCurrency(0)}
+                </div>
+                <p className="text-xs text-muted-foreground">Average monthly per source</p>
               </CardContent>
             </Card>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Charts */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
               <CardHeader>
-                <CardTitle>Income by Source</CardTitle>
-                <CardDescription>Top income sources by monthly amount</CardDescription>
+                <CardTitle>Income by Category</CardTitle>
+                <CardDescription>Distribution across different categories</CardDescription>
               </CardHeader>
-              <CardContent>
-                {incomeBySourceData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart
-                      data={incomeBySourceData}
-                      margin={{ top: 20, right: 30, left: 20, bottom: 70 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis 
-                        dataKey="name" 
-                        angle={-45} 
-                        textAnchor="end" 
-                        height={70} 
-                        tick={{ fontSize: 12 }}
-                      />
-                      <YAxis 
-                        tickFormatter={(value) => `$${value.toFixed(0)}`}
-                      />
-                      <Tooltip 
-                        formatter={(value) => formatCurrency(value as number)}
-                        labelFormatter={(label) => `Source: ${label}`}
-                      />
-                      <Bar 
-                        dataKey="monthly" 
-                        name="Monthly Amount" 
-                        fill="#0088FE" 
-                        radius={[4, 4, 0, 0]}
-                      />
-                      <Bar 
-                        dataKey="category" 
-                        name="Category" 
-                        fill="#00C49F" 
-                        radius={[4, 4, 0, 0]}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-                    No income sources found
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-            
-            <DiversificationWheel sources={incomes} />
-          </div>
-        </TabsContent>
-        
-        {/* Distributions Tab */}
-        <TabsContent value="distributions" className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Income by Type</CardTitle>
-                <CardDescription>Distribution of income across different types</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[200px]">
+              <CardContent className="h-80">
+                {categoryDistributionData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
                         data={categoryDistributionData}
-                        dataKey="value"
-                        nameKey="name"
                         cx="50%"
                         cy="50%"
+                        labelLine={true}
+                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                         outerRadius={80}
                         fill="#8884d8"
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                        dataKey="value"
                       >
                         {categoryDistributionData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
                       <Tooltip formatter={(value) => formatCurrency(value as number)} />
+                      <Legend />
                     </PieChart>
                   </ResponsiveContainer>
-                </div>
+                ) : (
+                  <div className="flex h-full items-center justify-center">
+                    <p className="text-muted-foreground">No category data available</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
             
@@ -370,31 +318,102 @@ export function IncomeAnalyticsClient({ incomes, diversificationScore }: IncomeA
                 <CardTitle>Income by Frequency</CardTitle>
                 <CardDescription>How your income is distributed by payment frequency</CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="h-[200px]">
+              <CardContent className="h-80">
+                {frequencyDistributionData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={recurrenceDistributionData}
-                        dataKey="value"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        outerRadius={80}
-                        fill="#8884d8"
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      >
-                        {recurrenceDistributionData.map((entry, index) => (
+                    <BarChart
+                      data={frequencyDistributionData}
+                      layout="vertical"
+                      margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis type="number" tickFormatter={(value) => formatCurrency(value)} />
+                      <YAxis dataKey="name" type="category" width={100} />
+                      <Tooltip formatter={(value) => formatCurrency(value as number)} />
+                      <Bar dataKey="value" fill="#8884d8">
+                        {frequencyDistributionData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
-                      </Pie>
-                      <Tooltip formatter={(value) => formatCurrency(value as number)} />
-                    </PieChart>
+                      </Bar>
+                    </BarChart>
                   </ResponsiveContainer>
-                </div>
+                ) : (
+                  <div className="flex h-full items-center justify-center">
+                    <p className="text-muted-foreground">No frequency data available</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
+          
+          {/* Income Diversification Score */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <PieChartIcon className="mr-2 h-5 w-5 text-primary" />
+                Income Diversification
+              </CardTitle>
+              <CardDescription>
+                How well your income is diversified across different sources
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <DiversificationScore />
+            </CardContent>
+          </Card>
+        </TabsContent>
+        
+        {/* Sources Tab */}
+        <TabsContent value="sources" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Top Income Sources</CardTitle>
+              <CardDescription>Your highest contributing income sources</CardDescription>
+            </CardHeader>
+            <CardContent className="h-96">
+              {incomeBySourceData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={incomeBySourceData}
+                    layout="vertical"
+                    margin={{ top: 5, right: 30, left: 100, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis type="number" tickFormatter={(value) => formatCurrency(value)} />
+                    <YAxis dataKey="name" type="category" width={100} />
+                    <Tooltip 
+                      formatter={(value) => formatCurrency(value as number)}
+                      labelFormatter={(label) => `Source: ${label}`}
+                      content={({ active, payload, label }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload;
+                          return (
+                            <div className="bg-background p-2 border rounded-md shadow-sm">
+                              <p className="font-medium">{data.name}</p>
+                              <p className="text-sm">Category: {data.category}</p>
+                              <p className="text-sm font-semibold">
+                                Monthly: {formatCurrency(data.monthly)}
+                              </p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Bar dataKey="monthly" fill="#8884d8">
+                      {incomeBySourceData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex h-full items-center justify-center">
+                  <p className="text-muted-foreground">No source data available</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
           
           <Card>
             <CardHeader>
@@ -446,22 +465,11 @@ export function IncomeAnalyticsClient({ incomes, diversificationScore }: IncomeA
                         {Math.round((stabilityData[1].value / (stabilityData[0].value + stabilityData[1].value)) * 100)}% of monthly income
                       </p>
                     </div>
-                    
-                    {stabilityData[0].value > 0 && stabilityData[1].value > 0 && (
-                      <div className="bg-blue-50 dark:bg-blue-950 p-3 rounded-md text-sm">
-                        <p className="font-medium text-blue-800 dark:text-blue-300">Insight:</p>
-                        <p className="text-blue-700 dark:text-blue-400">
-                          {stabilityData[0].value > stabilityData[1].value * 3 ? 
-                            "Your income is primarily from recurring sources, providing good stability." : 
-                            "You have a healthy mix of recurring and one-time income sources."}
-                        </p>
-                      </div>
-                    )}
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center justify-center h-[250px] text-muted-foreground">
-                  No income sources found
+                <div className="flex h-40 items-center justify-center">
+                  <p className="text-muted-foreground">No stability data available</p>
                 </div>
               )}
             </CardContent>
@@ -473,154 +481,91 @@ export function IncomeAnalyticsClient({ incomes, diversificationScore }: IncomeA
           <Card>
             <CardHeader>
               <CardTitle>Monthly Income Trend</CardTitle>
-              <CardDescription>Historical and projected monthly income</CardDescription>
+              <CardDescription>Income projection based on current sources</CardDescription>
+            </CardHeader>
+            <CardContent className="h-80">
+              {monthlyTrendData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={monthlyTrendData}
+                    margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis tickFormatter={(value) => formatCurrency(value)} />
+                    <Tooltip formatter={(value) => formatCurrency(value as number)} />
+                    <Legend />
+                    <Line 
+                      type="monotone" 
+                      dataKey="income" 
+                      stroke="#8884d8" 
+                      activeDot={{ r: 8 }} 
+                      name="Monthly Income"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex h-full items-center justify-center">
+                  <p className="text-muted-foreground">No trend data available</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+        
+        {/* Diversification Tab */}
+        <TabsContent value="diversification" className="space-y-6">
+          <Card className="col-span-1 md:col-span-2 lg:col-span-3 xl:col-span-2">
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <PieChartIcon className="mr-2 h-5 w-5 text-primary" />
+                Income Diversification
+              </CardTitle>
+              <CardDescription>
+                How well your income is diversified across different sources
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart
-                  data={monthlyTrendData}
-                  margin={{ top: 20, right: 30, left: 20, bottom: 10 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis tickFormatter={(value) => `$${value.toFixed(0)}`} />
-                  <Tooltip formatter={(value) => formatCurrency(value as number)} />
-                  <Legend />
-                  <Line 
-                    type="monotone" 
-                    dataKey="income" 
-                    stroke="#8884d8" 
-                    strokeWidth={2}
-                    dot={(props) => {
-                      const { cx, cy, payload, index } = props;
-                      if (payload.current) {
-                        return (
-                          <circle 
-                            key={`dot-${index}`}
-                            cx={cx} 
-                            cy={cy} 
-                            r={6} 
-                            fill="#8884d8" 
-                            stroke="white" 
-                            strokeWidth={2} 
-                          />
-                        );
-                      }
-                      return (
-                        <circle 
-                          key={`dot-${index}`}
-                          cx={cx} 
-                          cy={cy} 
-                          r={4} 
-                          fill="#8884d8" 
-                        />
-                      );
-                    }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-              <div className="text-sm text-muted-foreground mt-2">
-                Diversification score: {diversificationScore.toFixed(2)}%
-              </div>
+              <DiversificationScore />
             </CardContent>
           </Card>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Income Growth Potential</CardTitle>
-                <CardDescription>Analysis of income growth opportunities</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="p-4 border rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950 dark:to-indigo-950">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <h3 className="font-medium">Current Monthly</h3>
-                      <p className="text-2xl font-bold">{formatCurrency(monthlyIncome)}</p>
-                    </div>
-                    <ArrowUpRight className="h-8 w-8 text-blue-500" />
-                    <div>
-                      <h3 className="font-medium">Potential (10% Growth)</h3>
-                      <p className="text-2xl font-bold">{formatCurrency(monthlyIncome * 1.1)}</p>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="space-y-2">
-                  <h3 className="font-medium">Growth Recommendations:</h3>
-                  <ul className="space-y-2">
-                    {incomes.length === 0 ? (
-                      <li className="text-muted-foreground">Add income sources to see recommendations</li>
-                    ) : (
-                      <>
-                        {categoryDistributionData.length < 3 && (
-                          <li className="flex items-start">
-                            <TrendingUp className="h-5 w-5 text-green-500 mr-2 mt-0.5" />
-                            <span>Diversify your income with additional income types</span>
-                          </li>
-                        )}
-                        {stabilityData[1].value > stabilityData[0].value && (
-                          <li className="flex items-start">
-                            <BarChart3 className="h-5 w-5 text-blue-500 mr-2 mt-0.5" />
-                            <span>Focus on increasing recurring income sources for better stability</span>
-                          </li>
-                        )}
-                        <li className="flex items-start">
-                          <DollarSign className="h-5 w-5 text-purple-500 mr-2 mt-0.5" />
-                          <span>Consider passive income opportunities to supplement your earnings</span>
-                        </li>
-                      </>
-                    )}
-                  </ul>
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader>
-                <CardTitle>Income Frequency Analysis</CardTitle>
-                <CardDescription>How often you receive income payments</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {frequencyDistributionData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={250}>
-                    <BarChart
-                      data={frequencyDistributionData}
-                      margin={{ top: 20, right: 30, left: 20, bottom: 10 }}
+          <Card>
+            <CardHeader>
+              <CardTitle>Category Distribution</CardTitle>
+              <CardDescription>Income distribution across categories</CardDescription>
+            </CardHeader>
+            <CardContent className="h-80">
+              {categoryDistributionData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={categoryDistributionData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={true}
+                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
                     >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" />
-                      <YAxis tickFormatter={(value) => `$${value.toFixed(0)}`} />
-                      <Tooltip formatter={(value) => [`$${Number(value).toFixed(2)}`, "Monthly"]} />
-                      <Bar 
-                        dataKey="value" 
-                        name="Monthly Amount" 
-                        fill="#8884d8" 
-                        radius={[4, 4, 0, 0]}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex items-center justify-center h-[250px] text-muted-foreground">
-                    No income sources found
-                  </div>
-                )}
-                
-                {frequencyDistributionData.length > 0 && (
-                  <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950 rounded-md text-sm">
-                    <p className="font-medium text-blue-800 dark:text-blue-300">Cash Flow Insight:</p>
-                    <p className="text-blue-700 dark:text-blue-400">
-                      {frequencyDistributionData.length === 1 ? 
-                        `All your income comes in ${frequencyDistributionData[0].name.toLowerCase()} intervals.` : 
-                        `You receive income at ${frequencyDistributionData.length} different intervals, which helps with cash flow management.`}
-                    </p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+                      {categoryDistributionData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value) => formatCurrency(value as number)} />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex h-full items-center justify-center">
+                  <p className="text-muted-foreground">No category data available</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>
-  )
+  );
 }
