@@ -82,57 +82,77 @@ export async function getSubscriptions() {
     // Initialize with proper typing
     const billers: Record<string, Biller> = {}
     
-    if (billerIds.length > 0 && supabase) {
+    // Create a variable to store all categories
+    const allCategories: Record<string, any> = {}
+    
+    // Fetch all categories to ensure we have the full list
+    if (supabase) {
       try {
-        // Try to fetch from 'subscription_categories' table instead of 'billers'
-        const { data: billersData, error: billersError } = await supabase
-          .from("subscription_categories") 
-          .select('id, name, description, icon')
-          .in('id', billerIds)
-
-        if (billersError) {
-          console.error("Error fetching from subscription_categories table:", billersError)
-          // Continue without category data
-        } else if (billersData) {
-          // Create a lookup object for categories
-          billersData.forEach((category: any) => {
+        const { data: categoriesData, error: categoriesError } = await supabase
+          .from("subscription_categories")
+          .select('id, name, description, icon');
+          
+        if (!categoriesError && categoriesData) {
+          categoriesData.forEach((category: any) => {
             if (category.id) {
-              // Map category fields to biller format
+              allCategories[category.id] = {
+                id: category.id,
+                name: category.name,
+                description: category.description || "",
+                icon: category.icon || ""
+              };
+              
+              // Also populate the billers object for backward compatibility
               billers[category.id] = {
                 id: category.id,
                 name: category.name,
                 category: category.description || "",
                 website_url: "",
                 support_contact: ""
-              }
+              };
             }
-          })
+          });
         }
-      } catch (categoryError) {
-        console.error("Exception fetching subscription categories:", categoryError)
-        // Continue without category data
+      } catch (error) {
+        console.error("Error fetching all categories:", error);
       }
     }
-
+    
     // Map database fields to match what the UI component expects
     const subscriptionsWithBillers = subscriptions.map(subscription => {
-      const billerId = subscription.category_id as string | undefined
+      const categoryId = subscription.category_id as string | undefined;
+      
+      // Get category information if available
+      const category = categoryId && allCategories[categoryId] ? allCategories[categoryId] : null;
+      
+      // Map usage_rating back to usage_frequency
+      const usageFrequency = mapRatingToUsage(subscription.usage_rating as number | null);
       
       // Map fields from subscriptions table to the expected format in the UI
       return {
         id: subscription.id,
         name: subscription.name,
-        provider: subscription.vendor || "", // vendor is already correct in subscriptions table
-        amount: subscription.amount, // amount is already correct in subscriptions table
-        billing_cycle: subscription.frequency, // frequency is already correct in subscriptions table
-        next_payment_date: subscription.next_renewal_date, // Map next_renewal_date to next_payment_date
-        status: subscription.status, // status is already correct in subscriptions table
-        auto_pay: subscription.auto_renew, // Map auto_renew to auto_pay
-        payment_method: subscription.support_contact || "", // Use support_contact as payment_method
+        provider: subscription.vendor || "",
+        amount: subscription.amount,
+        billing_cycle: subscription.frequency,
+        next_payment_date: subscription.next_renewal_date,
+        status: subscription.status,
+        auto_pay: subscription.auto_renew === true, // Ensure boolean value
+        payment_method: subscription.support_contact || "",
+        usage_frequency: usageFrequency,
+        usage_level: usageFrequency,
+        category_id: categoryId,
+        category: category ? category.name : "uncategorized",
         // Include any other fields from the original subscription
         ...subscription,
-        // Add biller information if available
-        biller: billerId && billers[billerId] ? billers[billerId] : null
+        // Add category information in the biller field for backward compatibility
+        biller: category ? {
+          id: category.id,
+          name: category.name,
+          category: category.description,
+          website_url: "",
+          support_contact: subscription.support_contact || ""
+        } : null
       }
     })
 
@@ -266,16 +286,20 @@ export async function createSubscription(formData: FormData) {
       start_date = new Date().toISOString().split('T')[0]
     }
     
-    // Set next payment date to 1 month from today if not provided
-    let next_payment_date = formData.get("next_payment_date") as string | null
+    // Get the next billing date from the form - use the correct field name
+    let next_payment_date = formData.get("next_billing_date") as string | null
     if (!next_payment_date) {
       const today = new Date()
       today.setMonth(today.getMonth() + 1) // Add 1 month
       next_payment_date = today.toISOString().split('T')[0]
     }
     
-    const payment_method = formData.get("payment_method") as string | null
-    const auto_pay = formData.get("auto_pay") === "true"
+    // Get payment method and auto-renew values
+    const payment_method = formData.get("payment_method_id") as string | null
+    
+    // Make sure we correctly handle auto_renew - check for both possible field names
+    const auto_renew_value = formData.get("auto_renew") || formData.get("auto_pay")
+    const auto_pay = auto_renew_value === "true" || auto_renew_value === "on"
     let type = formData.get("type") as string | null
     if (!type) {
       type = "subscription"
@@ -304,38 +328,43 @@ export async function createSubscription(formData: FormData) {
       throw new Error(`Missing or invalid fields: ${validationErrors.join(", ")}`)
     }
 
-    // Check if category exists or create a new one
-    let category_id: string | null = formData.get("category_id") as string || null;
+    // Handle category - the form sends category names, not UUIDs
+    let category_id: string | null = null;
+    const categoryValue = formData.get("category_id") as string;
     
-    // If we have a category name but no category_id, try to find or create the category
-    const categoryName = formData.get("category") as string || null;
-    if (categoryName && !category_id && supabase) {
-      // Check if the category already exists
-      const { data: existingCategory, error: categoryError } = await supabase
-        .from("subscription_categories")
-        .select("id")
-        .eq("name", categoryName)
-        .single();
-      
-      if (categoryError || !existingCategory) {
-        // Create a new category
-        const { data: newCategory, error: newCategoryError } = await supabase
+    // If the category value is not a UUID, treat it as a category name
+    if (categoryValue && categoryValue !== "uncategorized" && supabase) {
+      try {
+        // Try to find the category by name
+        const { data: existingCategory, error: categoryError } = await supabase
           .from("subscription_categories")
-          .insert({
-            name: categoryName,
-            description: formData.get("category_description") as string || null
-          })
           .select("id")
+          .eq("name", categoryValue)
           .single();
-          
-        if (newCategoryError) {
-          console.error("Error creating subscription category:", newCategoryError);
-          // Continue without category
-        } else if (newCategory) {
-          category_id = newCategory.id;
+        
+        if (categoryError || !existingCategory) {
+          // Create a new category with this name
+          const { data: newCategory, error: newCategoryError } = await supabase
+            .from("subscription_categories")
+            .insert({
+              name: categoryValue,
+              description: `${categoryValue} category`
+            })
+            .select("id")
+            .single();
+            
+          if (newCategoryError) {
+            console.error("Error creating subscription category:", newCategoryError);
+            // Continue without category
+          } else if (newCategory) {
+            category_id = newCategory.id;
+          }
+        } else {
+          category_id = existingCategory.id;
         }
-      } else {
-        category_id = existingCategory.id;
+      } catch (error) {
+        console.error("Error handling category:", error);
+        // Continue without category
       }
     }
 
@@ -352,17 +381,21 @@ export async function createSubscription(formData: FormData) {
         user_id: user.id,
         vendor: provider,
         name,
-        frequency: "monthly", // Default to monthly for subscriptions
-        amount: amount, // Use amount field from subscriptions schema
-        next_renewal_date: next_payment_date, // Use next_renewal_date instead of next_payment_date
-        category_id: category_id, // Use the category_id we found or created
-        auto_renew: auto_pay, // Use auto_renew instead of auto_pay
-        status: "active", // Use a valid subscription_status enum value (active, paused, cancelled)
-        support_contact: payment_method, // Store payment_method in support_contact
-        currency: formData.get("currency") as string || "USD", // Add currency with default
-        description: formData.get("description") as string || null, // Add description field
-        usage_rating: formData.get("usage_rating") ? parseInt(formData.get("usage_rating") as string, 10) : null,
-        cancel_url: formData.get("cancel_url") as string || "",
+        // Use the billing_cycle from the form instead of hardcoding to "monthly"
+        frequency: (formData.get("billing_cycle") as string) || "monthly",
+        amount: amount,
+        next_renewal_date: next_payment_date,
+        // Make sure we're using the correct category_id
+        category_id: category_id,
+        auto_renew: auto_pay,
+        status: "active",
+        // Store the payment method correctly
+        support_contact: formData.get("payment_method_id") as string || payment_method || "",
+        currency: formData.get("currency") as string || "USD",
+        description: formData.get("description") as string || null,
+        // Map usage_frequency to usage_rating (high=10, medium=5, low=1)
+        usage_rating: mapUsageToRating(formData.get("usage_frequency") as string || "medium"),
+        cancel_url: formData.get("cancellation_url") as string || "",
         notes: formData.get("notes") as string || ""
       })
       .select("id")
@@ -381,6 +414,29 @@ export async function createSubscription(formData: FormData) {
     // Return error instead of throwing to make the application more resilient
     return { success: false, error: error instanceof Error ? error.message : String(error) }
   }
+}
+
+// Helper function to map usage frequency to a numeric rating
+function mapUsageToRating(usageFrequency: string): number {
+  switch (usageFrequency.toLowerCase()) {
+    case 'high':
+      return 10;
+    case 'medium':
+      return 5;
+    case 'low':
+      return 1;
+    default:
+      return 5; // Default to medium usage
+  }
+}
+
+// Helper function to map numeric rating back to usage frequency
+function mapRatingToUsage(rating: number | null): string {
+  if (!rating) return 'medium';
+  
+  if (rating >= 8) return 'high';
+  if (rating >= 3) return 'medium';
+  return 'low';
 }
 
 export async function updateSubscription(id: string, formData: FormData) {
@@ -426,27 +482,69 @@ export async function updateSubscription(id: string, formData: FormData) {
       // Get current subscription to check for changes
       const { data: currentSub, error: fetchError } = await supabase
         .from("subscriptions")
-        .select("amount, billing_cycle")
+        .select("amount, frequency")
         .eq("id", id)
         .eq("user_id", user.id)
         .single()
 
       if (!fetchError && currentSub) {
+        // Handle category - the form sends category names, not UUIDs
+        let finalCategoryId: string | null = null;
+        const categoryValue = formData.get("category_id") as string;
+        
+        // If the category value is not a UUID, treat it as a category name
+        if (categoryValue && categoryValue !== "uncategorized") {
+          try {
+            // Try to find the category by name
+            const { data: existingCategory, error: categoryError } = await supabase
+              .from("subscription_categories")
+              .select("id")
+              .eq("name", categoryValue)
+              .single();
+            
+            if (categoryError || !existingCategory) {
+              // Create a new category with this name
+              const { data: newCategory, error: newCategoryError } = await supabase
+                .from("subscription_categories")
+                .insert({
+                  name: categoryValue,
+                  description: `${categoryValue} category`
+                })
+                .select("id")
+                .single();
+                
+              if (newCategoryError) {
+                console.error("Error creating subscription category:", newCategoryError);
+                // Continue without category
+              } else if (newCategory) {
+                finalCategoryId = newCategory.id;
+              }
+            } else {
+              finalCategoryId = existingCategory.id;
+            }
+          } catch (error) {
+            console.error("Error handling category in update:", error);
+            // Continue without category
+          }
+        }
+        
+        // Map usage_frequency to usage_rating
+        const usageRating = mapUsageToRating(usage_frequency);
+        
         const { data: subscription, error } = await supabase
           .from("subscriptions")
           .update({
             name,
-            provider,
+            vendor: provider,
             amount,
-            billing_cycle,
-            start_date,
-            next_billing_date,
-            category_id,
-            payment_method_id,
+            frequency: billing_cycle, // Map billing_cycle to frequency
+            next_renewal_date: next_billing_date, // Map next_billing_date to next_renewal_date
+            category_id: finalCategoryId,
+            support_contact: payment_method_id, // Map payment_method_id to support_contact
             auto_renew,
             status,
-            cancellation_url,
-            usage_frequency,
+            cancel_url: cancellation_url, // Map cancellation_url to cancel_url
+            usage_rating: usageRating, // Map usage_frequency to usage_rating
             notes,
             updated_at: new Date().toISOString(),
           })
@@ -460,15 +558,20 @@ export async function updateSubscription(id: string, formData: FormData) {
           throw new Error("Failed to update subscription")
         }
 
-        // Create subscription history entry if amount or billing cycle changed
-        if (currentSub.amount !== amount || currentSub.billing_cycle !== billing_cycle) {
-          await supabase.from("subscription_history").insert({
-            subscription_id: id,
-            amount,
-            billing_cycle,
-            change_date: new Date().toISOString().split("T")[0],
-            notes: "Subscription details updated",
-          })
+        // Create subscription history entry if amount or frequency changed
+        if (currentSub.amount !== amount || (currentSub as any).frequency !== billing_cycle) {
+          try {
+            await supabase.from("subscription_price_changes").insert({
+              subscription_id: id,
+              old_amount: currentSub.amount,
+              new_amount: amount,
+              changed_at: new Date().toISOString(),
+              reason: "Subscription details updated"
+            })
+          } catch (historyError) {
+            console.error("Error recording subscription history:", historyError)
+            // Continue even if history recording fails
+          }
         }
 
         revalidatePath("/subscriptions")
