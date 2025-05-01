@@ -64,12 +64,24 @@ export function SubscriptionsList() {
   useEffect(() => {
     const fetchSubscriptions = async () => {
       try {
+        console.log("Fetching subscriptions from UI component...")
         const data = await getSubscriptions()
-        setSubscriptions(data)
-        calculateTotalMonthly(data)
+        console.log("Received data in UI component:", JSON.stringify(data, null, 2))
+        console.log("Data type:", typeof data)
+        console.log("Is array?", Array.isArray(data))
+        console.log("Length:", data?.length || 0)
+
+        // Check if data is valid before setting state
+        if (data && Array.isArray(data)) {
+          setSubscriptions(data)
+          calculateTotalMonthly(data)
+        } else {
+          console.error("Received invalid data format from getSubscriptions")
+          setError("Invalid data format received")
+        }
       } catch (err) {
         setError("Error fetching subscriptions")
-        console.error(err)
+        console.error("Error in fetchSubscriptions:", err)
       } finally {
         setLoading(false)
       }
