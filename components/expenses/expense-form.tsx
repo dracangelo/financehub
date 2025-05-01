@@ -61,7 +61,6 @@ const expenseFormSchema = z.object({
 });
 
 type ExpenseFormValues = z.infer<typeof expenseFormSchema>;
-type FieldValues = z.infer<typeof expenseFormSchema>;
 
 interface ExtendedExpense extends Expense {
   latitude?: number | null;
@@ -101,10 +100,10 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
   }>>([]);
 
   const form = useForm<ExpenseFormValues>({
-    resolver: zodResolver(expenseFormSchema),
+    resolver: zodResolver(expenseFormSchema) as any,
     defaultValues: {
       merchant: expense?.merchant || "",
-      amount: expense?.amount || "",
+      amount: expense?.amount || 0,
       currency: expense?.currency || "USD",
       category_ids: expense?.categories?.map(cat => cat.id) || [],
       budget_item_id: expense?.budget_item_id || null,
@@ -289,8 +288,15 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
   const toggleSplitOptions = () => {
     setShowSplitOptions(!showSplitOptions);
     if (!showSplitOptions) {
-      form.setValue("split_with_name", "");
+      // When enabling split, set default values
+      form.setValue("split_with_user", "");
       form.setValue("split_amount", null);
+      form.setValue("split_note", "");
+    } else {
+      // When disabling split, clear values
+      form.setValue("split_with_user", null);
+      form.setValue("split_amount", null);
+      form.setValue("split_note", null);
     }
   };
 
@@ -301,22 +307,25 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
 
     try {
       // Prepare the expense data
-      const expenseData = {
+      let expenseData: any = {
         merchant: data.merchant,
         amount: Number(data.amount),
         currency: data.currency,
         category_ids: data.category_ids || [],
-        budget_item_id: data.budget_item_id,
+        budget_item_id: data.budget_item_id === 'none' ? null : data.budget_item_id,
         expense_date: data.expense_date,
         location_name: data.location_name || locationSearchQuery || null,
-        location_geo: data.latitude && data.longitude
-          ? { type: 'Point', coordinates: [Number(data.longitude), Number(data.latitude)] }
-          : null,
+        latitude: data.latitude,
+        longitude: data.longitude,
         recurrence: data.recurrence,
         is_impulse: data.is_impulse,
         notes: data.notes || null,
         warranty_expiration_date: data.warranty_expiration_date || null,
       };
+      
+      // Store the latitude and longitude values in the form state as well
+      form.setValue('latitude', data.latitude);
+      form.setValue('longitude', data.longitude);
 
       let expenseId;
 
@@ -372,7 +381,7 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
       // Show success message
       toast({
         title: isEditing ? "Expense Updated" : "Expense Created",
-        description: `Successfully ${isEditing ? "updated" : "created"} expense: ${data.description}`,
+        description: `Successfully ${isEditing ? "updated" : "created"} expense for ${data.merchant}`,
       });
 
       // Use a small timeout to ensure the toast is shown before navigation
@@ -507,7 +516,7 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="none">None</SelectItem>
                     {/* You would fetch and map budget items here */}
                   </SelectContent>
                 </Select>
@@ -808,25 +817,14 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Split With</FormLabel>
-                      <Select 
-                        onValueChange={field.onChange} 
-                        defaultValue={field.value || undefined}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select a user" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {availableUsers.map((user) => (
-                            <SelectItem key={user.id} value={user.id}>
-                              {user.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <Input
+                          placeholder="Enter name or email of person"
+                          {...field}
+                        />
+                      </FormControl>
                       <FormDescription>
-                        User you're splitting this expense with
+                        Enter the name or email of the person you're splitting this expense with
                       </FormDescription>
                       <FormMessage />
                     </FormItem>

@@ -703,11 +703,14 @@ export async function getCombinedTransactions(): Promise<CombinedTransaction[]> 
       return []
     }
 
-    const [transactions, incomes, expenses] = await Promise.all([
+    const [transactions, incomes, expensesResult] = await Promise.all([
       getTransactions(),
       getIncomes(),
       getExpenses(),
     ])
+    
+    // Handle the expenses result which might be an array or an object with error
+    const expenses = Array.isArray(expensesResult) ? expensesResult : []
 
     // Format transactions - transactions are already transformed in getTransactions()
     const formattedTransactions = transactions.map((transaction) => ({
@@ -733,15 +736,15 @@ export async function getCombinedTransactions(): Promise<CombinedTransaction[]> 
     }))
 
     // Format expenses
-    const formattedExpenses = expenses.map((expense) => ({
+    const formattedExpenses = expenses.map((expense: any) => ({
       id: expense.id,
-      description: expense.name,
+      description: expense.merchant || 'Expense',
       amount: expense.amount,
-      date: expense.date,
+      date: expense.expense_date,
       is_income: false,
       type: 'expense',
       category: {
-        name: expense.category || "Expense",
+        name: expense.categories?.[0]?.name || "Expense",
         color: "#ef4444",
         icon: "credit-card",
         is_income: false,

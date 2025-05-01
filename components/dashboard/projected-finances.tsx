@@ -200,7 +200,15 @@ export function ProjectedFinancesWidget({ projectedFinances }: ProjectedFinances
               <TableBody>
                 {projectedExpensesBreakdown.map((expense: ProjectedExpense) => (
                   <TableRow key={expense.id}>
-                    <TableCell className="font-medium">{expense.title}</TableCell>
+                    <TableCell className="font-medium">
+                      {expense.title}
+                      {expense.frequency !== 'monthly' && (
+                        <div className="text-xs text-muted-foreground mt-1 flex items-center">
+                          <RefreshCcwIcon className="h-3 w-3 mr-1 text-purple-500" />
+                          {expense.frequencyText} ({formatCurrency(expense.originalAmount)})
+                        </div>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Badge variant="outline">
                         {expense.category.charAt(0).toUpperCase() + expense.category.slice(1)}
@@ -215,6 +223,11 @@ export function ProjectedFinancesWidget({ projectedFinances }: ProjectedFinances
                     </TableCell>
                     <TableCell className="text-right font-medium">
                       {formatCurrency(expense.amount)}
+                      {expense.frequency !== 'monthly' && (
+                        <div className="text-xs text-muted-foreground mt-1">
+                          Monthly equivalent
+                        </div>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

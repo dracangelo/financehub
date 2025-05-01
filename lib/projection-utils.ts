@@ -31,8 +31,10 @@ export interface ProjectedExpense {
   id: string
   title: string
   amount: number
+  originalAmount: number
   category: string
   frequency: string
+  frequencyText: string
   nextDueDate: string | null
 }
 
@@ -60,16 +62,20 @@ export async function getProjectedFinances(userId: string): Promise<ProjectedFin
     console.error("Error fetching incomes:", incomeError)
   }
 
-  // Get recurring expenses
+  // Get recurring expenses - these will be auto-populated as projected expenses
   const { data: recurringExpenses, error: expenseError } = await supabase
     .from("expenses")
     .select(`
-      *,
+      id,
+      merchant,
+      amount,
+      expense_date,
+      recurrence,
       categories:expense_categories(id, name, parent_id)
     `)
     .eq("user_id", userId)
     .neq("recurrence", "none")
-  
+    .order("expense_date", { ascending: false })
   if (expenseError) {
     console.error("Error fetching recurring expenses:", expenseError)
   }
@@ -117,6 +123,8 @@ export async function getProjectedFinances(userId: string): Promise<ProjectedFin
   // Calculate projected monthly expenses
   const projectedExpensesBreakdown = (recurringExpenses || []).map(expense => {
     const frequency = expense.recurrence || 'monthly'
+    
+    // Convert the expense amount to its monthly equivalent based on frequency
     const monthlyAmount = normalizeToMonthlyAmount(expense.amount, frequency)
     
     // Calculate next due date based on recurrence pattern
@@ -148,13 +156,19 @@ export async function getProjectedFinances(userId: string): Promise<ProjectedFin
       ? expense.categories[0].name 
       : 'Uncategorized'
     
+    // Create a descriptive title that includes the frequency information
+    const frequencyText = getFrequencyDisplayText(frequency)
+    const title = expense.merchant || 'Recurring Expense'
+    
     return {
       id: expense.id,
-      title: expense.merchant || 'Recurring Expense',
+      title: title,
+      originalAmount: expense.amount,
       amount: monthlyAmount,
       category: categoryName,
       frequency: frequency,
-      nextDueDate
+      nextDueDate,
+      frequencyText
     }
   })
 
@@ -237,6 +251,30 @@ function normalizeToMonthlyAmount(amount: number, frequency: string): number {
       return amount / 12 // Annual to monthly
     default:
       return amount
+  }
+}
+
+/**
+ * Get a human-readable display text for frequency
+ */
+function getFrequencyDisplayText(frequency: string): string {
+  switch (frequency?.toLowerCase()) {
+    case 'none':
+      return 'One-time'
+    case 'weekly':
+      return 'Weekly'
+    case 'bi_weekly':
+      return 'Bi-weekly'
+    case 'monthly':
+      return 'Monthly'
+    case 'quarterly':
+      return 'Quarterly'
+    case 'semi_annual':
+      return 'Semi-annually'
+    case 'annual':
+      return 'Annually'
+    default:
+      return frequency || 'Unknown'
   }
 }
 

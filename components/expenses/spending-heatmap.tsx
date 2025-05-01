@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { getExpensesByPeriod } from "@/app/actions/expenses"
+import { getExpenses } from "@/app/actions/expenses"
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay } from "date-fns"
 import { cn } from "@/lib/utils"
 
@@ -35,8 +35,10 @@ export function SpendingHeatmap({ className }: SpendingHeatmapProps) {
     }
     
     try {
-      const data = await getExpensesByPeriod("month")
-      setExpenses(data)
+      const data = await getExpenses()
+      // Ensure data is an array
+      const expensesArray = Array.isArray(data) ? data : (data && 'data' in data && Array.isArray(data.data)) ? data.data : []
+      setExpenses(expensesArray)
       
       // Process data for heatmap
       const start = startOfMonth(currentMonth)
@@ -44,9 +46,9 @@ export function SpendingHeatmap({ className }: SpendingHeatmapProps) {
       const days = eachDayOfInterval({ start, end })
       
       const processedData = days.map(day => {
-        // Filter expenses for this day by comparing spent_at date
-        const dayExpenses = data.filter(expense => 
-          isSameDay(new Date(expense.spent_at), day)
+        // Filter expenses for this day by comparing expense_date
+        const dayExpenses = expensesArray.filter(expense => 
+          isSameDay(new Date(expense.expense_date), day)
         )
         
         // Calculate total amount spent on this day

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { addDays, format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday } from "date-fns"
-import { ChevronLeft, ChevronRight, BarChart, PieChart, LineChart, ArrowUpRight, ArrowDownRight } from "lucide-react"
+import { ChevronLeft, ChevronRight, BarChart, PieChart, LineChart, ArrowUpRight, ArrowDownRight, RepeatIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -118,6 +118,7 @@ export function AnalyticsCalendar({ className }: AnalyticsCalendarProps) {
               const hasReports = dayData?.events?.some(event => event.type === "report")
               const hasIncome = dayData?.income && dayData.income > 0
               const hasExpenses = dayData?.expenses && dayData.expenses > 0
+              const hasRecurringExpenses = dayData?.events?.some(event => event.isRecurring === true)
               
               return (
                 <TooltipProvider key={day.toString()}>
@@ -136,7 +137,8 @@ export function AnalyticsCalendar({ className }: AnalyticsCalendarProps) {
                             dayData && "bg-muted/50",
                             hasReports && "border-t-2 border-blue-500",
                             hasIncome && "border-l-2 border-green-500",
-                            hasExpenses && "border-r-2 border-red-500"
+                            hasExpenses && "border-r-2 border-red-500",
+                            hasRecurringExpenses && "border-b-2 border-purple-500"
                           )}
                         >
                           <div className="text-right text-xs">{format(day, "d")}</div>
@@ -157,6 +159,12 @@ export function AnalyticsCalendar({ className }: AnalyticsCalendarProps) {
                               <div className="flex items-center justify-end gap-0.5 text-[10px] text-red-500">
                                 <ArrowDownRight className="h-2.5 w-2.5" />
                                 <span>{formatCurrency(dayData?.expenses || 0)}</span>
+                              </div>
+                            )}
+                            {hasRecurringExpenses && (
+                              <div className="flex items-center justify-end gap-0.5 text-[10px] text-purple-500">
+                                <RepeatIcon className="h-2.5 w-2.5" />
+                                <span>{dayData?.events?.filter(e => e.isRecurring === true).length}</span>
                               </div>
                             )}
                             {!hasReports && !hasIncome && !hasExpenses && (
@@ -196,33 +204,30 @@ export function AnalyticsCalendar({ className }: AnalyticsCalendarProps) {
                                 )}
                                 
                                 {/* Financial activities section */}
-                                {dayData.events.filter(e => e.type !== "report").length > 0 && (
-                                  <div>
-                                    <h4 className="text-xs font-medium mb-1">Financial Activities</h4>
-                                    {dayData.events
-                                      .filter(event => event.type !== "report")
-                                      .map((event) => (
-                                        <div key={event.id} className="flex items-center justify-between text-sm">
-                                          <div className="flex items-center gap-2">
-                                            {event.type === "income" ? (
-                                              <ArrowUpRight className="h-3 w-3 text-green-500" />
-                                            ) : (
-                                              <ArrowDownRight className="h-3 w-3 text-red-500" />
-                                            )}
-                                            <span className="text-xs">{event.title}</span>
-                                          </div>
-                                          <span
-                                            className={cn(
-                                              "text-xs font-medium",
-                                              event.type === "income" ? "text-green-500" : "text-red-500",
-                                            )}
-                                          >
-                                            {event.type === "income" ? "+" : "-"}{formatCurrency(event.amount)}
-                                          </span>
+                                <div className="space-y-2">
+                                  <h4 className="text-xs font-medium mb-1">Financial Activities</h4>
+                                  {dayData.events
+                                    .filter(event => event.type !== "report")
+                                    .map((event) => (
+                                      <div key={event.id} className="flex items-center justify-between text-sm">
+                                        <div className="flex items-center gap-2">
+                                          {event.type === "income" && <ArrowUpRight className="h-3 w-3 text-green-500" />}
+                                          {event.type === "expense" && !event.isRecurring && <ArrowDownRight className="h-3 w-3 text-red-500" />}
+                                          {event.type === "expense" && event.isRecurring && <RepeatIcon className="h-3 w-3 text-purple-500" />}
+                                          <span className="text-xs">{event.title}</span>
                                         </div>
-                                      ))}
-                                  </div>
-                                )}
+                                        <span
+                                          className={cn(
+                                            "text-xs font-medium",
+                                            event.type === "income" ? "text-green-500" : 
+                                            event.isRecurring ? "text-purple-500" : "text-red-500"
+                                          )}
+                                        >
+                                          {event.type === "income" ? "+" : "-"}{formatCurrency(event.amount)}
+                                        </span>
+                                      </div>
+                                    ))}
+                                </div>
                               </div>
                             ) : (
                               <div className="text-xs text-muted-foreground">No activities on this day.</div>

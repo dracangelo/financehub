@@ -3,6 +3,7 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { getAuthenticatedUser } from "@/lib/auth/server"
 import { revalidatePath } from "next/cache"
+import { ALL_CATEGORIES, Category } from "@/lib/constants/categories"
 import { notFound } from "next/navigation"
 import { Expense } from "@/types/expense"
 import { formatExpense, formatExpenseForCalendar, getExpenseSummaryByDay } from "@/lib/expense-utils"
@@ -182,7 +183,6 @@ export async function createExpense(expenseData: {
   budget_item_id?: string | null;
   expense_date: Date;
   location_name?: string | null;
-  location_geo?: { type: string; coordinates: number[] } | null;
   recurrence?: string;
   is_impulse?: boolean;
   notes?: string | null;
@@ -210,7 +210,6 @@ export async function createExpense(expenseData: {
       budget_item_id: expenseData.budget_item_id || null,
       expense_date: expenseData.expense_date.toISOString(),
       location_name: expenseData.location_name || null,
-      location_geo: expenseData.location_geo || null,
       recurrence: expenseData.recurrence || "none",
       is_impulse: expenseData.is_impulse || false,
       notes: expenseData.notes || null,
@@ -232,6 +231,48 @@ export async function createExpense(expenseData: {
 
     // Add category links if provided
     if (expenseData.category_ids && expenseData.category_ids.length > 0 && data.id) {
+      // First, check if the categories exist in the expense_categories table
+      // and create them if they don't
+      for (const categoryId of expenseData.category_ids) {
+        // Check if the category exists
+        const { data: existingCategory, error: checkError } = await supabase
+          .from("expense_categories")
+          .select("id")
+          .eq("id", categoryId)
+          .maybeSingle()
+        
+        if (checkError) {
+          console.error("Error checking if category exists:", checkError)
+          continue
+        }
+        
+        // If the category doesn't exist, create it
+        if (!existingCategory) {
+          // Get the category name from the constants
+          const categoryInfo = ALL_CATEGORIES.find((cat: Category) => cat.id === categoryId)
+          
+          if (!categoryInfo) {
+            console.error(`Category with ID ${categoryId} not found in constants`)
+            continue
+          }
+          
+          // Create the category
+          const { error: createError } = await supabase
+            .from("expense_categories")
+            .insert({
+              id: categoryId,
+              user_id: user.id,
+              name: categoryInfo.name
+            })
+          
+          if (createError) {
+            console.error("Error creating category:", createError)
+            continue
+          }
+        }
+      }
+      
+      // Now create the category links
       const categoryLinks = expenseData.category_ids.map(categoryId => ({
         expense_id: data.id,
         category_id: categoryId
@@ -258,7 +299,22 @@ export async function createExpense(expenseData: {
 }
 
 // Update an existing expense with enhanced features
-export async function updateExpense(id: string, expenseData: any) {
+export async function updateExpense(id: string, expenseData: {
+  merchant?: string;
+  amount?: number;
+  currency?: string;
+  category_ids?: string[];
+  budget_item_id?: string | null;
+  expense_date?: Date;
+  location_name?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  recurrence?: string;
+  is_impulse?: boolean;
+  notes?: string | null;
+  receipt_url?: string | null;
+  warranty_expiration_date?: Date | null;
+}) {
   try {
     const supabase = await createServerSupabaseClient()
     if (!supabase) {
@@ -275,12 +331,14 @@ export async function updateExpense(id: string, expenseData: any) {
 
     // Extract basic expense data directly from the input object
     const merchant = expenseData.merchant || null
-    const amount = typeof expenseData.amount === 'number' ? expenseData.amount : parseFloat(expenseData.amount)
+    const amount = typeof expenseData.amount === 'number' ? expenseData.amount : parseFloat(expenseData.amount || '0')
+    const currency = expenseData.currency || 'USD'
     const category_ids = expenseData.category_ids || null
     const budget_item_id = expenseData.budget_item_id || null
     const expense_date = expenseData.expense_date
     const location_name = expenseData.location_name || null
-    const location_geo = expenseData.location_geo || null
+    const latitude = expenseData.latitude || null
+    const longitude = expenseData.longitude || null
     const recurrence = expenseData.recurrence || null
     const is_impulse = !!expenseData.is_impulse
     const notes = expenseData.notes || null
@@ -317,18 +375,27 @@ export async function updateExpense(id: string, expenseData: any) {
       throw new Error("Missing required field: expense_date")
     }
 
-    // Update the expense
+    // Prepare update data
     const updateData: any = {
-      amount,
+      merchant,
+      amount: finalAmount,
+      currency,
       budget_item_id,
-      expense_date: new Date(finalExpenseDate).toISOString(),
+      expense_date: finalExpenseDate,
       location_name,
-      location_geo,
       recurrence,
       is_impulse,
       notes,
       warranty_expiration_date: warranty_expiration_date ? new Date(warranty_expiration_date).toISOString() : null,
       receipt_url,
+    }
+    
+    // Add location_geo if latitude and longitude are provided
+    if (latitude && longitude) {
+      // PostGIS requires a point in the format: POINT(longitude latitude)
+      // Note: PostGIS uses longitude first, then latitude
+      updateData.location_geo = `POINT(${longitude} ${latitude})`
+      console.log("Setting location_geo to:", updateData.location_geo)
     }
     const { data, error } = await supabase
       .from("expenses")
@@ -345,24 +412,49 @@ export async function updateExpense(id: string, expenseData: any) {
     
     // Update category links if provided
     if (category_ids && category_ids.length > 0) {
-      // Delete existing category links
-      await supabase
-        .from("expense_category_links")
-        .delete()
-        .eq("expense_id", id)
+      try {
+        // First, verify that the categories exist
+        const { data: validCategories, error: categoryCheckError } = await supabase
+          .from("expense_categories")
+          .select("id")
+          .in("id", category_ids)
+        
+        if (categoryCheckError) {
+          console.error("Error checking categories:", categoryCheckError)
+          // Continue with the update, just don't update categories
+        } else {
+          // Get only the valid category IDs that exist in the database
+          const validCategoryIds = validCategories.map(cat => cat.id)
+          
+          if (validCategoryIds.length > 0) {
+            // Delete existing category links
+            await supabase
+              .from("expense_category_links")
+              .delete()
+              .eq("expense_id", id)
 
-      // Insert new category links
-      const categoryLinks = category_ids.map(categoryId => ({
-        expense_id: id,
-        category_id: categoryId
-      }))
+            // Insert new category links, but only for valid categories
+            const categoryLinks = validCategoryIds.map(categoryId => ({
+              expense_id: id,
+              category_id: categoryId
+            }))
 
-      const { error: categoryLinkError } = await supabase
-        .from("expense_category_links")
-        .insert(categoryLinks)
+            const { error: categoryLinkError } = await supabase
+              .from("expense_category_links")
+              .insert(categoryLinks)
 
-      if (categoryLinkError) {
-        console.error("Error linking categories to expense:", categoryLinkError)
+            if (categoryLinkError) {
+              console.error("Error linking categories to expense:", categoryLinkError)
+            } else {
+              console.log(`Successfully linked ${validCategoryIds.length} categories to expense`)
+            }
+          } else {
+            console.warn("None of the provided category IDs exist in the database")
+          }
+        }
+      } catch (error) {
+        console.error("Error in category linking process:", error)
+        // Continue with the update, just don't update categories
       }
     }
 
@@ -710,6 +802,58 @@ export async function getExpensesWithLocation() {
 }
 
 // Get recurring expenses
+// Create a split expense record
+export async function createSplitExpense(splitData: {
+  expense_id: string;
+  shared_with_user: string;
+  amount: number;
+  note?: string | null;
+}) {
+  try {
+    const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return { data: null, error: new Error("Supabase client not initialized") }
+    }
+
+    const user = await getAuthenticatedUser()
+
+    if (!user) {
+      throw new Error("Authentication required")
+    }
+    
+    // Since we're splitting with people who aren't users in our app,
+    // we'll use the current user's ID as a placeholder and store the
+    // actual person's name in the note field
+    
+    // Combine the provided note with the person's name
+    const combinedNote = `Split with: ${splitData.shared_with_user}${splitData.note ? ` - ${splitData.note}` : ''}`;
+    console.log(`Creating split expense with note: ${combinedNote}`);
+
+    // Insert the split expense record using the current user's ID
+    // as a placeholder for the shared_with_user field
+    const { data, error } = await supabase
+      .from("split_expenses")
+      .insert({
+        expense_id: splitData.expense_id,
+        shared_with_user: user.id, // Use the current user's ID as a placeholder
+        amount: splitData.amount,
+        note: combinedNote // Store the person's name in the note field
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error("Error creating split expense:", error)
+      throw new Error("Failed to create split expense")
+    }
+
+    return data
+  } catch (error) {
+    console.error("Error in createSplitExpense:", error)
+    throw new Error("Failed to create split expense")
+  }
+}
+
 export async function getRecurringExpenses() {
   try {
     const supabase = await createServerSupabaseClient()

@@ -23,9 +23,9 @@ export default async function ProtectedLayout({
     const user = await getAuthenticatedUser()
     
     // Only redirect if we're certain there's no user
-    if (user === null) {
+    if (!user) {
       // Add a query parameter to prevent redirect loops
-      redirect("/login?from=protected")
+      return redirect("/login?from=protected")
     }
 
     return (
@@ -40,7 +40,7 @@ export default async function ProtectedLayout({
     if (error instanceof Error && 
         (error.message.includes("auth") || error.message.includes("unauthorized") || 
          error.message.includes("session"))) {
-      redirect("/login?from=error")
+      return redirect("/login?from=error")
     }
     
     // For other errors, still render the layout

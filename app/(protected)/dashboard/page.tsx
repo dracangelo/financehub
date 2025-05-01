@@ -58,16 +58,16 @@ export default async function DashboardPage() {
         currencyBreakdown: {},
         typeBreakdown: {},
       })),
-      getCategorySpending("month").catch(() => []),
+      getCategorySpending("month" as "month").catch(() => []),
       getMonthlyIncomeExpenseData().catch(() => []),
-      getTransactionStats("month").catch(() => ({
+      getTransactionStats("month" as "month").catch(() => ({
         totalIncome: 0,
         totalExpenses: 0,
         netIncome: 0,
         transactionCount: 0,
         averageTransaction: 0,
       })),
-      getCashflowForecast(user?.id).catch(() => ({
+      getCashflowForecast(user?.id || '').catch(() => ({
         projectedIncome: 0,
         projectedExpenses: 0,
         netCashflow: 0,
@@ -75,7 +75,7 @@ export default async function DashboardPage() {
         monthlyTrend: [],
         monthOverMonth: { income: 0, expenses: 0 }
       })),
-      getProjectedFinances(user?.id).catch(() => ({
+      getProjectedFinances(user?.id || '').catch(() => ({
         projectedIncome: 0,
         projectedExpenses: 0,
         netCashflow: 0,
@@ -110,9 +110,9 @@ export default async function DashboardPage() {
 
     // Format category spending data for the financial summary
     const formattedCategorySpending = categorySpending.map(category => ({
-      name: category.name || 'Uncategorized',
-      amount: category.amount,
-      color: category.color
+      name: category.category_name || 'Uncategorized',
+      amount: category.total_amount || 0,
+      color: category.color || '#888888'
     }))
 
     // Ensure we have valid net worth history data or use an empty array
@@ -143,7 +143,10 @@ export default async function DashboardPage() {
         <div className="grid gap-6">
           <DashboardCards 
             accountSummary={accountSummary}
-            cashflowSummary={cashflowForecast}
+            cashflowSummary={{
+              ...cashflowForecast,
+              monthOverMonth: cashflowForecast.monthOverMonth || { income: 0, expenses: 0 }
+            }}
           />
         </div>
 
@@ -162,8 +165,17 @@ export default async function DashboardPage() {
             {/* Top Row - Financial Insights and Calendar */}
             <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
               <FinancialInsights 
-                cashflowSummary={cashflowForecast}
-                transactionStats={transactionStats}
+                cashflowSummary={{
+                  projectedIncome: cashflowForecast.projectedIncome,
+                  projectedExpenses: cashflowForecast.projectedExpenses,
+                  netCashflow: cashflowForecast.netCashflow,
+                  savingsRate: cashflowForecast.savingsRate
+                }}
+                transactionStats={{
+                  totalIncome: transactionStats.totalIncome,
+                  totalExpenses: transactionStats.totalExpenses,
+                  netIncome: transactionStats.netIncome
+                }}
               />
               <FinancialCalendar initialData={financialCalendarData} />
             </div>
@@ -175,11 +187,16 @@ export default async function DashboardPage() {
                 totalExpenses={totalExpenses}
                 netIncome={totalIncome - totalExpenses}
                 categorySpending={formattedCategorySpending}
+                accountSummary={accountSummary}
+                monthlyData={incomeExpenseData}
+                transactionStats={transactionStats}
               />
-              <FinancialHealthScore 
-                score={0}
-                factors={[]}
-              />
+              <div className="h-full">
+                <FinancialHealthScore 
+                  score={0}
+                  factors={[]}
+                />
+              </div>
             </div>
             
             {/* Income vs Expense Chart */}

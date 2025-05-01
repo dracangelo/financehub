@@ -1,7 +1,7 @@
 "use server"
 
 import { createServerSupabaseClient } from "@/lib/supabase/server"
-import { getAuthenticatedUser } from "@/lib/auth"
+import { getAuthenticatedUser } from "@/lib/auth/server"
 import { ALL_CATEGORIES } from "@/lib/constants/categories"
 import { revalidatePath } from "next/cache"
 import type { Category } from "@/types/finance"
@@ -649,14 +649,33 @@ export async function getCategorySpending(period: "week" | "month" | "year" = "m
       });
     }
 
+    // Function to generate a consistent color based on category name
+    function getColorFromString(str: string) {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      let color = '#';
+      for (let i = 0; i < 3; i++) {
+        const value = (hash >> (i * 8)) & 0xFF;
+        color += ('00' + value.toString(16)).substr(-2);
+      }
+      return color;
+    }
+    
     // Format the summary data
     const spendingByCategory = categorySummary
       .map(summary => {
         const category = categoryMap.get(summary.category_id) || {};
+        const categoryName = summary.category_name || 'Uncategorized';
+        
+        // Use the category's color if available, otherwise generate one based on the category name
+        const categoryColor = category.color || getColorFromString(categoryName);
+        
         return {
           category_id: summary.category_id,
-          category_name: summary.category_name,
-          color: category.color || '#888888',
+          category_name: categoryName,
+          color: categoryColor,
           icon: category.icon || null,
           total_amount: summary.total_spent,
           transaction_count: 1 // We don't have count in the summary view

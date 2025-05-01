@@ -5,6 +5,7 @@ import { getAuthenticatedUser } from "@/lib/auth"
 import { format, subMonths, startOfMonth, endOfMonth } from "date-fns"
 import { PostgrestError } from "@supabase/supabase-js"
 import { Report } from "./reports"
+import { getExpenses } from "./expenses"
 
 // Types for analytics calendar data
 export type AnalyticsEventType = "income" | "expense" | "report" | "transaction"
@@ -18,6 +19,8 @@ export interface AnalyticsEvent {
   category?: string
   format?: string
   status?: string
+  isRecurring?: boolean
+  recurrenceType?: string
 }
 
 export interface AnalyticsDayData {
@@ -34,7 +37,7 @@ export async function getAnalyticsCalendarData(year: number, month: number): Pro
     const supabase = await createServerSupabaseClient()
     const user = await getAuthenticatedUser()
 
-    if (!user) {
+    if (!user || !supabase) {
       return []
     }
 
@@ -52,6 +55,10 @@ export async function getAnalyticsCalendarData(year: number, month: number): Pro
 
     // 1. Fetch transactions data
     try {
+      if (!supabase) {
+        throw new Error("Supabase client not initialized");
+      }
+      
       const { data: transactions, error: transactionsError } = await supabase
         .from("transactions")
         .select(`
@@ -116,6 +123,10 @@ export async function getAnalyticsCalendarData(year: number, month: number): Pro
     try {
       // Check if reports table exists
       try {
+        if (!supabase) {
+          throw new Error("Supabase client not initialized");
+        }
+        
         const { data: reports, error: reportsError } = await supabase
           .from("reports")
           .select("*")
@@ -197,6 +208,116 @@ export async function getAnalyticsCalendarData(year: number, month: number): Pro
       }
     } catch (error) {
       console.log("Error fetching reports:", error)
+      // Continue execution even if this fails
+    }
+    
+    // 3. Fetch expenses data directly from expense list
+    try {
+      // Get all expenses
+      const expensesData = await getExpenses();
+      
+      // Ensure we have an array of expenses
+      const expenses = Array.isArray(expensesData) ? expensesData : 
+                      (expensesData && 'data' in expensesData && Array.isArray(expensesData.data)) ? 
+                      expensesData.data : [];
+      
+      // Filter expenses for the current month
+      const currentMonthExpenses = expenses.filter(expense => {
+        const expenseDate = new Date(expense.expense_date);
+        return expenseDate >= startDate && expenseDate <= endDate;
+      });
+      
+      // Process regular expenses
+      currentMonthExpenses.forEach(expense => {
+        const expenseDate = new Date(expense.expense_date);
+        const dateKey = expenseDate.toISOString().split('T')[0];
+        
+        // Initialize the date entry if it doesn't exist
+        if (!calendarData[dateKey]) {
+          calendarData[dateKey] = {
+            date: dateKey,
+            income: 0,
+            expenses: 0,
+            events: []
+          }
+        }
+        
+        // Add expense amount
+        calendarData[dateKey].expenses = (calendarData[dateKey].expenses || 0) + expense.amount;
+        
+        // Get category name if available
+        let categoryName: string | undefined = undefined;
+        if (expense.categories && Array.isArray(expense.categories) && expense.categories.length > 0) {
+          categoryName = expense.categories[0]?.name;
+        }
+        
+        // Add event details
+        calendarData[dateKey].events.push({
+          id: expense.id,
+          title: expense.merchant || 'Expense',
+          amount: expense.amount,
+          type: "expense" as AnalyticsEventType,
+          date: dateKey,
+          category: categoryName,
+          isRecurring: expense.recurrence !== 'none',
+          recurrenceType: expense.recurrence
+        });
+      });
+      
+      // Process recurring expenses separately
+      const recurringExpenses = currentMonthExpenses.filter(expense => expense.recurrence && expense.recurrence !== 'none');
+      
+      if (recurringExpenses.length > 0) {
+        // Process recurring expenses
+        recurringExpenses.forEach(expense => {
+          // Get the base date of the recurring expense
+          const baseDate = new Date(expense.expense_date)
+          
+          // Calculate recurring dates that fall within this month
+          const recurringDates = getRecurringDatesInMonth(baseDate, expense.recurrence, startDate, endDate)
+          
+          // Add each recurring instance to the calendar
+          recurringDates.forEach(date => {
+            // Skip the original date as it's already added
+            if (date.getTime() === baseDate.getTime()) return;
+            
+            const dateKey = date.toISOString().split('T')[0]
+            
+            // Initialize the date entry if it doesn't exist
+            if (!calendarData[dateKey]) {
+              calendarData[dateKey] = {
+                date: dateKey,
+                income: 0,
+                expenses: 0,
+                events: []
+              }
+            }
+            
+            // Add expense amount
+            calendarData[dateKey].expenses = (calendarData[dateKey].expenses || 0) + expense.amount
+            
+            // Get category name if available
+            let categoryName: string | undefined = undefined;
+            if (expense.categories && Array.isArray(expense.categories) && expense.categories.length > 0) {
+              categoryName = expense.categories[0]?.name;
+            }
+            
+            // Add event details with recurring flag
+            calendarData[dateKey].events.push({
+              id: `${expense.id}-${dateKey}`, // Create unique ID for each recurring instance
+              title: `${expense.merchant} (Recurring - ${formatRecurrenceText(expense.recurrence)})`,
+              amount: expense.amount,
+              type: "expense" as AnalyticsEventType,
+              date: dateKey,
+              category: categoryName,
+              isRecurring: true,
+              recurrenceType: expense.recurrence
+            })
+          })
+        })
+      }
+    } catch (error) {
+      console.log("Error fetching recurring expenses:", error)
       // Continue execution even if this fails
     }
 
@@ -388,6 +509,110 @@ export async function getAnalyticsSummary() {
       monthlyReportCount: []
     }
   }
+}
+
+// Helper function to format recurrence text
+function formatRecurrenceText(recurrence: string): string {
+  const recurrenceMap: Record<string, string> = {
+    'none': 'One-time',
+    'weekly': 'Weekly',
+    'bi_weekly': 'Bi-weekly',
+    'monthly': 'Monthly',
+    'quarterly': 'Quarterly',
+    'semi_annual': 'Semi-annually',
+    'annual': 'Annually'
+  };
+  
+  return recurrenceMap[recurrence] || recurrence;
+}
+
+// Helper function to calculate recurring dates within a month
+function getRecurringDatesInMonth(baseDate: Date, recurrenceType: string, startDate: Date, endDate: Date): Date[] {
+  const dates: Date[] = [];
+  let currentDate = new Date(baseDate);
+  
+  // If the base date is after the end date, no occurrences in this month
+  if (currentDate > endDate) return [];
+  
+  // If recurrence is none, only include the base date if it falls within the range
+  if (recurrenceType === 'none') {
+    if (currentDate >= startDate && currentDate <= endDate) {
+      dates.push(new Date(currentDate));
+    }
+    return dates;
+  }
+  
+  // Calculate interval in days based on recurrence type
+  let intervalDays = 0;
+  switch (recurrenceType) {
+    case 'weekly':
+      intervalDays = 7;
+      break;
+    case 'bi_weekly':
+      intervalDays = 14;
+      break;
+    case 'monthly':
+      // For monthly, we'll add a month each time
+      break;
+    case 'quarterly':
+      // For quarterly, we'll add 3 months each time
+      break;
+    case 'semi_annual':
+      // For semi-annual, we'll add 6 months each time
+      break;
+    case 'annual':
+      // For annual, we'll add a year each time
+      break;
+    default:
+      return dates; // Unknown recurrence type
+  }
+  
+  // Add the base date if it falls within the range
+  if (currentDate >= startDate && currentDate <= endDate) {
+    dates.push(new Date(currentDate));
+  }
+  
+  // Add recurring dates
+  while (true) {
+    let nextDate: Date;
+    
+    if (recurrenceType === 'weekly' || recurrenceType === 'bi_weekly') {
+      // For weekly and bi-weekly, add days
+      nextDate = new Date(currentDate);
+      nextDate.setDate(nextDate.getDate() + intervalDays);
+    } else if (recurrenceType === 'monthly') {
+      // For monthly, add a month
+      nextDate = new Date(currentDate);
+      nextDate.setMonth(nextDate.getMonth() + 1);
+    } else if (recurrenceType === 'quarterly') {
+      // For quarterly, add 3 months
+      nextDate = new Date(currentDate);
+      nextDate.setMonth(nextDate.getMonth() + 3);
+    } else if (recurrenceType === 'semi_annual') {
+      // For semi-annual, add 6 months
+      nextDate = new Date(currentDate);
+      nextDate.setMonth(nextDate.getMonth() + 6);
+    } else if (recurrenceType === 'annual') {
+      // For annual, add a year
+      nextDate = new Date(currentDate);
+      nextDate.setFullYear(nextDate.getFullYear() + 1);
+    } else {
+      break; // Unknown recurrence type
+    }
+    
+    // If the next date is after the end date, we're done
+    if (nextDate > endDate) break;
+    
+    // If the next date is within the range, add it
+    if (nextDate >= startDate) {
+      dates.push(new Date(nextDate));
+    }
+    
+    // Move to the next date
+    currentDate = nextDate;
+  }
+  
+  return dates;
 }
 
 // Add TypeScript declaration for global variable

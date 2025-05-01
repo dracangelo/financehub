@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Edit, Trash2, MapPin, Receipt, CalendarClock, Clock, Tag, AlertTriangle, Filter, Search, X, DollarSign } from "lucide-react"
+import { Edit, Trash2, MapPin, Receipt, CalendarClock, Clock, Tag, AlertTriangle, Filter, Search, X, DollarSign, FileText, Shield, Split, RepeatIcon } from "lucide-react"
 import { format } from "date-fns"
 import Link from "next/link"
 import { getExpenses, deleteExpense, updateExpense, LocationSearchParams, searchExpensesByLocation } from "@/app/actions/expenses"
@@ -13,16 +13,52 @@ import { Badge } from "@/components/ui/badge"
 import { useRouter } from "next/navigation"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
-import { ExpenseCategories } from "@/types/expense"
+import { ExpenseCategory } from "@/types/expense"
 import { Label } from "@/components/ui/label"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { ALL_CATEGORIES } from "@/lib/constants/categories"
 import { formatCurrency } from "@/lib/utils"
 import { getAddressFromCoordinates } from "@/lib/geocoding"
 
+// Helper function to format recurrence text
+const formatRecurrenceText = (recurrence: string): string => {
+  const recurrenceMap: Record<string, string> = {
+    'none': 'One-time',
+    'weekly': 'Weekly',
+    'bi_weekly': 'Bi-weekly',
+    'monthly': 'Monthly',
+    'quarterly': 'Quarterly',
+    'semi_annual': 'Semi-annually',
+    'annual': 'Annually'
+  };
+  
+  return recurrenceMap[recurrence] || recurrence;
+};
+
 const ExpenseItem = ({ expense, onDelete }: { expense: any; onDelete: (id: string) => void }) => {
-  // Debug the category value
-  console.log(`Expense ID: ${expense.id}, Category: ${expense.category}`);
+  // Debug the expense object to see its structure
+  console.log('Expense object:', expense);
+  console.log('Splits:', expense.splits);
+  
+  // Explicitly log the splits to see their structure
+  if (expense.splits) {
+    if (Array.isArray(expense.splits)) {
+      console.log('Splits is an array with length:', expense.splits.length);
+      expense.splits.forEach((split: any, i: number) => {
+        console.log(`Split ${i}:`, split);
+      });
+    } else {
+      console.log('Splits is not an array:', typeof expense.splits);
+    }
+  } else {
+    console.log('No splits property found on expense');
+  }
+  
+  console.log('Location data:', {
+    location_name: expense.location_name,
+    latitude: expense.latitude,
+    longitude: expense.longitude
+  });
   
   // The database stores the category as text, but our constants use UUIDs
   // Get the category name and color using our helper function
@@ -42,46 +78,29 @@ const ExpenseItem = ({ expense, onDelete }: { expense: any; onDelete: (id: strin
   const categoryColor = category?.color || '#B5B5B5';
   
   // Format location data if available
-  const hasLocation = expense.location !== null && expense.location !== undefined;
-  const [locationName, setLocationName] = useState<string | null>(null);
+  const hasLocation = expense.latitude !== null && expense.latitude !== undefined && expense.longitude !== null && expense.longitude !== undefined;
+  const [locationName, setLocationName] = useState<string | null>(expense.location_name || null);
   const [locationCoords, setLocationCoords] = useState<{lat: number, lng: number} | null>(null);
   
   // Parse location data
   useEffect(() => {
-    if (!hasLocation || !expense.location) return;
+    if (!hasLocation) return;
     
     try {
-      // Try to extract coordinates from the PostGIS point
-      // PostGIS POINT format is typically 'POINT(longitude latitude)'
-      if (typeof expense.location === 'string') {
-        const pointMatch = expense.location.match(/POINT\(([^ ]+) ([^)]+)\)/i);
-        
-        if (pointMatch && pointMatch.length >= 3) {
-          const longitude = parseFloat(pointMatch[1]);
-          const latitude = parseFloat(pointMatch[2]);
-          
-          if (!isNaN(latitude) && !isNaN(longitude)) {
-            setLocationCoords({ lat: latitude, lng: longitude });
-          }
-        }
-      } 
-      // Handle case where location might be an object with lat/lng properties
-      else if (typeof expense.location === 'object') {
-        if (expense.location.latitude && expense.location.longitude) {
-          setLocationCoords({
-            lat: parseFloat(expense.location.latitude),
-            lng: parseFloat(expense.location.longitude)
-          });
-        }
+      const latitude = parseFloat(expense.latitude);
+      const longitude = parseFloat(expense.longitude);
+      
+      if (!isNaN(latitude) && !isNaN(longitude)) {
+        setLocationCoords({ lat: latitude, lng: longitude });
       }
     } catch (error) {
-      console.error("Error parsing location:", error);
+      console.error("Error parsing location coordinates:", error);
     }
-  }, [expense.id, expense.location, hasLocation]);
+  }, [expense.id, expense.latitude, expense.longitude, hasLocation]);
   
-  // Get location name from coordinates
+  // Get location name from coordinates if not already provided
   useEffect(() => {
-    if (!locationCoords) return;
+    if (!locationCoords || locationName) return;
     
     getAddressFromCoordinates(locationCoords.lat, locationCoords.lng)
       .then(address => {
@@ -91,8 +110,17 @@ const ExpenseItem = ({ expense, onDelete }: { expense: any; onDelete: (id: strin
           setLocationName(placeName);
         }
       })
-      .catch(error => console.error("Error getting address:", error));
-  }, [locationCoords]);
+      .catch(error => {
+        console.error("Error getting address from coordinates:", error);
+      });
+  }, [locationCoords, locationName]);
+  
+  // Debug split expenses
+  useEffect(() => {
+    if (expense.splits && expense.splits.length > 0) {
+      console.log('Split expenses found:', expense.splits);
+    }
+  }, [expense.splits]);
 
   return (
     <Card className="relative overflow-hidden">
@@ -105,38 +133,84 @@ const ExpenseItem = ({ expense, onDelete }: { expense: any; onDelete: (id: strin
       <CardContent className="p-4 pl-6">
         <div className="flex items-start justify-between">
           <div className="space-y-1">
-            <h3 className={`font-medium ${expense.is_impulse ? 'text-red-500' : ''}`}>{expense.description}</h3>
+            <h3 className={`font-medium ${expense.is_impulse ? 'text-red-500' : ''}`}>{expense.merchant}</h3>
             <div className="text-sm text-muted-foreground flex flex-wrap gap-2">
-              {expense.merchant_name && (
+              {expense.notes && (
                 <span className="inline-flex items-center">
-                  <DollarSign className="w-3 h-3 mr-1" />
-                  {expense.merchant_name}
+                  <FileText className="w-3 h-3 mr-1" />
+                  {expense.notes}
                 </span>
               )}
-              {/* Make category more prominent with a colored badge */}
-              <Badge 
-                variant="outline" 
-                className="ml-1" 
-                style={{ 
-                  borderColor: categoryColor,
-                  color: categoryColor,
-                  fontWeight: 'normal'
-                }}
-              >
-                <Tag className="w-3 h-3 mr-1" />
-                {categoryName}
-              </Badge>
+              
+              {/* Display date */}
               <span className="inline-flex items-center">
                 <Clock className="w-3 h-3 mr-1" />
-                {format(new Date(expense.spent_at), 'MMM d, yyyy')}
+                {format(new Date(expense.expense_date || Date.now()), 'MMM d, yyyy')}
               </span>
+              
               {/* Display location if available */}
-              {locationName && (
-                <Badge variant="outline" className="ml-1">
+              {(expense.location_name || locationName) && (
+                <span className="inline-flex items-center">
                   <MapPin className="w-3 h-3 mr-1" />
-                  {locationName}
-                </Badge>
+                  {expense.location_name || locationName}
+                </span>
               )}
+              
+              {/* Display warranty expiration date if available */}
+              {expense.warranty_expiration_date && (
+                <span className="inline-flex items-center text-amber-600">
+                  <Shield className="w-3 h-3 mr-1" />
+                  Warranty expires: {format(new Date(expense.warranty_expiration_date), 'MMM d, yyyy')}
+                </span>
+              )}
+              
+              {/* Display recurring expense information if available */}
+              {expense.recurrence && expense.recurrence !== 'none' && (
+                <span className="inline-flex items-center text-purple-600">
+                  <RepeatIcon className="w-3 h-3 mr-1" />
+                  {formatRecurrenceText(expense.recurrence)}
+                </span>
+              )}
+              
+              {/* End of basic expense details */}
+            </div>
+            
+            {/* Split expenses section - separate from the main details for better visibility */}
+            {expense.splits && Array.isArray(expense.splits) && expense.splits.length > 0 && (
+              <div className="mt-3 space-y-1">
+                <h4 className="text-sm font-semibold text-indigo-700">Split Details:</h4>
+                {expense.splits.map((split: any, index: number) => (
+                  <div key={index} className="flex items-center text-indigo-600 bg-indigo-50 p-2 rounded-md">
+                    <Split className="w-4 h-4 mr-2" />
+                    <div>
+                      <span className="font-medium">Split with <strong>{split.shared_with_user}</strong></span>
+                      <div className="text-sm">
+                        They owe you <strong>{formatCurrency(split.amount)}</strong>
+                        {split.note && <span className="italic"> ({split.note})</span>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {/* Display categories as badges */}
+            <div className="mt-1 flex flex-wrap gap-1">
+              {expense.categories && expense.categories.map((category: any, index: number) => (
+                <Badge 
+                  key={index}
+                  variant="outline" 
+                  className="ml-1" 
+                  style={{ 
+                    borderColor: categoryColor,
+                    color: categoryColor,
+                    fontWeight: 'normal'
+                  }}
+                >
+                  <Tag className="w-3 h-3 mr-1" />
+                  {category.name}
+                </Badge>
+              ))}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -319,22 +393,32 @@ export function ExpenseList() {
   const fetchExpenses = async () => {
     setLoading(true);
     try {
-      let expensesData;
+      let expensesData: any[] = [];
       
       if (locationSearch) {
         // If location search is active, use that
-        expensesData = await searchExpensesByLocation(locationSearch);
+        const searchResult = await searchExpensesByLocation(locationSearch);
+        if (Array.isArray(searchResult)) {
+          expensesData = searchResult;
+        } else if (searchResult && 'data' in searchResult && Array.isArray(searchResult.data)) {
+          expensesData = searchResult.data;
+        }
       } else {
         // Otherwise get all expenses
-        expensesData = await getExpenses();
+        const result = await getExpenses();
+        if (Array.isArray(result)) {
+          expensesData = result;
+        } else if (result && 'data' in result && Array.isArray(result.data)) {
+          expensesData = result.data;
+        }
       }
       
       // Debug: Log the first expense to see its structure
-      if (expensesData && expensesData.length > 0) {
+      if (expensesData.length > 0) {
         console.log('First expense data:', JSON.stringify(expensesData[0], null, 2));
       }
       
-      setExpenses(expensesData || []);
+      setExpenses(expensesData);
     } catch (error) {
       console.error("Error fetching expenses:", error);
       toast({

@@ -1,6 +1,11 @@
+"use client"
+
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatCurrency } from "@/lib/utils"
 import { CashflowForecast } from "@/lib/cashflow-utils"
+import { RecurringExpense } from "@/lib/recurring-expense-utils"
+import { getRecurringExpensesMonthly } from "@/app/actions/recurring-expenses-client"
 import { 
   Wallet, 
   TrendingUp, 
@@ -8,15 +13,24 @@ import {
   BarChart3, 
   PiggyBank, 
   ArrowUpRight, 
-  ArrowDownRight 
+  ArrowDownRight,
+  RefreshCw,
+  Calendar
 } from "lucide-react"
-import { Progress } from "@/components/ui/progress"
+import { Skeleton } from "@/components/ui/skeleton"
 
 interface AccountSummary {
   totalBalance: number
   accountCount: number
   currencyBreakdown: { [key: string]: number }
   typeBreakdown: { [key: string]: number }
+}
+
+interface CategorySpending {
+  category: string
+  amount: number
+  percentage: number
+  color?: string
 }
 
 interface CashflowSummary extends Omit<CashflowForecast, 'monthOverMonth'> {
@@ -29,9 +43,127 @@ interface CashflowSummary extends Omit<CashflowForecast, 'monthOverMonth'> {
 interface DashboardCardsProps {
   accountSummary: AccountSummary
   cashflowSummary: CashflowSummary
+  topCategories: CategorySpending[]
+}
+
+interface ProjectedExpensesContentProps {
+  baseProjectedExpense: number
+  monthOverMonth: number
+  onTotalExpenseChange?: (totalExpense: number) => void
+}
+
+function ProjectedExpensesContent({ baseProjectedExpense, monthOverMonth, onTotalExpenseChange }: ProjectedExpensesContentProps) {
+  const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [totalMonthlyExpense, setTotalMonthlyExpense] = useState(baseProjectedExpense)
+  
+  useEffect(() => {
+    async function loadRecurringExpenses() {
+      try {
+        setIsLoading(true)
+        const expenses = await getRecurringExpensesMonthly()
+        setRecurringExpenses(expenses)
+        
+        // Calculate total monthly expenses (base + recurring monthly equivalents)
+        const recurringTotal = expenses.reduce((sum: number, expense: RecurringExpense) => sum + expense.monthlyEquivalent, 0)
+        const newTotalExpense = baseProjectedExpense + recurringTotal
+        
+        // Update local state
+        setTotalMonthlyExpense(newTotalExpense)
+        
+        // Notify parent component of the total expense change
+        if (onTotalExpenseChange) {
+          onTotalExpenseChange(newTotalExpense)
+        }
+      } catch (error) {
+        console.error("Error loading recurring expenses:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    
+    loadRecurringExpenses()
+  }, [baseProjectedExpense, onTotalExpenseChange])
+  
+  return (
+    <>
+      {isLoading ? (
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-32" />
+          <Skeleton className="h-4 w-full" />
+          <div className="mt-4 pt-3 border-t border-dashed space-y-2">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-full" />
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="text-2xl font-bold text-red-600">-{formatCurrency(totalMonthlyExpense)}</div>
+          <div className="mt-2 flex items-center space-x-1 bg-muted/30 p-1.5 rounded">
+            {monthOverMonth <= 0 ? (
+              <ArrowDownRight className="h-3 w-3 text-green-600" />
+            ) : (
+              <ArrowUpRight className="h-3 w-3 text-red-600" />
+            )}
+            <p className={`text-xs ${monthOverMonth <= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {monthOverMonth >= 0 ? '+' : ''}
+              {monthOverMonth}% from last month
+            </p>
+          </div>
+          
+          <div className="mt-4 pt-3 border-t border-dashed">
+            <div className="flex justify-between items-center text-xs mb-2">
+              <span className="font-medium">Recurring Expenses</span>
+              <span className="text-xs text-muted-foreground flex items-center">
+                <Calendar className="h-3 w-3 mr-1" /> Monthly Equivalent
+              </span>
+            </div>
+            
+            {recurringExpenses.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-2">
+                No recurring expenses found
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1 custom-scrollbar">
+                {recurringExpenses.slice(0, 5).map((expense) => (
+                  <div key={expense.id} className="flex justify-between items-center text-xs p-2 bg-muted/30 rounded">
+                    <div className="flex items-center">
+                      <div 
+                        className="h-2 w-2 rounded-full mr-2" 
+                        style={{ backgroundColor: expense.color }}
+                      />
+                      <span className="font-medium truncate max-w-[120px]">{expense.merchant}</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-semibold">-{formatCurrency(expense.monthlyEquivalent)}</div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {expense.recurrence} · {formatCurrency(expense.amount)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                
+                {recurringExpenses.length > 5 && (
+                  <p className="text-xs text-muted-foreground text-center py-1">
+                    +{recurringExpenses.length - 5} more recurring expenses
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </>
+  )
 }
 
 export function DashboardCards({ accountSummary, cashflowSummary }: DashboardCardsProps) {
+  // State for tracking the total monthly expenses including recurring expenses
+  const [totalMonthlyExpense, setTotalMonthlyExpense] = useState(cashflowSummary.projectedExpenses)
+  const [netCashflow, setNetCashflow] = useState(cashflowSummary.netCashflow)
+  const [financialStatus, setFinancialStatus] = useState(cashflowSummary.netCashflow >= 0 ? 'Positive' : 'Negative')
+  
   // Calculate additional metrics
   const totalAssets = accountSummary.totalBalance;
   const totalLiabilities = 0; // This would need to be fetched from a liabilities source
@@ -42,8 +174,15 @@ export function DashboardCards({ accountSummary, cashflowSummary }: DashboardCar
     ? Math.min(100, Math.round((cashflowSummary.projectedExpenses / cashflowSummary.projectedIncome) * 100)) 
     : 0;
   
-  // Determine financial status
-  const financialStatus = cashflowSummary.netCashflow >= 0 ? 'Positive' : 'Negative';
+  // Update net cashflow when total monthly expense changes
+  useEffect(() => {
+    // Calculate the updated net cashflow based on projected income minus total expenses
+    const updatedNetCashflow = cashflowSummary.projectedIncome - totalMonthlyExpense
+    setNetCashflow(updatedNetCashflow)
+    
+    // Update financial status based on the new net cashflow
+    setFinancialStatus(updatedNetCashflow >= 0 ? 'Positive' : 'Negative')
+  }, [totalMonthlyExpense, cashflowSummary.projectedIncome])
   
   return (
     <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
@@ -137,43 +276,11 @@ export function DashboardCards({ accountSummary, cashflowSummary }: DashboardCar
           </div>
         </CardHeader>
         <CardContent className="pt-4">
-          <div className="text-2xl font-bold text-red-600">-{formatCurrency(cashflowSummary.projectedExpenses)}</div>
-          <div className="mt-2 flex items-center space-x-1 bg-muted/30 p-1.5 rounded">
-            {cashflowSummary.monthOverMonth.expenses <= 0 ? (
-              <ArrowDownRight className="h-3 w-3 text-green-600" />
-            ) : (
-              <ArrowUpRight className="h-3 w-3 text-red-600" />
-            )}
-            <p className={`text-xs ${cashflowSummary.monthOverMonth.expenses <= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {cashflowSummary.monthOverMonth.expenses >= 0 ? '+' : ''}
-              {cashflowSummary.monthOverMonth.expenses}% from last month
-            </p>
-          </div>
-          
-          <div className="mt-4 pt-3 border-t border-dashed">
-            <div className="flex justify-between items-center text-xs mb-2">
-              <span className="font-medium">Budget Utilization</span>
-              <span className="text-muted-foreground">{budgetUtilization}%</span>
-            </div>
-            <Progress 
-              value={budgetUtilization} 
-              className="h-2.5 rounded-full" 
-              indicatorClassName={
-                budgetUtilization < 70 ? "bg-green-600" : 
-                budgetUtilization < 90 ? "bg-yellow-500" : 
-                "bg-red-600"
-              }
-            />
-            <p className="mt-2 text-xs text-muted-foreground flex items-center justify-center bg-muted/40 p-1.5 rounded mt-2">
-              {budgetUtilization < 70 ? (
-                <><span className="h-2 w-2 rounded-full bg-green-500 mr-1.5"></span>On track</>
-              ) : budgetUtilization < 90 ? (
-                <><span className="h-2 w-2 rounded-full bg-yellow-500 mr-1.5"></span>Approaching limit</>
-              ) : (
-                <><span className="h-2 w-2 rounded-full bg-red-500 mr-1.5"></span>Over budget</>
-              )}
-            </p>
-          </div>
+          <ProjectedExpensesContent 
+            baseProjectedExpense={cashflowSummary.projectedExpenses} 
+            monthOverMonth={cashflowSummary.monthOverMonth.expenses}
+            onTotalExpenseChange={setTotalMonthlyExpense}
+          />
         </CardContent>
       </Card>
       
@@ -188,8 +295,8 @@ export function DashboardCards({ accountSummary, cashflowSummary }: DashboardCar
           </div>
         </CardHeader>
         <CardContent className="pt-4">
-          <div className={`text-2xl font-bold ${cashflowSummary.netCashflow >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-            {cashflowSummary.netCashflow >= 0 ? '+' : ''}{formatCurrency(cashflowSummary.netCashflow)}
+          <div className={`text-2xl font-bold ${netCashflow >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            {netCashflow >= 0 ? '+' : ''}{formatCurrency(netCashflow)}
           </div>
           <div className="mt-2 flex items-center space-x-1 bg-muted/30 p-1.5 rounded">
             <PiggyBank className="h-3 w-3 text-muted-foreground" />
