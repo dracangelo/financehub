@@ -10,20 +10,39 @@ import { AlertCircle } from "lucide-react"
 interface Bill {
   id: string
   name: string
-  amount: number
-  next_payment_date: string
+  // Support both amount and amount_due fields
+  amount?: number
+  amount_due?: number
+  // Support both next_payment_date and next_due_date fields
+  next_payment_date?: string
+  next_due_date?: string
+  // Support both billing_frequency and frequency fields
   billing_frequency?: string
+  frequency?: string
+  // Support both auto_pay and is_automatic fields
   auto_pay?: boolean
+  is_automatic?: boolean
+  // Status field from the database
+  status?: string
+  // Other fields
   payment_schedule?: { status: string; scheduled_date: string }[]
   billers?: { name: string; category: string }
   is_paid?: boolean
+  last_paid_date?: string
   bill_payments?: {
     id: string
     payment_date: string
-    payment_status: string
+    payment_status?: string
     amount_paid: number
     payment_method: string
+    note?: string
   }[]
+  category?: {
+    id: string
+    name: string
+    description?: string
+    icon?: string
+  }
 }
 
 export function BillsSummary() {
@@ -72,56 +91,64 @@ export function BillsSummary() {
     let dueSoonBillsCount = 0
     let upcomingBillsCount = 0
 
+    console.log('Calculating bill summary for', bills.length, 'bills');
+    
     bills.forEach((bill) => {
-      // Check for bill payments
-      if (bill.bill_payments && bill.bill_payments.length > 0) {
-        // Sort payments by date, most recent first
-        const sortedPayments = [...bill.bill_payments].sort((a, b) => 
-          new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime()
-        );
-        
-        // If the most recent payment has a completed status, the bill is paid
-        if (sortedPayments[0].payment_status === "completed") {
-          return; // Skip paid bills
-        }
-      }
-      
       // Skip bills that are explicitly marked as paid
-      if (bill.is_paid) return;
-      
-      // Skip bills that have a paid status in payment_schedule
-      if (bill.payment_schedule && 
-          bill.payment_schedule.length > 0 && 
-          bill.payment_schedule[0].status === "paid") {
+      if (bill.status === 'paid' || bill.is_paid) {
+        console.log(`Skipping paid bill: ${bill.name}`);
         return;
       }
       
       try {
-        const dueDate = new Date(bill.next_payment_date)
-        if (isNaN(dueDate.getTime())) return; // Skip invalid dates
-        
-        // If auto_pay is enabled and due date has passed, consider it paid
-        if (bill.auto_pay && dueDate < today) {
-          return; // Skip auto-paid bills
+        // Get the bill amount - handle different property names for amount
+        const amount = typeof bill.amount_due !== 'undefined' ? bill.amount_due : bill.amount;
+        if (typeof amount !== 'number' || isNaN(amount)) {
+          console.error(`Invalid amount for bill ${bill.name}:`, amount);
+          return; // Skip bills with invalid amounts
         }
         
-        const diffTime = dueDate.getTime() - today.getTime()
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-
-        totalDue += bill.amount
-
-        if (diffDays < 0) {
-          overdue += bill.amount
-          overdueBillsCount++
+        // Get the due date - handle undefined values safely
+        const dueDateStr = bill.next_due_date || bill.next_payment_date;
+        if (!dueDateStr) {
+          console.error(`Missing due date for bill ${bill.name}`);
+          return; // Skip bills with missing dates
+        }
+        
+        const dueDate = new Date(dueDateStr);
+        if (isNaN(dueDate.getTime())) {
+          console.error(`Invalid date for bill ${bill.name}:`, dueDateStr);
+          return; // Skip bills with invalid dates
+        }
+        
+        // Calculate days until due
+        const diffTime = dueDate.getTime() - today.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        console.log(`Processing bill: ${bill.name}, status: ${bill.status}, amount: ${amount}, due in: ${diffDays} days`);
+        
+        // Add to total due regardless of when it's due (as long as it's not paid)
+        totalDue += amount;
+        
+        // Categorize based on status and due date
+        if (bill.status === 'overdue' || diffDays < 0) {
+          // Overdue bills
+          overdue += amount;
+          overdueBillsCount++;
+          console.log(`Added to overdue: ${bill.name}, amount: ${amount}`);
         } else if (diffDays <= 7) {
-          dueSoon += bill.amount
-          dueSoonBillsCount++
+          // Due soon (within 7 days)
+          dueSoon += amount;
+          dueSoonBillsCount++;
+          console.log(`Added to due soon: ${bill.name}, amount: ${amount}`);
         } else {
-          upcoming += bill.amount
-          upcomingBillsCount++
+          // Upcoming (more than 7 days away)
+          upcoming += amount;
+          upcomingBillsCount++;
+          console.log(`Added to upcoming: ${bill.name}, amount: ${amount}`);
         }
       } catch (e) {
-        console.error("Error processing bill date:", e);
+        console.error(`Error processing bill ${bill.name}:`, e);
       }
     })
 
