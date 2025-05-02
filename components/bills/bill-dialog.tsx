@@ -170,8 +170,17 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
       // Add auto-pay setting
       formData.set("auto_pay", isAutoPay ? "true" : "false")
       
-      // Set the status
-      formData.set("status", status)
+      // Determine the initial status based on the due date
+      // For new bills, we'll let the server determine if it's overdue or unpaid
+      // For existing bills, we'll respect the status that was set in the dialog
+      if (!bill) {
+        // For new bills, don't set a status and let the server determine it
+        // This ensures consistent handling for both recurring and non-recurring bills
+        formData.delete("status")
+      } else {
+        // For existing bills, use the status from the dialog
+        formData.set("status", status)
+      }
 
       if (bill) {
         await updateBill(bill.id, formData)

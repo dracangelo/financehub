@@ -235,6 +235,7 @@ export async function createBill(formData: FormData) {
       console.log('Creating payment schedule for bill:', bill.id);
       
       try {
+        // Create the payment schedule entry
         const { error: scheduleError } = await supabase.from("bill_payments").insert({
           bill_id: bill.id,
           user_id: user.id,
@@ -247,6 +248,21 @@ export async function createBill(formData: FormData) {
         if (scheduleError) {
           console.error("Error creating payment schedule:", scheduleError)
           // Don't throw here, we've already created the bill
+        }
+        
+        // CRITICAL: Double-check that the bill status is correct
+        // This ensures that even if something else is setting the status to 'paid',
+        // we explicitly set it back to the correct initial status
+        const { error: statusCheckError } = await supabase
+          .from("bills")
+          .update({ status: initialStatus })
+          .eq("id", bill.id)
+          .eq("user_id", user.id)
+          
+        if (statusCheckError) {
+          console.error("Error ensuring correct bill status:", statusCheckError)
+        } else {
+          console.log(`Ensured bill status is set to: ${initialStatus}`)
         }
       } catch (scheduleErr) {
         console.error("Exception creating payment schedule:", scheduleErr)
@@ -636,9 +652,37 @@ export async function markBillAsPaid(id: string, formData: FormData) {
       // This preserves the user's original input and payment history
       console.log(`Keeping original bill as paid with due date: ${bill.next_due_date}`);
       
-      // We could optionally create a new bill entry for the next cycle here
-      // But for now, we'll keep the original bill as is and let the user manually create the next one
-      // This gives the user complete control over their bill management
+      // Create a new bill entry for the next cycle
+      try {
+        const { data: newBill, error: newBillError } = await supabase
+          .from("bills")
+          .insert({
+            user_id: user.id,
+            name: bill.name,
+            amount_due: bill.amount_due,
+            next_due_date: nextDueDate,
+            frequency: bill.frequency,
+            is_automatic: bill.is_automatic,
+            description: bill.description || "",
+            category_id: bill.category_id,
+            vendor: bill.vendor,
+            expected_payment_account: bill.expected_payment_account,
+            reminder_days: bill.reminder_days,
+            status: "unpaid", // Always start the new cycle as unpaid
+            currency: bill.currency || "USD"
+          })
+          .select()
+          .single();
+
+        if (newBillError) {
+          console.error("Error creating next cycle bill:", newBillError);
+        } else {
+          console.log(`Created new bill for next cycle with due date: ${nextDueDate}`);
+        }
+      } catch (e) {
+        console.error("Exception creating next cycle bill:", e);
+        // Don't throw here, we've already marked the original bill as paid
+      }
     } else {
       console.log(`Non-recurring bill marked as paid. Due date remains: ${bill.next_due_date}`);
     }
