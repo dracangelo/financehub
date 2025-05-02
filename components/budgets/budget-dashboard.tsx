@@ -277,31 +277,77 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
       }
     } catch (err) {
       console.error("Error reloading budget data:", err);
+  
     } finally {
       setLoading(false);
     }
   }
 
-  // Calculate budget metrics
-  const totalAllocated = budget?.categories?.reduce(
-    (sum: number, category: any) => sum + (Number(category.amount_allocated) || 0), 
-    0
-  ) || 0
+  // Calculate total budget amount from budget categories
+  const budgetIncome = budget ? (
+    // First try to use the income field directly
+    budget.income || 
+    // Then try to calculate from budget categories
+    (budget.budget_categories?.reduce((sum, cat) => sum + (cat.amount_allocated || 0), 0) || 0) ||
+    // Then try to calculate from categories and items
+    (budget.categories?.reduce((sum, cat) => {
+      // Get amount from category items
+      const categoryAmount = cat.items?.reduce(
+        (itemSum, item) => itemSum + (parseFloat(item.amount as string) || 0), 0
+      ) || cat.amount || 0;
+      
+      // Get amount from subcategory items
+      const subcategoryAmount = cat.subcategories?.reduce((subSum, subCat) => {
+        const subCatAmount = subCat.items?.reduce(
+          (subItemSum, item) => subItemSum + (parseFloat(item.amount as string) || 0), 0
+        ) || subCat.amount || 0;
+        return subSum + subCatAmount;
+      }, 0) || 0;
+      
+      return sum + categoryAmount + subcategoryAmount;
+    }, 0) || 0)
+  ) : 0;
   
-  // Ensure budget income is properly parsed as a number
-  const budgetIncome = budget?.income ? Number(budget.income) : 0
+  // Calculate total allocated amount from budget items in categories and subcategories
+  const totalAllocated = budget ? (
+    // First try to use budget_categories
+    (budget.budget_categories?.reduce((sum, cat) => sum + (cat.amount_allocated || 0), 0) || 0) ||
+    // Then try to calculate from categories and items
+    (budget.categories?.reduce((sum, cat) => {
+      // Get amount from category items
+      const categoryAmount = cat.items?.reduce(
+        (itemSum, item) => itemSum + (parseFloat(item.amount as string) || 0), 0
+      ) || cat.amount || 0;
+      
+      // Get amount from subcategory items
+      const subcategoryAmount = cat.subcategories?.reduce((subSum, subCat) => {
+        const subCatAmount = subCat.items?.reduce(
+          (subItemSum, item) => subItemSum + (parseFloat(item.amount as string) || 0), 0
+        ) || subCat.amount || 0;
+        return subSum + subCatAmount;
+      }, 0) || 0;
+      
+      return sum + categoryAmount + subcategoryAmount;
+    }, 0) || 0)
+  ) : 0;
   
   // Log budget metrics for debugging
   useEffect(() => {
     if (budget) {
-      console.log('Budget income:', budget.income, 'Parsed income:', budgetIncome);
+      console.log('Budget income:', budget.income, 'Calculated income:', budgetIncome);
       console.log('Total allocated:', totalAllocated);
       console.log('Categories:', budget.categories);
       
       // Log each category's allocation for debugging
       if (budget.categories) {
         budget.categories.forEach((cat: any) => {
-          console.log(`Category ${cat.name}: ${cat.amount_allocated} (${typeof cat.amount_allocated})`);
+          console.log(`Category ${cat.name}: ${cat.amount || 'N/A'} (${typeof cat.amount})`);
+        });
+      }
+      
+      if (budget.budget_categories) {
+        budget.budget_categories.forEach((cat: any) => {
+          console.log(`Budget Category ${cat.name}: ${cat.amount_allocated || 'N/A'} (${typeof cat.amount_allocated})`);
         });
       }
     }
@@ -310,43 +356,74 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
   const remainingBudget = budgetIncome - totalAllocated
   const allocationPercentage = budgetIncome > 0 ? (totalAllocated / budgetIncome) * 100 : 0
   
-  // Generate simulated spending trends data
+  // Generate spending trends from budget categories if available
   useEffect(() => {
-    if (budget && budget.categories && budget.categories.length > 0) {
-      // Simulate spending trends based on budget categories
-      const trends = budget.categories.map((category: any) => {
-        // Simulate actual spending as a percentage of allocated amount
-        const spendingFactor = Math.random() * 0.5 + 0.7; // 70-120% of allocated amount
-        const allocated = category.amount_allocated || 0;
-        const spent = allocated * spendingFactor;
-        const remaining = allocated - spent;
-        const percentSpent = allocated > 0 ? (spent / allocated) * 100 : 0;
-        
-        // Determine trend direction
-        const trendDirection = spendingFactor > 1 ? 'over' : 'under';
-        
-        return {
-          id: category.id,
-          name: category.name,
-          allocated,
-          spent,
-          remaining,
-          percentSpent,
-          trendDirection,
-          variance: spent - allocated,
-          status: percentSpent > 90 ? 'critical' : percentSpent > 75 ? 'warning' : 'healthy'
-        };
-      });
+    // Check for budget categories from different sources
+    const hasCategories = (
+      (budget?.budget_categories && budget.budget_categories.length > 0) ||
+      (budget?.categories && budget.categories.length > 0)
+    );
+    
+    if (hasCategories) {
+      // Generate sample spending trends based on budget categories
+      // In a real app, this would come from actual spending data
+      let trends = [];
+      
+      if (budget?.budget_categories && budget.budget_categories.length > 0) {
+        // Use budget_categories if available
+        trends = budget.budget_categories.map((category: any) => {
+          // Generate a random spending amount between 80% and 120% of allocated
+          const allocated = category.amount_allocated || 0;
+          const randomFactor = Math.random() * 0.4 + 0.8; // Between 0.8 and 1.2
+          const spent = allocated * randomFactor;
+          const variance = spent - allocated;
+          const trendDirection = spent > allocated ? 'over' : 'under';
+          
+          return {
+            id: category.id,
+            name: category.name || category.categories?.name || 'Unnamed',
+            allocated,
+            spent,
+            variance,
+            trendDirection,
+            percentage: allocated > 0 ? (spent / allocated) * 100 : 0
+          };
+        });
+      } else if (budget?.categories && budget.categories.length > 0) {
+        // Use categories and items if available
+        trends = budget.categories.map((category: any) => {
+          // Calculate total amount from category items
+          const allocated = category.items?.reduce(
+            (sum: number, item: any) => sum + (parseFloat(item.amount as string) || 0), 0
+          ) || category.amount || 0;
+          
+          // Generate a random spending amount between 80% and 120% of allocated
+          const randomFactor = Math.random() * 0.4 + 0.8; // Between 0.8 and 1.2
+          const spent = allocated * randomFactor;
+          const variance = spent - allocated;
+          const trendDirection = spent > allocated ? 'over' : 'under';
+          
+          return {
+            id: category.id,
+            name: category.name || 'Unnamed',
+            allocated,
+            spent,
+            variance,
+            trendDirection,
+            percentage: allocated > 0 ? (spent / allocated) * 100 : 0
+          };
+        });
+      }
       
       setSpendingTrends(trends);
       
-      // Calculate overall budget health
-      const overBudgetCategories = trends.filter(t => t.trendDirection === 'over');
-      const criticalCategories = trends.filter(t => t.status === 'critical');
+      // Determine overall budget health based on trends
+      const overBudgetCount = trends.filter(t => t.trendDirection === 'over').length;
+      const overBudgetPercentage = trends.length > 0 ? (overBudgetCount / trends.length) * 100 : 0;
       
-      if (criticalCategories.length > 2 || (overBudgetCategories.length / trends.length) > 0.3) {
+      if (overBudgetPercentage > 50) {
         setBudgetHealth('critical');
-      } else if (criticalCategories.length > 0 || (overBudgetCategories.length / trends.length) > 0.2) {
+      } else if (overBudgetPercentage > 25) {
         setBudgetHealth('warning');
       } else {
         setBudgetHealth('healthy');
@@ -371,24 +448,65 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
 
   // Use categories from budget creation for visualizations
   // First check if we have budget categories, if not use the provided categories prop
-  const budgetHasCategories = budget?.categories && budget.categories.length > 0
+  const budgetHasCategories = budget?.categories && budget.categories.length > 0;
+  const hasBudgetItems = budget?.budget_categories && budget.budget_categories.length > 0;
   
-  // Prepare data for visualizations
-  const categoryData = budgetHasCategories ?      // Use categories from the budget if available
-    budget.categories.map((category: any) => {
+  // Process budget data to extract categories and their allocations
+  const processedCategories = [];
+  
+  if (budgetHasCategories) {
+    // Use categories from the budget if available
+    processedCategories.push(...budget.categories.map((category: any) => {
+      // Calculate total amount from category items
+      const categoryAmount = category.items?.reduce(
+        (sum: number, item: any) => sum + (parseFloat(item.amount as string) || 0), 0
+      ) || category.amount || 0;
+      
+      // Calculate percentage based on the total budget
+      const percentage = budgetIncome > 0 ? (categoryAmount / budgetIncome) * 100 : 0;
+      
+      return {
+        id: category.id,
+        name: category.name || "Unnamed Category",
+        amount: categoryAmount,
+        percentage: percentage,
+        color: getCategoryColor(categoryAmount, budgetIncome || 1),
+        subcategories: category.subcategories?.map((subcategory: any) => {
+          // Calculate subcategory amount from items
+          const subcatAmount = subcategory.items?.reduce(
+            (sum: number, item: any) => sum + (parseFloat(item.amount as string) || 0), 0
+          ) || subcategory.amount || 0;
+          
+          // Calculate percentage relative to parent category
+          const subcatPercentage = categoryAmount > 0 ? (subcatAmount / categoryAmount) * 100 : 0;
+          
+          return {
+            id: subcategory.id,
+            name: subcategory.name || "Unnamed Subcategory",
+            amount: subcatAmount,
+            percentage: subcatPercentage,
+            color: getCategoryColor(subcatAmount, categoryAmount || 1)
+          };
+        })
+      };
+    }));
+  } else if (hasBudgetItems) {
+    // Use budget_categories if available
+    processedCategories.push(...budget.budget_categories.map((category: any) => {
       // Calculate percentage based on the total budget
       const percentage = budgetIncome > 0 ? (category.amount_allocated / budgetIncome) * 100 : 0;
       
       return {
         id: category.id,
-        name: category.name || "Unnamed Category",
+        name: category.name || category.categories?.name || "Unnamed Category",
         amount: category.amount_allocated || 0,
         percentage: percentage,
-        color: getCategoryColor(category.amount_allocated || 0, budgetIncome || 1),
+        color: getCategoryColor(category.amount_allocated || 0, budgetIncome || 1)
       };
-    }) : 
+    }));
+  } else {
     // Otherwise use the provided categories prop
-    categories.map((category: any) => {
+    processedCategories.push(...categories.map((category: any) => {
       // Calculate percentage based on the total budget
       const percentage = budgetIncome > 0 ? ((category.amount || 0) / budgetIncome) * 100 : 0;
       
@@ -397,9 +515,13 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
         name: category.name || "Unnamed Category",
         amount: category.amount || 0,
         percentage: percentage,
-        color: getCategoryColor(category.amount || 0, budgetIncome || 1),
+        color: getCategoryColor(category.amount || 0, budgetIncome || 1)
       };
-    });
+    }));
+  }
+  
+  // Final categoryData for visualizations
+  const categoryData = processedCategories;
 
   // Format data for the treemap
   const treemapData = {
@@ -419,8 +541,8 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
     categoryData.map((cat: { name: string; amount: number }) => ({
       category: cat.name,
       budgeted: cat.amount,
-      actual: cat.amount, // Default to same as budgeted when no spending data
-      variance: 0
+      actual: cat.amount * 0.8, // Simulate some spending as 80% of budgeted amount for visualization
+      variance: cat.amount * -0.2 // Simulate variance as -20% of budgeted amount
     }));
 
   // Add debugging to help identify loading issues
@@ -612,7 +734,7 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
           </div>
           <Progress value={allocationPercentage} className="h-2" />
           <p className="text-xs text-muted-foreground text-right">
-            {allocationPercentage.toFixed(1)}% of budget allocated
+            {(allocationPercentage || 0).toFixed(1)}% of budget allocated
           </p>
         </div>
       </div>
@@ -666,7 +788,7 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
                           <td className="p-3">{category.name}</td>
                           <td className="text-right p-3">{formatCurrency(category.amount_allocated || 0)}</td>
                           <td className="text-right p-3">
-                            {percentage.toFixed(1)}%
+                            {(percentage || 0).toFixed(1)}%
                           </td>
                           <td className="text-right p-3">
                             {trend && (
@@ -701,7 +823,7 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
                     <tr className="font-medium bg-muted/30">
                       <td className="p-3">Total</td>
                       <td className="text-right p-3">{formatCurrency(totalAllocated)}</td>
-                      <td className="text-right p-3">{allocationPercentage.toFixed(1)}%</td>
+                      <td className="text-right p-3">{(allocationPercentage || 0).toFixed(1)}%</td>
                       <td className="text-right p-3"></td>
                     </tr>
                   </tbody>
@@ -729,7 +851,7 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
                           <div className="flex flex-col items-end">
                             <span className="font-medium">{formatCurrency(category.spent)}</span>
                             <span className="text-xs text-muted-foreground">
-                              {category.percentSpent.toFixed(1)}% of allocated
+                              {(category.percentSpent || 0).toFixed(1)}% of allocated
                             </span>
                           </div>
                         </li>
@@ -754,7 +876,7 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
                                 +{formatCurrency(category.variance)}
                               </span>
                               <span className="text-xs text-muted-foreground">
-                                {((category.variance / category.allocated) * 100).toFixed(1)}% over
+                                {(category.allocated ? ((category.variance / category.allocated) * 100) : 0).toFixed(1)}% over
                               </span>
                             </div>
                           </li>
@@ -813,7 +935,7 @@ export function BudgetDashboard({ budgetId, categories, currentMembers }: Budget
                           <div>
                             <h4 className="font-medium">Unallocated funds</h4>
                             <p className="text-sm text-muted-foreground">
-                              You have {formatCurrency(remainingBudget)} ({(100 - allocationPercentage).toFixed(1)}%) unallocated. Consider adding more categories or increasing existing allocations.
+                              You have {formatCurrency(remainingBudget)} ({(100 - (allocationPercentage || 0)).toFixed(1)}%) unallocated. Consider adding more categories or increasing existing allocations.
                             </p>
                           </div>
                         </div>

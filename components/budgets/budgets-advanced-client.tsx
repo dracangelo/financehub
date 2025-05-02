@@ -84,7 +84,7 @@ export function BudgetsAdvancedClient({
                 className="h-2" 
               />
               <p className="text-sm text-muted-foreground">
-                {overallAllocationPercentage.toFixed(1)}% of total budget allocated
+                {(overallAllocationPercentage || 0).toFixed(1)}% of total budget allocated
               </p>
             </div>
           </CardContent>
