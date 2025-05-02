@@ -1,8 +1,7 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import { getGoals } from "@/app/actions/goals"
-import { type Goal } from "@/types/goal"
+import { getGoals, type Goal } from "@/app/actions/goals"
 import { useQuery } from "@tanstack/react-query"
 
 export function PriorityMatrix() {
@@ -80,27 +79,26 @@ export function PriorityMatrix() {
     // Draw goals as circles
     data.forEach((goal: Goal) => {
       // Calculate position based on priority and target date
-      // Get priority matrix data if available
-      const priorityMatrix = goal.priority_matrix?.[0]
-      
-      // Use priority matrix data if available, otherwise calculate from dates
       let urgency = 0.5
       let importance = 0.5
 
-      if (priorityMatrix) {
-        urgency = priorityMatrix.urgency
-        importance = priorityMatrix.impact
-      } else {
-        // Fallback to date-based urgency
+      // Calculate urgency based on end_date (target date)
+      if (goal.end_date) {
         const now = new Date()
-        const targetDate = new Date(goal.target_date)
+        const targetDate = new Date(goal.end_date)
         const timeUntilTarget = targetDate.getTime() - now.getTime()
         const maxTimeFrame = 1000 * 60 * 60 * 24 * 365 // 1 year in ms
         urgency = timeUntilTarget < 0 ? 1 : 1 - Math.min(1, timeUntilTarget / maxTimeFrame)
+      }
 
-        // Fallback to priority-based importance
-        const importanceMap = { high: 0.8, medium: 0.5, low: 0.2 }
-        importance = importanceMap[goal.priority as keyof typeof importanceMap] || 0.5
+      // Calculate importance based on priority (1=high, 2=medium, 3=low)
+      if (typeof goal.priority === 'number') {
+        // Convert numeric priority to importance value (inverse relationship)
+        // Priority 1 (high) = 0.8 importance, Priority 3 (low) = 0.2 importance
+        importance = 1 - ((goal.priority - 1) / 4) // Maps 1->0.8, 2->0.5, 3->0.2
+      } else {
+        // Fallback if priority is not a number
+        importance = 0.5
       }
 
       // Calculate position
@@ -114,7 +112,7 @@ export function PriorityMatrix() {
       const size = minSize + (goal.target_amount / maxAmount) * (maxSize - minSize)
 
       // Calculate color based on progress
-      const progress = goal.target_amount > 0 ? (goal.current_savings || 0) / goal.target_amount : 0
+      const progress = goal.target_amount > 0 ? (goal.current_amount || 0) / goal.target_amount : 0
       const r = Math.floor(255 * (1 - progress))
       const g = Math.floor(255 * progress)
       const b = 100

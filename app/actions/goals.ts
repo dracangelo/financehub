@@ -24,6 +24,8 @@ export type Goal = {
   progress: number
   created_at: string
   updated_at: string
+  category?: string
+  milestones?: GoalMilestone[]
 }
 
 export type GoalTemplate = {
@@ -309,12 +311,13 @@ export async function createGoal(formData: FormData) {
     // Extract form data
     const name = formData.get("name") as string
     const description = formData.get("description") as string
-    const targetAmount = parseFloat(formData.get("targetAmount") as string)
-    const startDate = formData.get("startDate") as string
-    const endDate = formData.get("endDate") as string
-    const imageUrl = formData.get("imageUrl") as string
+    const targetAmount = parseFloat(formData.get("target_amount") as string)
+    const startDate = formData.get("start_date") as string
+    const endDate = formData.get("end_date") as string
+    const imageUrl = formData.get("image_url") as string
     const priority = parseInt(formData.get("priority") as string) || 1
     const currency = formData.get("currency") as string || "USD"
+    const category = formData.get("category") as string || "emergency"
 
     // Validate required fields
     if (!name || !targetAmount || isNaN(targetAmount)) {
@@ -322,22 +325,24 @@ export async function createGoal(formData: FormData) {
     }
 
     try {
-      // Create the goal
+      // Create the goal without the category field until the column is added to the database
+      const goalData = {
+        user_id: user.id,
+        name,
+        description,
+        target_amount: targetAmount,
+        current_amount: 0,
+        start_date: startDate || new Date().toISOString(),
+        end_date: endDate || null,
+        image_url: imageUrl || null,
+        priority,
+        currency: currency,
+        status: 'active'
+      }
+      
       const { data: goal, error } = await supabase
         .from("financial_goals")
-        .insert({
-          user_id: user.id,
-          name,
-          description,
-          target_amount: targetAmount,
-          current_amount: 0,
-          start_date: startDate || new Date().toISOString(),
-          end_date: endDate || null,
-          image_url: imageUrl || null,
-          priority,
-          currency: currency,
-          status: 'active',
-        })
+        .insert(goalData)
         .select()
         .single()
 
@@ -377,6 +382,434 @@ export async function createGoal(formData: FormData) {
   } catch (error) {
     console.error("Error in createGoal:", error)
     return { error: "Failed to create goal", goal: null }
+  }
+}
+
+// Update an existing goal
+export async function updateGoal(goalId: string, formData: FormData) {
+  try {
+    const user = await getCurrentUser()
+    if (!user) {
+      return { error: "Not authenticated", goal: null }
+    }
+
+    const supabase = await createClient()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { error: "Database connection error", goal: null }
+    }
+
+    // Extract form data
+    const name = formData.get("name") as string
+    const description = formData.get("description") as string
+    const targetAmount = Number.parseFloat(formData.get("target_amount") as string)
+    const imageUrl = formData.get("image_url") as string
+    const startDate = formData.get("start_date") as string
+    const endDate = formData.get("end_date") as string
+    const priority = Number.parseInt(formData.get("priority") as string) || 2
+    const currency = formData.get("currency") as string || "USD"
+    const status = formData.get("status") as GoalStatus || "active"
+    const category = formData.get("category") as string || "emergency"
+
+    // Validate required fields
+    if (!name || !targetAmount || isNaN(targetAmount) || targetAmount < 0) {
+      return { error: "Name and target amount are required", goal: null }
+    }
+
+    // Check if goal exists and belongs to user
+    const { data: existingGoal, error: goalError } = await supabase
+      .from("financial_goals")
+      .select("*")
+      .eq("id", goalId)
+      .eq("user_id", user.id)
+      .single()
+
+    if (goalError) {
+      console.error("Error checking goal:", goalError)
+      return { error: "Goal not found or access denied", goal: null }
+    }
+
+    // Prepare update data without the category field until the column is added to the database
+    const updateData = {
+      name,
+      description,
+      target_amount: targetAmount,
+      start_date: startDate || existingGoal.start_date,
+      end_date: endDate || null,
+      image_url: imageUrl || null,
+      priority,
+      currency,
+      status,
+      updated_at: new Date().toISOString()
+    }
+
+    // Update the goal
+    const { data: goal, error } = await supabase
+      .from("financial_goals")
+      .update(updateData)
+      .eq("id", goalId)
+      .eq("user_id", user.id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error("Error updating goal:", error)
+      return { error: error.message, goal: null }
+    }
+
+    // Update milestones if provided
+    const milestonesData = formData.get("milestones") as string
+    if (milestonesData) {
+      try {
+        const milestones = JSON.parse(milestonesData)
+        if (Array.isArray(milestones) && milestones.length > 0) {
+          // First, get existing milestones
+          const { data: existingMilestones } = await supabase
+            .from("goal_milestones")
+            .select("id")
+            .eq("goal_id", goalId)
+
+          const existingIds = existingMilestones?.map(m => m.id) || []
+          
+          // Process each milestone
+          for (const milestone of milestones) {
+            if (milestone.id && existingIds.includes(milestone.id)) {
+              // Update existing milestone
+              await supabase
+                .from("goal_milestones")
+                .update({
+                  name: milestone.name,
+                  description: milestone.description || null,
+                  target_amount: milestone.targetAmount,
+                  is_achieved: milestone.isAchieved || false,
+                  updated_at: new Date().toISOString()
+                })
+                .eq("id", milestone.id)
+                .eq("goal_id", goalId)
+            } else {
+              // Add new milestone
+              await supabase
+                .from("goal_milestones")
+                .insert({
+                  goal_id: goalId,
+                  name: milestone.name,
+                  description: milestone.description || null,
+                  target_amount: milestone.targetAmount,
+                  is_achieved: false
+                })
+            }
+          }
+          
+          // Delete milestones that were removed (optional)
+          const updatedIds = milestones.filter(m => m.id).map(m => m.id)
+          if (existingIds.length > 0) {
+            const idsToDelete = existingIds.filter(id => !updatedIds.includes(id))
+            if (idsToDelete.length > 0) {
+              await supabase
+                .from("goal_milestones")
+                .delete()
+                .in("id", idsToDelete)
+                .eq("goal_id", goalId)
+            }
+          }
+        }
+      } catch (parseError) {
+        console.error("Error processing milestones:", parseError)
+        // Continue even if milestones processing fails
+      }
+    }
+
+    revalidatePath(`/goals/${goalId}`)
+    revalidatePath("/goals")
+    return { goal, error: null }
+  } catch (error) {
+    console.error("Error in updateGoal:", error)
+    return { error: "Failed to update goal", goal: null }
+  }
+}
+
+// Create a new milestone for a goal
+export async function createMilestone(goalId: string, formData: FormData) {
+  try {
+    const user = await getCurrentUser()
+    if (!user) {
+      return { error: "Not authenticated", success: false }
+    }
+
+    const supabase = await createClient()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { error: "Database connection error", success: false }
+    }
+
+    // Verify the goal belongs to the user
+    const { data: goal, error: goalError } = await supabase
+      .from("financial_goals")
+      .select("id")
+      .eq("id", goalId)
+      .eq("user_id", user.id)
+      .single()
+
+    if (goalError) {
+      console.error("Error checking goal:", goalError)
+      return { error: "Goal not found or access denied", success: false }
+    }
+
+    // Extract form data
+    const name = formData.get("name") as string
+    const description = formData.get("description") as string
+    const targetAmount = Number.parseFloat(formData.get("target_amount") as string) || 0
+
+    // Validate required fields
+    if (!name) {
+      return { error: "Milestone name is required", success: false }
+    }
+
+    // Create the milestone
+    const { data: milestone, error } = await supabase
+      .from("goal_milestones")
+      .insert({
+        goal_id: goalId,
+        name,
+        description,
+        target_amount: targetAmount,
+        is_achieved: false
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error("Error creating milestone:", error)
+      return { error: error.message, success: false }
+    }
+
+    revalidatePath(`/goals/${goalId}`)
+    return { success: true, milestone, error: null }
+  } catch (error) {
+    console.error("Error in createMilestone:", error)
+    return { error: "Failed to create milestone", success: false }
+  }
+}
+
+// Update an existing milestone
+export async function updateMilestone(milestoneId: string, formData: FormData) {
+  try {
+    const user = await getCurrentUser()
+    if (!user) {
+      return { error: "Not authenticated", success: false }
+    }
+
+    const supabase = await createClient()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { error: "Database connection error", success: false }
+    }
+
+    // Get the milestone to verify ownership
+    const { data: milestone, error: milestoneError } = await supabase
+      .from("goal_milestones")
+      .select("*, financial_goals!inner(user_id)")
+      .eq("id", milestoneId)
+      .single()
+
+    if (milestoneError) {
+      console.error("Error fetching milestone:", milestoneError)
+      return { error: "Milestone not found", success: false }
+    }
+
+    // Verify the milestone's goal belongs to the user
+    if (milestone.financial_goals.user_id !== user.id) {
+      return { error: "Access denied", success: false }
+    }
+
+    // Extract form data
+    const name = formData.get("name") as string
+    const description = formData.get("description") as string
+    const targetAmount = Number.parseFloat(formData.get("target_amount") as string) || 0
+
+    // Validate required fields
+    if (!name) {
+      return { error: "Milestone name is required", success: false }
+    }
+
+    // Update the milestone
+    const { data: updatedMilestone, error } = await supabase
+      .from("goal_milestones")
+      .update({
+        name,
+        description,
+        target_amount: targetAmount,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", milestoneId)
+      .select()
+      .single()
+
+    if (error) {
+      console.error("Error updating milestone:", error)
+      return { error: error.message, success: false }
+    }
+
+    revalidatePath(`/goals/${milestone.goal_id}`)
+    return { success: true, milestone: updatedMilestone, error: null }
+  } catch (error) {
+    console.error("Error in updateMilestone:", error)
+    return { error: "Failed to update milestone", success: false }
+  }
+}
+
+// Update milestone completion status
+export async function updateMilestoneStatus(milestoneId: string, isAchieved: boolean) {
+  try {
+    const user = await getCurrentUser()
+    if (!user) {
+      return { error: "Not authenticated", success: false }
+    }
+
+    const supabase = await createClient()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { error: "Database connection error", success: false }
+    }
+
+    // Get the milestone to verify ownership and get goal_id
+    const { data: milestone, error: milestoneError } = await supabase
+      .from("goal_milestones")
+      .select("*, financial_goals!inner(user_id)")
+      .eq("id", milestoneId)
+      .single()
+
+    if (milestoneError) {
+      console.error("Error fetching milestone:", milestoneError)
+      return { error: "Milestone not found", success: false }
+    }
+
+    // Verify the milestone's goal belongs to the user
+    if (milestone.financial_goals.user_id !== user.id) {
+      return { error: "Access denied", success: false }
+    }
+
+    // Update the milestone status
+    const { data: updatedMilestone, error } = await supabase
+      .from("goal_milestones")
+      .update({
+        is_achieved: isAchieved,
+        achieved_at: isAchieved ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", milestoneId)
+      .select()
+      .single()
+
+    if (error) {
+      console.error("Error updating milestone status:", error)
+      return { error: error.message, success: false }
+    }
+
+    revalidatePath(`/goals/${milestone.goal_id}`)
+    return { success: true, milestone: updatedMilestone, error: null }
+  } catch (error) {
+    console.error("Error in updateMilestoneStatus:", error)
+    return { error: "Failed to update milestone status", success: false }
+  }
+}
+
+// Delete a milestone
+export async function deleteMilestone(milestoneId: string) {
+  try {
+    const user = await getCurrentUser()
+    if (!user) {
+      return { error: "Not authenticated", success: false }
+    }
+
+    const supabase = await createClient()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { error: "Database connection error", success: false }
+    }
+
+    // Get the milestone to verify ownership and get goal_id
+    const { data: milestone, error: milestoneError } = await supabase
+      .from("goal_milestones")
+      .select("*, financial_goals!inner(user_id)")
+      .eq("id", milestoneId)
+      .single()
+
+    if (milestoneError) {
+      console.error("Error fetching milestone:", milestoneError)
+      return { error: "Milestone not found", success: false }
+    }
+
+    // Verify the milestone's goal belongs to the user
+    if (milestone.financial_goals.user_id !== user.id) {
+      return { error: "Access denied", success: false }
+    }
+
+    const goalId = milestone.goal_id
+
+    // Delete the milestone
+    const { error } = await supabase
+      .from("goal_milestones")
+      .delete()
+      .eq("id", milestoneId)
+
+    if (error) {
+      console.error("Error deleting milestone:", error)
+      return { error: error.message, success: false }
+    }
+
+    revalidatePath(`/goals/${goalId}`)
+    return { success: true, error: null }
+  } catch (error) {
+    console.error("Error in deleteMilestone:", error)
+    return { error: "Failed to delete milestone", success: false }
+  }
+}
+
+// Delete a goal and all its milestones
+export async function deleteGoal(goalId: string) {
+  try {
+    const user = await getCurrentUser()
+    if (!user) {
+      return { error: "Not authenticated", success: false }
+    }
+
+    const supabase = await createClient()
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { error: "Database connection error", success: false }
+    }
+
+    // Verify the goal belongs to the user
+    const { data: goal, error: goalError } = await supabase
+      .from("financial_goals")
+      .select("id")
+      .eq("id", goalId)
+      .eq("user_id", user.id)
+      .single()
+
+    if (goalError) {
+      console.error("Error checking goal:", goalError)
+      return { error: "Goal not found or access denied", success: false }
+    }
+
+    // Delete the goal (milestones will be cascade deleted due to foreign key constraint)
+    const { error } = await supabase
+      .from("financial_goals")
+      .delete()
+      .eq("id", goalId)
+      .eq("user_id", user.id)
+
+    if (error) {
+      console.error("Error deleting goal:", error)
+      return { error: error.message, success: false }
+    }
+
+    revalidatePath("/goals")
+    return { success: true, error: null }
+  } catch (error) {
+    console.error("Error in deleteGoal:", error)
+    return { error: "Failed to delete goal", success: false }
   }
 }
 

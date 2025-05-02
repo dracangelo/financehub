@@ -31,6 +31,7 @@ create table if not exists financial_goals (
   priority int default 1,
   start_date date default current_date,
   end_date date,
+  category text default 'emergency',
   progress numeric(5,2) generated always as (
     case
       when target_amount = 0 then 0

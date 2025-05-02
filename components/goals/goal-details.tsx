@@ -36,20 +36,44 @@ import { updateMilestoneStatus, deleteGoal, deleteMilestone } from "@/app/action
 import { toast } from "@/components/ui/use-toast"
 import { cn } from "@/lib/utils"
 
+// Status badge helper function
+function getStatusBadge(status: string | undefined) {
+  if (!status) return { variant: "outline" as const, label: "Unknown" };
+  
+  switch(status.toLowerCase()) {
+    case "active":
+      return { variant: "default" as const, label: "Active" };
+    case "paused":
+      return { variant: "outline" as const, label: "Paused" };
+    case "achieved":
+      return { variant: "secondary" as const, label: "Achieved" };
+    case "cancelled":
+      return { variant: "destructive" as const, label: "Cancelled" };
+    default:
+      return { variant: "outline" as const, label: status || "Unknown" };
+  }
+}
+
 interface Goal {
   id: string
+  user_id: string
   name: string
   description?: string
   target_amount: number
-  current_savings: number
-  start_date: string
-  target_date: string
-  goal_type: string
-  priority: number
-  is_shared: boolean
+  current_amount: number
+  currency: string
   status: string
+  priority: number
+  start_date: string
+  end_date?: string
+  progress: number
+  created_at: string
+  updated_at: string
+  category?: string
   image_url?: string
   milestones?: GoalMilestone[]
+  // Additional UI properties
+  is_shared?: boolean
   funding_source?: string
   funding_amount?: number
   funding_frequency?: string
@@ -61,8 +85,14 @@ interface GoalMilestone {
   name: string
   description?: string
   target_amount: number
-  target_date: string
-  is_completed: boolean
+  is_achieved: boolean
+  achieved_at?: string
+  created_at: string
+  updated_at: string
+  // Additional UI properties
+  target_date?: string
+  is_completed?: boolean
+  amount_target?: number
 }
 
 interface GoalDetailsProps {
@@ -81,18 +111,18 @@ export function GoalDetails({ goal }: GoalDetailsProps) {
   // Calculate progress percentage
   const progressPercentage = 
     goal.target_amount && goal.target_amount > 0 ? 
-      Math.min(100, ((goal.current_savings || 0) / goal.target_amount) * 100) : 0
+      Math.min(100, ((goal.current_amount || 0) / goal.target_amount) * 100) : 0
       
   // Check if goal is completed
-  const isGoalCompleted = goal.status === "completed" || progressPercentage >= 100
+  const isGoalCompleted = goal.status === "achieved" || progressPercentage >= 100
 
   // Format dates with validation
   const formattedStartDate = goal.start_date && goal.start_date !== "null" && goal.start_date !== "undefined"
     ? format(new Date(goal.start_date), "MMMM d, yyyy")
     : "Not set"
     
-  const formattedTargetDate = goal.target_date && goal.target_date !== "null" && goal.target_date !== "undefined"
-    ? format(new Date(goal.target_date), "MMMM d, yyyy")
+  const formattedTargetDate = goal.end_date && goal.end_date !== "null" && goal.end_date !== "undefined"
+    ? format(new Date(goal.end_date), "MMMM d, yyyy")
     : "Not set"
 
   // Format amounts
@@ -103,8 +133,8 @@ export function GoalDetails({ goal }: GoalDetailsProps) {
 
   const formattedCurrentAmount = new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "USD",
-  }).format(goal.current_savings || 0)
+    currency: goal.currency || "USD",
+  }).format(goal.current_amount || 0)
 
   const handleMilestoneToggle = async (milestoneId: string, isCompleted: boolean) => {
     await updateMilestoneStatus(milestoneId, isCompleted)
@@ -252,7 +282,13 @@ export function GoalDetails({ goal }: GoalDetailsProps) {
               <CardDescription>Projected completion based on current progress</CardDescription>
             </CardHeader>
             <CardContent className="h-80">
-              <GoalForecastChart goal={goal} />
+              <GoalForecastChart 
+                goal={{
+                  ...goal,
+                  // Add any missing properties needed by the chart component
+                  target_date: goal.end_date || ""
+                }} 
+              />
             </CardContent>
           </Card>
         </div>
@@ -291,8 +327,8 @@ export function GoalDetails({ goal }: GoalDetailsProps) {
                           id: milestone.id,
                           name: milestone.name,
                           description: milestone.description || "",
-                          target_amount: milestone.amount_target || milestone.target_amount,
-                          target_date: milestone.target_date
+                          target_amount: milestone.target_amount,
+                          target_date: milestone.target_date || ""
                         }}
                         onComplete={() => {
                           setEditingMilestoneId(null)
@@ -380,24 +416,22 @@ export function GoalDetails({ goal }: GoalDetailsProps) {
                             <span>
                               {(() => {
                                 // Try to extract date from description as a fallback
-                                if (milestone.description && milestone.description.includes("Target Date:")) {
-                                  const dateMatch = milestone.description.match(/Target Date: ([A-Za-z]+ \d+, \d{4})/);
-                                  if (dateMatch && dateMatch[1]) {
-                                    return dateMatch[1];
+                                // Try to get the date from either target_date or achieved_at
+                                const dateToUse = milestone.target_date || milestone.achieved_at;
+                                if (dateToUse) {
+                                  try {
+                                    return format(new Date(dateToUse), "MMM d, yyyy");
+                                  } catch (e) {
+                                    return "Invalid date";
                                   }
-                                }
-                                
-                                // Fall back to target_date field if it exists
-                                if (milestone.target_date && milestone.target_date !== "null" && milestone.target_date !== "undefined") {
-                                  return format(new Date(milestone.target_date), "MMM d, yyyy");
                                 }
                                 
                                 return "No date set";
                               })()}
                             </span>
                             {(() => {
-                              // Check for amount_target (database field) or target_amount (UI field)
-                              const amount = milestone.amount_target || milestone.target_amount;
+                              // Use target_amount field
+                              const amount = milestone.target_amount;
                               
                               if (amount && amount > 0) {
                                 return (
@@ -474,7 +508,11 @@ export function GoalDetails({ goal }: GoalDetailsProps) {
                   <div>
                     <div className="text-sm text-muted-foreground">Status</div>
                     <div className="font-medium">
-                      <Badge variant={statusBadges[goal.status].variant}>{statusBadges[goal.status].label}</Badge>
+                      {(() => {
+                        // Get badge properties directly without using the statusBadges object
+                        const { variant, label } = getStatusBadge(goal.status);
+                        return <Badge variant={variant}>{label}</Badge>;
+                      })()}
                     </div>
                   </div>
                   <div>

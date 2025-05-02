@@ -3,7 +3,7 @@
 import type React from "react"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { createGoal, updateGoal, type Goal } from "@/app/actions/goals"
+import { createGoal, updateGoal, type Goal, type GoalStatus } from "@/app/actions/goals"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -30,7 +30,7 @@ export function GoalForm({ goal, isEditing = false }: GoalFormProps) {
     goal?.start_date ? new Date(goal.start_date) : new Date()
   )
   const [targetDate, setTargetDate] = useState<Date | undefined>(
-    goal?.target_date ? new Date(goal.target_date) : undefined
+    goal?.end_date ? new Date(goal.end_date) : undefined
   )
   const [showFundingOptions, setShowFundingOptions] = useState(false)
 
@@ -47,9 +47,9 @@ export function GoalForm({ goal, isEditing = false }: GoalFormProps) {
       }
       
       if (targetDate) {
-        formData.set("target_date", format(targetDate, "yyyy-MM-dd"))
+        formData.set("end_date", format(targetDate, "yyyy-MM-dd"))
       } else {
-        formData.set("target_date", "")
+        formData.set("end_date", "")
       }
 
       let result;
@@ -58,7 +58,7 @@ export function GoalForm({ goal, isEditing = false }: GoalFormProps) {
         // Update existing goal
         result = await updateGoal(goal.id, formData)
         
-        if (result.success && result.goal) {
+        if (!result.error && result.goal) {
           toast.success("Goal updated successfully")
           router.push(`/goals/${result.goal.id}`)
         } else {
@@ -68,7 +68,7 @@ export function GoalForm({ goal, isEditing = false }: GoalFormProps) {
         // Create new goal
         result = await createGoal(formData)
         
-        if (result.success && result.goal) {
+        if (!result.error && result.goal) {
           toast.success("Goal created successfully")
           router.push(`/goals/${result.goal.id}`)
         } else {
@@ -117,7 +117,7 @@ export function GoalForm({ goal, isEditing = false }: GoalFormProps) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="goal_type">Category</Label>
-                <Select name="goal_type" defaultValue={goal?.goal_type || "emergency"}>
+                <Select name="category" defaultValue={"emergency"}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
@@ -172,55 +172,84 @@ export function GoalForm({ goal, isEditing = false }: GoalFormProps) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label>Start Date</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !startDate && "text-muted-foreground",
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {startDate ? format(startDate, "PPP") : <span>Pick a date</span>}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar
-                      mode="single"
-                      selected={startDate}
-                      onSelect={(date) => date && setStartDate(date)}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
+                <div className="flex flex-col space-y-2">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !startDate && "text-muted-foreground",
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {startDate ? format(startDate, "PPP") : <span>Pick a date</span>}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={startDate}
+                        onSelect={(date) => date && setStartDate(date)}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <Input
+                    type="date"
+                    value={startDate ? format(startDate, "yyyy-MM-dd") : ""}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        setStartDate(new Date(e.target.value))
+                      } else {
+                        setStartDate(new Date())
+                      }
+                    }}
+                    placeholder="Or enter date manually"
+                  />
+                </div>
               </div>
 
               <div className="grid gap-2">
                 <Label>Target Date</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !targetDate && "text-muted-foreground",
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {targetDate ? format(targetDate, "PPP") : <span>Pick a date</span>}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar
-                      mode="single"
-                      selected={targetDate}
-                      onSelect={(date) => date && setTargetDate(date)}
-                      initialFocus
-                      disabled={(date) => startDate ? date < startDate : false}
-                    />
-                  </PopoverContent>
-                </Popover>
+                <div className="flex flex-col space-y-2">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !targetDate && "text-muted-foreground",
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {targetDate ? format(targetDate, "PPP") : <span>Pick a date</span>}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={targetDate}
+                        onSelect={(date) => date && setTargetDate(date)}
+                        initialFocus
+                        disabled={(date) => startDate ? date < startDate : false}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <Input
+                    type="date"
+                    value={targetDate ? format(targetDate, "yyyy-MM-dd") : ""}
+                    min={startDate ? format(startDate, "yyyy-MM-dd") : undefined}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        setTargetDate(new Date(e.target.value))
+                      } else {
+                        setTargetDate(undefined)
+                      }
+                    }}
+                    placeholder="Or enter date manually"
+                  />
+                </div>
               </div>
             </div>
 
@@ -304,7 +333,7 @@ export function GoalForm({ goal, isEditing = false }: GoalFormProps) {
               <Switch 
                 id="is_shared" 
                 name="is_shared" 
-                defaultChecked={goal?.is_shared || false}
+                defaultChecked={false}
               />
               <Label htmlFor="is_shared">Share this goal publicly</Label>
             </div>

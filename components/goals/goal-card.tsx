@@ -7,7 +7,7 @@ import Link from "next/link"
 import Image from "next/image"
 import { motion } from "framer-motion"
 import { formatDistanceToNow, format } from "date-fns"
-import type { Goal, GoalStatus } from "@/types/goal"
+import type { Goal, GoalStatus } from "@/app/actions/goals"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
@@ -36,11 +36,11 @@ const priorityColors: Record<string, string> = {
 }
 
 // Status badges
-const statusBadges: Record<GoalStatus, { variant: "default" | "secondary" | "destructive" | "outline"; label: string }> = {
-  not_started: { variant: "outline", label: "Not Started" },
-  in_progress: { variant: "default", label: "In Progress" },
-  completed: { variant: "secondary", label: "Completed" },
-  on_hold: { variant: "destructive", label: "On Hold" },
+const statusBadges: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; label: string }> = {
+  active: { variant: "default", label: "Active" },
+  paused: { variant: "outline", label: "Paused" },
+  achieved: { variant: "secondary", label: "Achieved" },
+  cancelled: { variant: "destructive", label: "Cancelled" },
 }
 
 interface GoalCardProps {
@@ -53,12 +53,12 @@ export function GoalCard({ goal, showCelebration = false }: GoalCardProps) {
 
   // Calculate progress percentage
   const progressPercentage =
-    goal.target_amount > 0 ? Math.min(100, (goal.current_savings / goal.target_amount) * 100) : 0
+    goal.target_amount > 0 ? Math.min(100, (goal.current_amount / goal.target_amount) * 100) : 0
 
   // Format dates
   const formattedStartDate = format(new Date(goal.start_date), "MMM d, yyyy")
-  const formattedTargetDate = format(new Date(goal.target_date), "MMM d, yyyy")
-  const timeRemaining = formatDistanceToNow(new Date(goal.target_date), { addSuffix: true })
+  const formattedTargetDate = goal.end_date ? format(new Date(goal.end_date), "MMM d, yyyy") : "No target date"
+  const timeRemaining = goal.end_date ? formatDistanceToNow(new Date(goal.end_date), { addSuffix: true }) : "No deadline"
 
   // Format amounts
   const formattedTargetAmount = new Intl.NumberFormat("en-US", {
@@ -69,7 +69,7 @@ export function GoalCard({ goal, showCelebration = false }: GoalCardProps) {
   const formattedCurrentAmount = new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-  }).format(goal.current_savings || 0)
+  }).format(goal.current_amount || 0)
 
   return (
     <motion.div
@@ -120,7 +120,7 @@ export function GoalCard({ goal, showCelebration = false }: GoalCardProps) {
         </motion.div>
       )}
 
-      <Card className={`overflow-hidden ${goal.status === "completed" ? "border-green-500 border-2" : ""}`}>
+      <Card className={`overflow-hidden ${goal.status === "achieved" ? "border-green-500 border-2" : ""}`}>
         {goal.image_url && (
           <div className="relative h-48 w-full">
             <Image src={goal.image_url || "/placeholder.svg"} alt={goal.name} fill className="object-cover" />
@@ -203,12 +203,10 @@ export function GoalCard({ goal, showCelebration = false }: GoalCardProps) {
             <Button variant="outline" size="sm" asChild>
               <Link href={`/goals/${goal.id}`}>View Details</Link>
             </Button>
-            {goal.is_shared && (
-              <Button variant="ghost" size="sm">
-                <Share2 className="h-4 w-4 mr-1" />
-                Share
-              </Button>
-            )}
+            <Button variant="ghost" size="sm">
+              <Share2 className="h-4 w-4 mr-1" />
+              Share
+            </Button>
           </div>
         </CardFooter>
       </Card>
