@@ -17,24 +17,34 @@ import { Eye, BarChart3 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { formatCurrency } from "@/lib/utils/formatting"
 
+interface BudgetItem {
+  id: string
+  category_id: string
+  amount: number | string
+  actual_amount: number
+  notes?: string
+}
+
 interface Budget {
   id: string
   name: string
-  income: number
-  amount: number
   start_date: string
   end_date?: string | null
   is_collaborative?: boolean
   categories?: {
     id: string
     name: string
-    amount_allocated: number
+    amount?: number
+    items?: BudgetItem[]
     subcategories?: {
       id: string
       name: string
-      amount_allocated: number
+      amount?: number
+      items?: BudgetItem[]
     }[]
   }[]
+  // These will be calculated from budget items
+  total_allocated?: number
 }
 
 interface BudgetListProps {
@@ -82,13 +92,34 @@ export function BudgetList({ budgets }: BudgetListProps) {
       'bg-indigo-500', 'bg-red-500', 'bg-orange-500', 'bg-teal-500', 'bg-cyan-500'
     ];
 
+    // Calculate total budget amount from all items
+    const totalBudgetAmount = budget.categories?.reduce((total, cat) => {
+      const catAmount = cat.items?.reduce(
+        (sum, item) => sum + (parseFloat(item.amount as string) || 0), 0
+      ) || 0;
+      
+      const subCatAmount = cat.subcategories?.reduce((subTotal, subCat) => {
+        return subTotal + (subCat.items?.reduce(
+          (subSum, item) => subSum + (parseFloat(item.amount as string) || 0), 0
+        ) || 0);
+      }, 0) || 0;
+      
+      return total + catAmount + subCatAmount;
+    }, 0) || 0;
+    
     return budget.categories.map((category, index: number): CategorySegment => {
-      const percentage = budget.income > 0 ? (category.amount_allocated / budget.income) * 100 : 0;
+      // Get amount from items only
+      const categoryAmount = category.items?.reduce(
+        (sum: number, item: BudgetItem) => sum + (parseFloat(item.amount as string) || 0), 0
+      ) || category.amount || 0;
+      
+      const percentage = totalBudgetAmount > 0 ? (categoryAmount / totalBudgetAmount) * 100 : 0;
+      
       return {
         id: category.id,
         name: category.name,
         percentage: percentage,
-        amount: category.amount_allocated,
+        amount: categoryAmount,
         color: colors[index % colors.length]
       };
     });
@@ -102,14 +133,34 @@ export function BudgetList({ budgets }: BudgetListProps) {
         </div>
       ) : (
         budgets.map((budget) => {
-          // Calculate budget metrics
+          // Calculate budget metrics - get total from all items in all categories and subcategories
           const totalAllocated = budget.categories?.reduce(
-            (sum, cat) => sum + (cat.amount_allocated || 0), 
+            (sum, cat) => {
+              // Get amount from category items
+              const categoryAmount = cat.items?.reduce(
+                (itemSum: number, item: BudgetItem) => itemSum + (parseFloat(item.amount as string) || 0), 0
+              ) || 0;
+              
+              // Get amount from subcategory items
+              const subcategoryAmount = cat.subcategories?.reduce((subSum, subCat) => {
+                const subCatAmount = subCat.items?.reduce(
+                  (subItemSum: number, item: BudgetItem) => subItemSum + (parseFloat(item.amount as string) || 0), 0
+                ) || 0;
+                return subSum + subCatAmount;
+              }, 0) || 0;
+              
+              return sum + categoryAmount + subcategoryAmount;
+            }, 
             0
           ) || 0
           
-          const remainingBudget = (budget.income || 0) - totalAllocated
-          const allocationPercentage = budget.income ? (totalAllocated / budget.income) * 100 : 0
+          // Store the calculated total for reference
+          budget.total_allocated = totalAllocated;
+          
+          // Calculate remaining budget - since we don't have an income field, we'll use the total allocated as the budget amount
+          const totalBudgetAmount = totalAllocated; // This is our budget amount
+          const remainingBudget = 0; // Since all money is allocated, remaining is 0
+          const allocationPercentage = 100; // All money is allocated
           
           // Count categories and subcategories
           const { categories, subcategories } = countCategories(budget)
@@ -126,7 +177,7 @@ export function BudgetList({ budgets }: BudgetListProps) {
                       {budget.name || "Untitled Budget"}
                     </CardTitle>
                     <CardDescription>
-                      {formatCurrency(budget.income || budget.amount)}
+                      {formatCurrency(budget.total_allocated || 0)}
                     </CardDescription>
                   </div>
                   {budget.is_collaborative && (
@@ -153,6 +204,10 @@ export function BudgetList({ budgets }: BudgetListProps) {
                       <span className="text-muted-foreground">Categories:</span>
                       <span>{categories}</span>
                     </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Allocated:</span>
+                      <span>{formatCurrency(totalAllocated)}</span>
+                    </div>
                     {subcategories > 0 && (
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Subcategories:</span>
@@ -162,9 +217,9 @@ export function BudgetList({ budgets }: BudgetListProps) {
                   </div>
                   
                   <div className="space-y-1 pt-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Allocated:</span>
-                      <span>{formatCurrency(totalAllocated)}</span>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium">Budget</span>
+                      <span className="text-sm font-medium">{formatCurrency(budget.total_allocated || 0)}</span>
                     </div>
                     
                     <div className="relative h-2 w-full bg-muted rounded-full overflow-hidden">

@@ -28,12 +28,18 @@ interface BudgetCategory {
 interface Budget {
   id: string
   name: string
-  income: number
-  amount: number
   start_date: string
   end_date?: string | null
   budget_categories?: BudgetCategory[]
   is_collaborative?: boolean
+  total_allocated?: number
+  categories?: {
+    id: string
+    name: string
+    amount?: number
+    items?: any[]
+    subcategories?: any[]
+  }[]
 }
 
 interface BudgetEditDialogProps {
@@ -80,7 +86,12 @@ export function BudgetEditDialog({ budget, onSuccess: onSuccessProp }: BudgetEdi
     // Format parent categories with their subcategories
     formattedBudget.categories = parentCategories.map(cat => {
       const catAmount = cat.amount_allocated || 0
-      const totalBudget = budget.income || budget.amount
+      
+      // Calculate total budget amount from all categories
+      const totalBudget = budget.total_allocated || budget.budget_categories?.reduce(
+        (sum, category) => sum + (category.amount_allocated || 0), 0
+      ) || 0
+      
       const catPercentage = totalBudget > 0 ? (catAmount / totalBudget) * 100 : 0
       
       return {

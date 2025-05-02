@@ -331,14 +331,18 @@ export async function createBudget(budgetData: any) {
       start_date: string;
       end_date: string;
       is_active?: boolean;
+      amount?: number;
+      income?: number;
     } = {
       user_id: user.id,
       name: budgetData.name,
       start_date: budgetData.start_date,
       end_date: budgetData.end_date || new Date(new Date(budgetData.start_date).getTime() + 30*24*60*60*1000).toISOString().split('T')[0], // Default to 30 days after start date
       model: budgetData.model || 'traditional',
-      is_active: true
-      // Note: Budget amount will be stored in budget items, not in the budget table
+      is_active: true,
+      // Store the total budget amount in both amount and income fields for compatibility
+      amount: parseFloat(budgetData.amount) || 0,
+      income: parseFloat(budgetData.amount) || 0
     }
     
     // Add description if provided
@@ -546,11 +550,15 @@ export async function updateBudget(id: string, budgetData: any) {
       start_date: string;
       end_date: string;
       is_active?: boolean;
+      amount?: number;
+      income?: number;
     } = {
       name: budgetData.name,
       start_date: budgetData.start_date,
-      end_date: budgetData.end_date || new Date(new Date(budgetData.start_date).getTime() + 30*24*60*60*1000).toISOString().split('T')[0] // Default to 30 days after start date
-      // Note: Budget amount will be stored in budget items, not in the budget table
+      end_date: budgetData.end_date || new Date(new Date(budgetData.start_date).getTime() + 30*24*60*60*1000).toISOString().split('T')[0], // Default to 30 days after start date
+      // Store the total budget amount in both amount and income fields for compatibility
+      amount: parseFloat(budgetData.amount) || 0,
+      income: parseFloat(budgetData.amount) || 0
     }
     
     // Add optional fields if provided
