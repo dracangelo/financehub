@@ -50,17 +50,38 @@ interface BudgetCategory {
   name?: string
 }
 
+interface BudgetItem {
+  id: string
+  category_id: string
+  amount: number | string
+  actual_amount: number
+  notes?: string
+}
+
 interface Budget {
   id: string
   user_id: string
   name: string
-  income: number
   start_date: string
   end_date: string | null
   created_at: string
   updated_at: string | null
   budget_categories: BudgetCategory[] | null
   budget_category: BudgetCategory[] | null
+  // These fields will be calculated
+  total_allocated?: number
+  categories?: {
+    id: string
+    name: string
+    amount?: number
+    items?: BudgetItem[]
+    subcategories?: {
+      id: string
+      name: string
+      amount?: number
+      items?: BudgetItem[]
+    }[]
+  }[]
 }
 
 interface BudgetDetailProps {
@@ -91,10 +112,36 @@ export function BudgetDetail({ budget, categories }: BudgetDetailProps) {
       !budget.budget_categories?.some((budgetCategory) => budgetCategory.category_id === category.id),
   )
 
-  const totalAllocated = budget.budget_categories?.reduce((sum, category) => sum + category.amount_allocated, 0) || 0
-
-  const remainingBudget = budget.income - totalAllocated
-  const allocationPercentage = (totalAllocated / budget.income) * 100
+  // Calculate total allocated amount from budget items in categories and subcategories
+  const calculateTotalAllocated = () => {
+    if (budget.categories && budget.categories.length > 0) {
+      return budget.categories.reduce((sum, category) => {
+        // Get amount from category items
+        const categoryAmount = category.items?.reduce(
+          (itemSum, item) => itemSum + (parseFloat(item.amount as string) || 0), 0
+        ) || 0;
+        
+        // Get amount from subcategory items
+        const subcategoryAmount = category.subcategories?.reduce((subSum, subCat) => {
+          const subCatAmount = subCat.items?.reduce(
+            (subItemSum, item) => subItemSum + (parseFloat(item.amount as string) || 0), 0
+          ) || 0;
+          return subSum + subCatAmount;
+        }, 0) || 0;
+        
+        return sum + categoryAmount + subcategoryAmount;
+      }, 0);
+    } else if (budget.budget_categories) {
+      // Fall back to budget_categories if available
+      return budget.budget_categories.reduce((sum, category) => sum + (category.amount_allocated || 0), 0);
+    }
+    return 0;
+  };
+  
+  const totalAllocated = budget.total_allocated || calculateTotalAllocated();
+  const totalBudgetAmount = totalAllocated; // Use total allocated as the budget amount
+  const remainingBudget = 0; // Since all money is allocated, remaining is 0
+  const allocationPercentage = 100; // All money is allocated
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -238,7 +285,7 @@ export function BudgetDetail({ budget, categories }: BudgetDetailProps) {
       <Card>
         <CardHeader>
           <CardTitle>Budget Overview</CardTitle>
-          <CardDescription>Total budget: {formatCurrency(budget.income)}</CardDescription>
+          <CardDescription>Total budget: {formatCurrency(totalAllocated)}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
@@ -262,24 +309,85 @@ export function BudgetDetail({ budget, categories }: BudgetDetailProps) {
           </Button>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Category</TableHead>
-                <TableHead>Allocated Amount</TableHead>
-                <TableHead>Percentage</TableHead>
-                <TableHead className="w-[100px]">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {budget.budget_categories?.length === 0 ? (
+          {/* Display categories and subcategories with allocations */}
+          {budget.categories && budget.categories.length > 0 ? (
+            <div className="space-y-6">
+              {budget.categories.map(category => {
+                // Calculate category amount
+                const categoryAmount = category.items?.reduce(
+                  (sum, item) => sum + (parseFloat(item.amount as string) || 0), 0
+                ) || category.amount || 0;
+                
+                // Calculate category percentage
+                const categoryPercentage = totalAllocated > 0 ? (categoryAmount / totalAllocated) * 100 : 0;
+                
+                return (
+                  <div key={category.id} className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center">
+                        <div
+                          className="h-4 w-4 rounded-full mr-2"
+                          style={{ backgroundColor: "#6E56CF" }}
+                        />
+                        <span className="font-medium">{category.name}</span>
+                      </div>
+                      <div className="text-right">
+                        <div>{formatCurrency(categoryAmount)}</div>
+                        <div className="text-sm text-muted-foreground">{categoryPercentage.toFixed(1)}% of total</div>
+                      </div>
+                    </div>
+                    
+                    <Progress value={categoryPercentage} className="h-2" />
+                    
+                    {/* Display subcategories if they exist */}
+                    {category.subcategories && category.subcategories.length > 0 && (
+                      <div className="pl-6 space-y-3 mt-2 border-l-2 border-muted">
+                        {category.subcategories.map(subcategory => {
+                          // Calculate subcategory amount
+                          const subcategoryAmount = subcategory.items?.reduce(
+                            (sum, item) => sum + (parseFloat(item.amount as string) || 0), 0
+                          ) || subcategory.amount || 0;
+                          
+                          // Calculate subcategory percentage relative to parent category
+                          const subcategoryPercentage = categoryAmount > 0 ? (subcategoryAmount / categoryAmount) * 100 : 0;
+                          
+                          return (
+                            <div key={subcategory.id} className="space-y-1">
+                              <div className="flex justify-between items-center">
+                                <div className="flex items-center">
+                                  <div
+                                    className="h-3 w-3 rounded-full mr-2"
+                                    style={{ backgroundColor: "#9E8CFC" }}
+                                  />
+                                  <span className="text-sm">{subcategory.name}</span>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-sm">{formatCurrency(subcategoryAmount)}</div>
+                                  <div className="text-xs text-muted-foreground">{subcategoryPercentage.toFixed(1)}% of {category.name}</div>
+                                </div>
+                              </div>
+                              <Progress value={subcategoryPercentage} className="h-1.5" />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : budget.budget_categories && budget.budget_categories.length > 0 ? (
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={4} className="h-24 text-center">
-                    No categories allocated yet.
-                  </TableCell>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Allocated Amount</TableHead>
+                  <TableHead>Percentage</TableHead>
+                  <TableHead className="w-[100px]">Actions</TableHead>
                 </TableRow>
-              ) : (
-                budget.budget_categories?.map((category) => (
+              </TableHeader>
+              <TableBody>
+                {budget.budget_categories.map((category) => (
                   <TableRow key={category.id}>
                     <TableCell>
                       <div className="flex items-center">
@@ -308,10 +416,14 @@ export function BudgetDetail({ budget, categories }: BudgetDetailProps) {
                       </div>
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <div className="text-center py-6 text-muted-foreground">
+              No categories allocated yet.
+            </div>
+          )}
         </CardContent>
       </Card>
 
