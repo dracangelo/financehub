@@ -135,46 +135,59 @@ export function GoalCard({ goal, showCelebration = false }: GoalCardProps) {
           </div>
         )}
 
-        <CardHeader className={goal.image_url ? "pt-2" : ""}>
+        <CardHeader className="p-3 sm:p-4 pb-0">
           {!goal.image_url && (
-            <>
-              <div className="flex justify-between items-center">
-                <CardTitle>{goal.name}</CardTitle>
-                <Badge variant={statusBadges[goal.status].variant}>{statusBadges[goal.status].label}</Badge>
+            <div className="flex flex-col sm:flex-row justify-between items-start gap-2">
+              <div className="space-y-1 w-full sm:w-auto">
+                <CardTitle className="text-base sm:text-lg">{goal.name}</CardTitle>
+                <CardDescription className="line-clamp-2 text-xs sm:text-sm">
+                  {goal.description}
+                </CardDescription>
               </div>
-              <CardDescription>{goal.description}</CardDescription>
-            </>
+              <Badge variant={statusBadges[goal.status].variant}>{statusBadges[goal.status].label}</Badge>
+            </div>
           )}
 
           <div className="mt-2">
-            <Progress value={progressPercentage} className="h-2" />
-            <div className="flex justify-between text-sm mt-1">
-              <span>{formattedCurrentAmount}</span>
-              <span>{formattedTargetAmount}</span>
+            <div className="flex flex-col xs:flex-row justify-between text-xs sm:text-sm text-muted-foreground">
+              <span>Progress ({Math.round(progressPercentage)}%)</span>
+              <span className="mt-1 xs:mt-0">
+                {formattedCurrentAmount} of {formattedTargetAmount}
+              </span>
             </div>
-            <div className="text-center text-sm text-muted-foreground mt-1">
-              {progressPercentage.toFixed(0)}% Complete
-            </div>
+            <Progress value={progressPercentage} className="h-2 mt-1" />
           </div>
         </CardHeader>
 
-        <CardContent>
-          <div className="grid grid-cols-2 gap-4">
+        <CardContent className="p-3 sm:p-4 pt-0">
+          <div className="grid grid-cols-2 gap-2 sm:gap-4 mt-2">
+            <div>
+              <div className="text-xs sm:text-sm text-muted-foreground">Target Date</div>
+              <div className="text-sm sm:text-base font-medium">{formattedTargetDate}</div>
+            </div>
+            <div>
+              <div className="text-xs sm:text-sm text-muted-foreground">Priority</div>
+              <div className="text-sm sm:text-base font-medium">
+                {goal.priority === 1 ? "High" : goal.priority === 2 ? "Medium" : "Low"}
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 mt-2">
             <div className="flex items-center">
               <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
-              <span className="text-sm">{formattedStartDate}</span>
-            </div>
-            <div className="flex items-center">
-              <Target className="h-4 w-4 mr-2 text-muted-foreground" />
-              <span className="text-sm">{formattedTargetDate}</span>
+              <span className="text-xs sm:text-sm">{formattedStartDate}</span>
             </div>
             <div className="flex items-center">
               <Clock className="h-4 w-4 mr-2 text-muted-foreground" />
-              <span className="text-sm">{timeRemaining}</span>
+              <span className="text-xs sm:text-sm">{timeRemaining}</span>
             </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 mt-2">
             <div className="flex items-center">
               <Award className="h-4 w-4 mr-2 text-muted-foreground" />
-              <span className="text-sm capitalize">{goal.priority} Priority</span>
+              <span className="text-xs sm:text-sm">
+                {goal.priority === 1 ? "High" : goal.priority === 2 ? "Medium" : "Low"} Priority
+              </span>
             </div>
           </div>
 

@@ -85,7 +85,7 @@ export function GoalForm({ goal, isEditing = false }: GoalFormProps) {
 
   return (
     <form onSubmit={handleSubmit}>
-      <div className="grid gap-6">
+      <div className="grid gap-6 w-full max-w-4xl mx-auto">
         <Card>
           <CardHeader>
             <CardTitle>Basic Information</CardTitle>
@@ -114,7 +114,7 @@ export function GoalForm({ goal, isEditing = false }: GoalFormProps) {
               />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="goal_type">Category</Label>
                 <Select name="category" defaultValue={"emergency"}>
@@ -169,7 +169,7 @@ export function GoalForm({ goal, isEditing = false }: GoalFormProps) {
               />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label>Start Date</Label>
                 <div className="flex flex-col space-y-2">
@@ -263,7 +263,7 @@ export function GoalForm({ goal, isEditing = false }: GoalFormProps) {
             </div>
 
             {showFundingOptions && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
                 <div className="grid gap-2">
                   <Label htmlFor="funding_source">Funding Source</Label>
                   <Input 

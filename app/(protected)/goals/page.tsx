@@ -50,17 +50,20 @@ export default async function GoalsPage() {
 
   return (
     <DashboardShell>
-      <DashboardHeader
-        heading="Financial Goals"
-        text="Set, track, and achieve your financial objectives."
-      >
-        <Button asChild>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Financial Goals</h1>
+          <p className="text-sm text-muted-foreground">
+            Track and manage your financial goals
+          </p>
+        </div>
+        <Button asChild className="w-full sm:w-auto">
           <Link href="/goals/new">
             <Plus className="mr-2 h-4 w-4" />
             New Goal
           </Link>
         </Button>
-      </DashboardHeader>
+      </div>
 
       {stats && <GoalsOverview stats={stats} />}
 

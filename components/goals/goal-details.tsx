@@ -1,21 +1,21 @@
-"use client"
+"use client";
 
-import { useRouter } from "next/navigation"
-import { useState, useEffect } from "react"
-import { format } from "date-fns"
-import { Calendar, DollarSign, Edit, Trash2, Plus, Pencil, MoreHorizontal } from "lucide-react"
-import { Progress } from "@/components/ui/progress"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { format } from "date-fns";
+import { Calendar, DollarSign, Edit, Trash2, Plus, Pencil, MoreHorizontal } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+} from "@/components/ui/dropdown-menu";
 import { 
   AlertDialog,
   AlertDialogAction,
@@ -26,15 +26,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
-import { GoalForecastChart } from "./goal-forecast-chart"
-import { AddMilestoneForm } from "./add-milestone-form"
-import { EditMilestoneForm } from "./edit-milestone-form"
-import { AddContributionForm } from "./add-contribution-form"
-import { GoalCelebration } from "./goal-celebration"
-import { updateMilestoneStatus, deleteGoal, deleteMilestone } from "@/app/actions/goals"
-import { toast } from "@/components/ui/use-toast"
-import { cn } from "@/lib/utils"
+} from "@/components/ui/alert-dialog";
+import { GoalForecastChart } from "./goal-forecast-chart";
+import { AddMilestoneForm } from "./add-milestone-form";
+import { EditMilestoneForm } from "./edit-milestone-form";
+import { AddContributionForm } from "./add-contribution-form";
+import { GoalCelebration } from "./goal-celebration";
+import { updateMilestoneStatus, deleteGoal, deleteMilestone } from "@/app/actions/goals";
+import { toast } from "@/components/ui/use-toast";
+import { cn } from "@/lib/utils";
 
 // Status badge helper function
 function getStatusBadge(status: string | undefined) {
@@ -189,127 +189,78 @@ export function GoalDetails({ goal }: GoalDetailsProps) {
     }
 
   return (
-    <div className="space-y-6">
-      {/* Goal completion celebration */}
-      <GoalCelebration 
-        isCompleted={showCelebration} 
-        goalName={goal.name} 
-        onCelebrationEnd={() => setShowCelebration(false)}
-      />
-      <div className="flex flex-col space-y-6">
-        <div className="flex justify-between items-center">
+    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 pb-8">
+      {showCelebration && (
+        <GoalCelebration 
+          isCompleted={showCelebration} 
+          goalName={goal.name} 
+          onCelebrationEnd={() => setShowCelebration(false)} 
+        />
+      )}
+      <div className="grid gap-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-3xl font-bold">{goal.name}</h1>
-            <p className="text-muted-foreground">{goal.description}</p>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{goal.name}</h1>
+            {goal.description && (
+              <p className="text-muted-foreground mt-1">{goal.description}</p>
+            )}
           </div>
-        <div className="flex space-x-2">
-          <Button variant="outline" size="sm" onClick={() => router.push(`/goals/${goal.id}/edit`)}>
-            <Pencil className="h-4 w-4 mr-2" />
-            Edit
-          </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="destructive" size="sm">
-                <Trash2 className="h-4 w-4 mr-1" />
-                Delete
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This action cannot be undone. This will permanently delete the goal and all associated milestones.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleDeleteGoal} disabled={isDeleting}>
-                  {isDeleting ? "Deleting..." : "Delete"}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <div className="flex flex-wrap items-center gap-2 mt-2 sm:mt-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(`/goals/${goal.id}/edit`)}
+              className="w-full sm:w-auto"
+            >
+              <Edit className="h-4 w-4 mr-2" />
+              Edit Goal
+            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" size="sm" className="w-full sm:w-auto">
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Delete
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This action cannot be undone. This will permanently delete the goal and all associated milestones.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleDeleteGoal} disabled={isDeleting}>
+                    {isDeleting ? "Deleting..." : "Delete"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-2 space-y-6">
-
-          <Card>
+        
+        <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-2">
+          <Card className="w-full">
             <CardHeader>
-              <CardTitle>Progress</CardTitle>
-              <CardDescription>Track your progress towards this goal</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div>
-                  <Progress value={progressPercentage} className="h-3" />
-                  <div className="flex justify-between text-sm mt-2">
-                    <span>{formattedCurrentAmount}</span>
-                    <span>{formattedTargetAmount}</span>
-                  </div>
-                  <div className="text-center text-lg font-medium mt-2">{progressPercentage.toFixed(0)}% Complete</div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <div className="text-sm text-muted-foreground">Start Date</div>
-                    <div className="font-medium">{formattedStartDate}</div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-muted-foreground">Target Date</div>
-                    <div className="font-medium">{formattedTargetDate}</div>
-                  </div>
-                </div>
-
-                {goal.funding_source && (
-                  <div>
-                    <div className="text-sm text-muted-foreground">Funding</div>
-                    <div className="font-medium">
-                      {goal.funding_amount && `$${goal.funding_amount}`}
-                      {goal.funding_frequency && ` ${goal.funding_frequency}`}
-                      from {goal.funding_source}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Goal Forecast</CardTitle>
-              <CardDescription>Projected completion based on current progress</CardDescription>
-            </CardHeader>
-            <CardContent className="h-80">
-              <GoalForecastChart 
-                goal={{
-                  ...goal,
-                  // Add any missing properties needed by the chart component
-                  target_date: goal.end_date || ""
-                }} 
-              />
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <div className="flex justify-between items-center">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                 <CardTitle>Milestones</CardTitle>
-                <Button variant="ghost" size="sm" onClick={() => setIsAddingMilestone(!isAddingMilestone)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsAddingMilestone(!isAddingMilestone)}
+                  className="w-full sm:w-auto"
+                >
                   {isAddingMilestone ? (
                     "Cancel"
                   ) : (
                     <>
-                      <Plus className="h-4 w-4 mr-1" />
-                      Add
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Milestone
                     </>
                   )}
                 </Button>
               </div>
-              <CardDescription>Track key milestones for this goal</CardDescription>
             </CardHeader>
             <CardContent>
               {isAddingMilestone && (
@@ -465,12 +416,13 @@ export function GoalDetails({ goal }: GoalDetailsProps) {
 
           <Card>
             <CardHeader>
-              <div className="flex justify-between items-center">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                 <CardTitle>Progress</CardTitle>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setIsAddingContribution(!isAddingContribution)}
+                  className="w-full sm:w-auto"
                 >
                   {isAddingContribution ? (
                     "Cancel"
@@ -525,7 +477,6 @@ export function GoalDetails({ goal }: GoalDetailsProps) {
           </Card>
         </div>
       </div>
-    </div>
     </div>
   )
 }

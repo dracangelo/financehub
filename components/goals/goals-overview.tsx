@@ -3,20 +3,23 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DollarSign, Target, ArrowUpRight, ArrowDownRight, PiggyBank, TrendingUp } from "lucide-react"
 import { PriorityMatrix } from "./priority-matrix"
 import { GoalNetworkDiagram } from "./goal-network-diagram"
 
+interface GoalStatistics {
+  totalGoals: number
+  activeGoals: number
+  completedGoals: number
+  totalMilestones: number
+  completedMilestones: number
+  totalSavings: number
+  totalTargets: number
+  progressPercentage: number
+}
+
 interface GoalsOverviewProps {
-  stats: {
-    totalGoals: number
-    activeGoals: number
-    completedGoals: number
-    totalMilestones: number
-    completedMilestones: number
-    totalSavings: number
-    totalTargets: number
-    progressPercentage: number
-  }
+  stats: GoalStatistics
 }
 
 export function GoalsOverview({ stats }: GoalsOverviewProps) {
@@ -25,30 +28,38 @@ export function GoalsOverview({ stats }: GoalsOverviewProps) {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
-      maximumFractionDigits: 0,
     }).format(amount)
   }
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="container mx-auto p-4">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Goals</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Total Goals
+            </CardTitle>
+            <Target className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.totalGoals}</div>
-            <div className="text-xs text-muted-foreground mt-1">{stats.completedGoals} completed</div>
-            <div className="mt-2 grid grid-cols-2 gap-1">
-              <div
-                className="bg-green-500 h-2 rounded"
-                style={{ width: `${(stats.completedGoals / stats.totalGoals) * 100}%` }}
-              />
-              <div
-                className="bg-blue-500 h-2 rounded"
-                style={{ width: `${(stats.activeGoals / stats.totalGoals) * 100}%` }}
-              />
-            </div>
+            <div className="text-xl sm:text-2xl font-bold">{stats.totalGoals}</div>
+            <p className="text-xs text-muted-foreground">
+              {stats.activeGoals} active, {stats.completedGoals} completed
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active Goals</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-xl sm:text-2xl font-bold">{stats.activeGoals}</div>
+            <Progress
+              value={(stats.activeGoals / stats.totalGoals) * 100}
+              className="h-2 mt-2"
+            />
             <div className="flex justify-between text-xs text-muted-foreground mt-1">
               <span>{stats.activeGoals} active</span>
               <span>{stats.completedGoals} completed</span>
@@ -57,11 +68,12 @@ export function GoalsOverview({ stats }: GoalsOverviewProps) {
         </Card>
 
         <Card>
-          <CardHeader className="pb-2">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Overall Progress</CardTitle>
+            <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.progressPercentage}%</div>
+            <div className="text-xl sm:text-2xl font-bold">{stats.progressPercentage}%</div>
             <Progress value={stats.progressPercentage} className="h-2 mt-2" />
             <div className="flex justify-between text-xs text-muted-foreground mt-2">
               <span>Current: {formatCurrency(stats.totalSavings)}</span>
@@ -71,11 +83,12 @@ export function GoalsOverview({ stats }: GoalsOverviewProps) {
         </Card>
 
         <Card>
-          <CardHeader className="pb-2">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Milestones</CardTitle>
+            <Target className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.totalMilestones}</div>
+            <div className="text-xl sm:text-2xl font-bold">{stats.totalMilestones}</div>
             <div className="text-xs text-muted-foreground mt-1">{stats.completedMilestones} completed</div>
             <Progress
               value={(stats.completedMilestones / stats.totalMilestones) * 100}
@@ -85,11 +98,12 @@ export function GoalsOverview({ stats }: GoalsOverviewProps) {
         </Card>
 
         <Card>
-          <CardHeader className="pb-2">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Savings Progress</CardTitle>
+            <PiggyBank className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(stats.totalSavings)}</div>
+            <div className="text-xl sm:text-2xl font-bold">{formatCurrency(stats.totalSavings)}</div>
             <div className="text-xs text-muted-foreground mt-1">of {formatCurrency(stats.totalTargets)}</div>
             <Progress
               value={(stats.totalSavings / stats.totalTargets) * 100}
@@ -99,34 +113,38 @@ export function GoalsOverview({ stats }: GoalsOverviewProps) {
         </Card>
       </div>
 
-      <Tabs defaultValue="priority-matrix">
-        <TabsList>
-          <TabsTrigger value="priority-matrix">Priority Matrix</TabsTrigger>
-          <TabsTrigger value="goal-network">Goal Network</TabsTrigger>
-        </TabsList>
-        <TabsContent value="priority-matrix" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Goal Priority Matrix</CardTitle>
-              <CardDescription>Visualize your goals based on urgency and importance</CardDescription>
-            </CardHeader>
-            <CardContent className="h-[400px]">
-              <PriorityMatrix />
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="goal-network" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Goal Network Diagram</CardTitle>
-              <CardDescription>See how your financial goals are interconnected</CardDescription>
-            </CardHeader>
-            <CardContent className="h-[400px]">
-              <GoalNetworkDiagram />
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      <div className="mt-8">
+        <Tabs defaultValue="priority-matrix" className="w-full">
+          <div className="flex justify-center sm:justify-start mb-4">
+            <TabsList className="grid w-full max-w-md grid-cols-2">
+              <TabsTrigger value="priority-matrix">Priority Matrix</TabsTrigger>
+              <TabsTrigger value="goal-network">Goal Network</TabsTrigger>
+            </TabsList>
+          </div>
+          <TabsContent value="priority-matrix" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg sm:text-xl">Goal Priority Matrix</CardTitle>
+                <CardDescription>Visualize your goals based on urgency and importance</CardDescription>
+              </CardHeader>
+              <CardContent className="h-[300px] sm:h-[400px]">
+                <PriorityMatrix />
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="goal-network" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg sm:text-xl">Goal Network Diagram</CardTitle>
+                <CardDescription>See how your financial goals are interconnected</CardDescription>
+              </CardHeader>
+              <CardContent className="h-[300px] sm:h-[400px]">
+                <GoalNetworkDiagram />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
     </div>
   )
 }

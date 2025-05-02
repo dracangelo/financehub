@@ -6,40 +6,47 @@ import { useQuery } from "@tanstack/react-query"
 
 export function PriorityMatrix() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-
-  // Fetch goals data
   const { data } = useQuery({
     queryKey: ["goals"],
     queryFn: async () => {
-      const { goals } = await getGoals()
-      return goals || []
+      const response = await getGoals();
+      return response.goals || [];
     },
   })
 
-  useEffect(() => {
-    if (!canvasRef.current || !data) return
-
+  // Function to resize canvas based on container size
+  const resizeCanvas = () => {
+    if (!canvasRef.current) return
+    
+    const canvas = canvasRef.current
+    const container = canvas.parentElement
+    if (!container) return
+    
+    // Make canvas responsive to container width
+    const containerWidth = container.clientWidth
+    const size = Math.min(containerWidth, 500) // Max size of 500px
+    
+    canvas.width = size
+    canvas.height = size
+    
+    // Redraw after resize
+    drawMatrix()
+  }
+  
+  // Draw the matrix with all goals
+  const drawMatrix = () => {
+    if (!canvasRef.current) return
+    
     const canvas = canvasRef.current
     const ctx = canvas.getContext("2d")
     if (!ctx) return
-
-    // Set canvas dimensions
-    const dpr = window.devicePixelRatio || 1
-    const rect = canvas.getBoundingClientRect()
-
-    canvas.width = rect.width * dpr
-    canvas.height = rect.height * dpr
-
-    ctx.scale(dpr, dpr)
-    canvas.style.width = `${rect.width}px`
-    canvas.style.height = `${rect.height}px`
 
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
     // Draw quadrants
-    const width = rect.width
-    const height = rect.height
+    const width = canvas.width
+    const height = canvas.height
     const midX = width / 2
     const midY = height / 2
 
@@ -76,7 +83,9 @@ export function PriorityMatrix() {
     // Bottom-left: Not Important & Not Urgent
     ctx.fillText("Not Important & Not Urgent", midX - width / 4, height - 10)
 
-    // Draw goals as circles
+    // Draw goals as circles - only if data exists
+    if (!data || !Array.isArray(data) || data.length === 0) return;
+    
     data.forEach((goal: Goal) => {
       // Calculate position based on priority and target date
       let urgency = 0.5
@@ -106,10 +115,10 @@ export function PriorityMatrix() {
       const y = midY - (importance - 0.5) * height
 
       // Calculate size based on target amount
-      const maxAmount = Math.max(...data.map((g: Goal) => g.target_amount))
+      const maxAmount = data.length > 0 ? Math.max(...data.map((g: Goal) => g.target_amount || 0)) : 1
       const minSize = 10
       const maxSize = 30
-      const size = minSize + (goal.target_amount / maxAmount) * (maxSize - minSize)
+      const size = minSize + ((goal.target_amount || 0) / Math.max(maxAmount, 1)) * (maxSize - minSize)
 
       // Calculate color based on progress
       const progress = goal.target_amount > 0 ? (goal.current_amount || 0) / goal.target_amount : 0
@@ -132,12 +141,28 @@ export function PriorityMatrix() {
       ctx.textAlign = "center"
       ctx.fillText(goal.name.length > 15 ? goal.name.substring(0, 15) + "..." : goal.name, x, y + size + 15)
     })
+  }
+
+  useEffect(() => {
+    resizeCanvas()
+    window.addEventListener('resize', resizeCanvas)
+    return () => window.removeEventListener('resize', resizeCanvas)
   }, [data])
 
   return (
-    <div className="w-full h-full flex items-center justify-center">
-      <canvas ref={canvasRef} className="w-full h-full" />
+    <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
+      <div className="p-4 sm:p-6">
+        <h3 className="text-lg font-semibold">Priority Matrix</h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Visualize your goals based on urgency and importance
+        </p>
+        <div className="relative aspect-square w-full max-w-md mx-auto">
+          <canvas
+            ref={canvasRef}
+            className="w-full h-full"
+          />
+        </div>
+      </div>
     </div>
   )
 }
-

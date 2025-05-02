@@ -30,38 +30,33 @@ export function GoalsList({ goals }: GoalsListProps) {
 
   // Sort goals based on selected sort option
   const sortedGoals = [...filteredGoals].sort((a, b) => {
-    switch (sortBy) {
-      case "name":
-        return a.name.localeCompare(b.name)
-      case "target_date":
-        return new Date(a.target_date).getTime() - new Date(b.target_date).getTime()
-      case "progress":
-        const progressA = a.target_amount > 0 ? a.current_amount / a.target_amount : 0
-        const progressB = b.target_amount > 0 ? b.current_amount / b.target_amount : 0
-        return progressB - progressA
-      case "priority":
-        const priorityOrder = { high: 0, medium: 1, low: 2 }
-        return (
-          priorityOrder[a.priority as keyof typeof priorityOrder] -
-          priorityOrder[b.priority as keyof typeof priorityOrder]
-        )
-      default:
-        return 0
+    if (sortBy === "date-asc") {
+      return new Date(a.end_date || "").getTime() - new Date(b.end_date || "").getTime()
+    } else if (sortBy === "date-desc") {
+      return new Date(b.end_date || "").getTime() - new Date(a.end_date || "").getTime()
+    } else if (sortBy === "priority-asc") {
+      // Priority is now a number (1=high, 2=medium, 3=low)
+      return a.priority - b.priority
+    } else if (sortBy === "priority-desc") {
+      // Priority is now a number (1=high, 2=medium, 3=low)
+      return b.priority - a.priority
+    } else if (sortBy === "progress-asc") {
+      return a.progress - b.progress
+    } else if (sortBy === "progress-desc") {
+      return b.progress - a.progress
     }
+    return 0
   })
 
   // Group goals by category for the categorized view
-  const goalsByCategory = sortedGoals.reduce(
-    (acc, goal) => {
-      const category = goal.category
-      if (!acc[category]) {
-        acc[category] = []
-      }
-      acc[category].push(goal)
-      return acc
-    },
-    {} as Record<string, Goal[]>,
-  )
+  const goalsByCategory = goals.reduce((acc, goal) => {
+    const category = goal.category || "Uncategorized"
+    if (!acc[category as string]) {
+      acc[category as string] = []
+    }
+    acc[category as string].push(goal)
+    return acc
+  }, {} as Record<string, Goal[]>)
 
   return (
     <div className="space-y-6">
@@ -70,14 +65,17 @@ export function GoalsList({ goals }: GoalsListProps) {
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search goals..."
-            className="pl-8"
+            className="w-full sm:max-w-sm pl-8"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <div className="flex gap-2">
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="w-[140px]">
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Select 
+            value={filterStatus} 
+            onValueChange={setFilterStatus}
+          >
+            <SelectTrigger className="w-full sm:w-[180px]">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
@@ -88,9 +86,11 @@ export function GoalsList({ goals }: GoalsListProps) {
               <SelectItem value="on_hold">On Hold</SelectItem>
             </SelectContent>
           </Select>
-
-          <Select value={sortBy} onValueChange={setSortBy}>
-            <SelectTrigger className="w-[140px]">
+          <Select
+            value={sortBy}
+            onValueChange={setSortBy}
+          >
+            <SelectTrigger className="w-full sm:w-[180px]">
               <SelectValue placeholder="Sort by" />
             </SelectTrigger>
             <SelectContent>
@@ -110,9 +110,9 @@ export function GoalsList({ goals }: GoalsListProps) {
         </TabsList>
         <TabsContent value="all" className="mt-6">
           {sortedGoals.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
               {sortedGoals.map((goal) => (
-                <GoalCard key={goal.id} goal={goal} showCelebration={goal.status === "completed"} />
+                <GoalCard key={goal.id} goal={goal} />
               ))}
             </div>
           ) : (
@@ -134,7 +134,7 @@ export function GoalsList({ goals }: GoalsListProps) {
                   <h3 className="text-xl font-semibold mb-4 capitalize">{category.replace("_", " ")}</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {categoryGoals.map((goal) => (
-                      <GoalCard key={goal.id} goal={goal} showCelebration={goal.status === "completed"} />
+                      <GoalCard key={goal.id} goal={goal} />
                     ))}
                   </div>
                 </div>
