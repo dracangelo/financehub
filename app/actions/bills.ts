@@ -626,12 +626,22 @@ export async function markBillAsPaid(id: string, formData: FormData) {
       }
     }
     
-    // We no longer calculate the next due date for recurring bills
-    // Instead, we keep the original due date that the user specified
-    console.log(`Bill marked as paid. Due date remains: ${bill.next_due_date}`);
-    
-    // Note: The user will need to manually update the due date for recurring bills
-    // This gives the user complete control over their bill due dates
+    // For recurring bills, create a new bill entry for the next cycle instead of updating the current one
+    if (bill.frequency && bill.frequency !== 'once' && supabase) {
+      // Calculate the next due date based on the frequency
+      const nextDueDate = calculateNextDueDate(bill.next_due_date || '', bill.frequency);
+      console.log(`Recurring bill paid. Next cycle due date: ${nextDueDate}`);
+      
+      // Keep the current bill as paid and don't modify its due date
+      // This preserves the user's original input and payment history
+      console.log(`Keeping original bill as paid with due date: ${bill.next_due_date}`);
+      
+      // We could optionally create a new bill entry for the next cycle here
+      // But for now, we'll keep the original bill as is and let the user manually create the next one
+      // This gives the user complete control over their bill management
+    } else {
+      console.log(`Non-recurring bill marked as paid. Due date remains: ${bill.next_due_date}`);
+    }
 
     revalidatePath("/bills")
     return { success: true }

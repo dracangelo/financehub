@@ -86,12 +86,18 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
         // Log the raw bill data for debugging
         console.log('Raw bill data:', JSON.stringify(bill, null, 2));
         
+        // IMPORTANT: Do not modify the next_due_date - use exactly what comes from the database
+        // This ensures recurring bills show the correct user-specified date
+        const originalDueDate = bill.next_due_date;
+        console.log(`Bill ${bill.name}: Original due date from DB: ${originalDueDate}`);
+        
         return {
           ...bill,
           // Use amount_due as the primary amount field
           amount_due: typeof bill.amount_due === 'number' ? bill.amount_due : parseFloat(bill.amount_due) || 0,
-          // Ensure next_due_date is available and properly formatted
-          next_due_date: bill.next_due_date || new Date().toISOString().split('T')[0],
+          // CRITICAL: Preserve the exact next_due_date from the database without modification
+          // Only use fallback if it's completely missing
+          next_due_date: originalDueDate || new Date().toISOString().split('T')[0],
           // Ensure status is a valid value
           status: ['unpaid', 'paid', 'overdue', 'cancelled'].includes(bill.status) ? bill.status : 'unpaid'
         };
@@ -261,22 +267,18 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
   const getBillStatus = (bill: Bill) => {
     console.log(`Determining status for bill: ${bill.name}, DB status: ${bill.status}, due date: ${bill.next_due_date}`);
     
-    // IMPORTANT: Always respect the user-set status if it exists
-    // If the bill is explicitly marked as paid or cancelled, keep that status
-    if (bill.status === 'paid' || bill.status === 'cancelled') {
+    // CRITICAL: Always respect the database status first
+    // This ensures we don't override statuses set by the user
+    if (bill.status) {
+      console.log(`Using database status for bill ${bill.name}: ${bill.status}`);
       return bill.status;
     }
     
-    // If the bill already has an overdue status, respect it
-    if (bill.status === 'overdue') {
-      return 'overdue';
-    }
-    
-    // For unpaid bills, check if they should be marked as overdue based on the due date
+    // If no status is set in the database, determine based on due date
     try {
       if (!bill.next_due_date) {
-        // If no due date, keep the existing status or default to unpaid
-        return bill.status || "unpaid";
+        // If no due date, default to unpaid
+        return "unpaid";
       }
       
       // Ensure proper date parsing
@@ -288,27 +290,27 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
       dueDate.setHours(0, 0, 0, 0);
       
       if (isNaN(dueDate.getTime())) {
-        // If invalid date, keep the existing status or default to unpaid
-        return bill.status || "unpaid";
+        // If invalid date, default to unpaid
+        return "unpaid";
       }
       
       // Calculate the difference in days
       const diffTime = dueDate.getTime() - today.getTime();
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       
-      console.log(`Bill ${bill.name} due in ${diffDays} days, current status: ${bill.status}`);
+      console.log(`Bill ${bill.name} due in ${diffDays} days`);
       
-      // If due date has passed, mark as overdue regardless of whether it's recurring
+      // If due date has passed, mark as overdue
       if (diffDays < 0) {
         return "overdue";
       }
 
-      // Otherwise keep the existing status (likely unpaid)
-      return bill.status || "unpaid";
+      // Otherwise default to unpaid
+      return "unpaid";
     } catch (e) {
       console.error(`Error determining bill status for ${bill.name}:`, e);
-      // In case of error, keep the existing status or default to unpaid
-      return bill.status || "unpaid";
+      // In case of error, default to unpaid
+      return "unpaid";
     }
   };
 
@@ -561,10 +563,16 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
                       <TableCell>
                         <div className="flex items-center">
                           <Calendar className="mr-2 h-4 w-4 text-muted-foreground" />
-                          {/* Add more detailed logging to debug date issues */}
-                          <span title={`Original date: ${bill.next_due_date}`}>
-                            {formatDate(bill.next_due_date || '')}
-                          </span>
+                          {/* For paid bills, show the last paid date instead of next due date */}
+                          {bill.status === 'paid' ? (
+                            <span title={`Paid on: ${bill.last_paid_date}, Next due: ${bill.next_due_date}`}>
+                              {formatDate(bill.last_paid_date || '')} (Paid)
+                            </span>
+                          ) : (
+                            <span title={`Due date: ${bill.next_due_date}`}>
+                              {formatDate(bill.next_due_date || '')}
+                            </span>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>{getBillStatusBadge(bill)}</TableCell>
