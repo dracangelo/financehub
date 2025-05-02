@@ -82,13 +82,20 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
       const data = await getBills()
       
       // Validate and sanitize the data
-      const validatedBills = data.map((bill: any) => ({
-        ...bill,
-        // Use amount_due as the primary amount field
-        amount_due: typeof bill.amount_due === 'number' ? bill.amount_due : parseFloat(bill.amount_due) || 0,
-        // Ensure next_due_date is available
-        next_due_date: bill.next_due_date || new Date().toISOString().split('T')[0]
-      }))
+      const validatedBills = data.map((bill: any) => {
+        // Log the raw bill data for debugging
+        console.log('Raw bill data:', JSON.stringify(bill, null, 2));
+        
+        return {
+          ...bill,
+          // Use amount_due as the primary amount field
+          amount_due: typeof bill.amount_due === 'number' ? bill.amount_due : parseFloat(bill.amount_due) || 0,
+          // Ensure next_due_date is available and properly formatted
+          next_due_date: bill.next_due_date || new Date().toISOString().split('T')[0],
+          // Ensure status is a valid value
+          status: ['unpaid', 'paid', 'overdue', 'cancelled'].includes(bill.status) ? bill.status : 'unpaid'
+        };
+      })
       
       setBills(validatedBills)
     } catch (err) {
@@ -98,7 +105,7 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
       setLoading(false)
     }
   }
-  
+
   const refreshBills = async () => {
     setIsRefreshing(true)
     await fetchBills()
@@ -108,53 +115,44 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
   // Apply filters and sorting to bills
   const applyFiltersAndSort = () => {
     let result = [...bills]
-    
+
     // Apply search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase()
       result = result.filter(bill => 
         bill.name.toLowerCase().includes(query) || 
-        (bill.category?.name && bill.category.name.toLowerCase().includes(query)) ||
-        (bill.vendor && bill.vendor.toLowerCase().includes(query))
+        bill.description?.toLowerCase().includes(query) ||
+        bill.vendor?.toLowerCase().includes(query) ||
+        bill.category?.name.toLowerCase().includes(query)
       )
     }
-    
+
     // Apply status filter
     if (statusFilter) {
-      result = result.filter(bill => getBillStatus(bill) === statusFilter)
+      result = result.filter(bill => {
+        const billStatus = getBillStatus(bill)
+        return billStatus === statusFilter
+      })
     }
-    
+
     // Apply sorting
     result.sort((a, b) => {
-      let comparison = 0
-      
-      switch (sortField) {
-        case 'name':
-          comparison = a.name.localeCompare(b.name)
-          break
-        case 'amount':
-          const aAmount = a.amount_due || 0
-          const bAmount = b.amount_due || 0
-          comparison = aAmount - bAmount
-          break
-        case 'next_payment_date':
-          // Handle invalid dates by treating them as latest
-          const dateA = new Date(a.next_due_date || '')
-          const dateB = new Date(b.next_due_date || '')
-          const validDateA = !isNaN(dateA.getTime())
-          const validDateB = !isNaN(dateB.getTime())
-          
-          if (!validDateA && !validDateB) comparison = 0
-          else if (!validDateA) comparison = 1
-          else if (!validDateB) comparison = -1
-          else comparison = dateA.getTime() - dateB.getTime()
-          break
+      if (sortField === 'name') {
+        return sortDirection === 'asc' 
+          ? a.name.localeCompare(b.name)
+          : b.name.localeCompare(a.name)
+      } else if (sortField === 'amount') {
+        return sortDirection === 'asc'
+          ? a.amount_due - b.amount_due
+          : b.amount_due - a.amount_due
+      } else {
+        // Sort by date
+        const dateA = new Date(a.next_due_date || '').getTime()
+        const dateB = new Date(b.next_due_date || '').getTime()
+        return sortDirection === 'asc' ? dateA - dateB : dateB - dateA
       }
-      
-      return sortDirection === 'asc' ? comparison : -comparison
-    
     })
-    
+
     setFilteredBills(result)
   }
 
@@ -174,18 +172,16 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
   }
 
   const confirmDeleteBill = async () => {
-    if (!billToDelete) return
-
-    try {
-      await deleteBill(billToDelete)
-      setBills(bills.filter((bill) => bill.id !== billToDelete))
-      setOpenDeleteDialog(false)
-      setBillToDelete(null)
-    } catch (err) {
-      console.error("Error deleting bill:", err)
-      setError(typeof err === 'string' ? err : "Failed to delete bill. Please try again.")
-      setOpenDeleteDialog(false)
+    if (billToDelete) {
+      try {
+        await deleteBill(billToDelete)
+        await refreshBills()
+      } catch (err) {
+        console.error("Error deleting bill:", err)
+        setError(typeof err === 'string' ? err : "Failed to delete bill. Please try again.")
+      }
     }
+    setOpenDeleteDialog(false)
   }
 
   const handlePayBill = (bill: Bill) => {
@@ -194,34 +190,27 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
   }
 
   const confirmPayBill = async () => {
-    if (!billToPay) return
-
-    try {
-      // Create a proper FormData object with any necessary fields
-      const formData = new FormData()
-      formData.append('payment_method', 'manual')
-      
-      await markBillAsPaid(billToPay.id, formData)
-      await refreshBills()
-      setOpenPayDialog(false)
-      setBillToPay(null)
-    } catch (err) {
-      console.error("Error marking bill as paid:", err)
-      setError(typeof err === 'string' ? err : "Failed to mark bill as paid. Please try again.")
+    if (billToPay) {
+      try {
+        await markBillAsPaid(billToPay.id)
+        await refreshBills()
+      } catch (err) {
+        console.error("Error marking bill as paid:", err)
+        setError(typeof err === 'string' ? err : "Failed to mark bill as paid. Please try again.")
+      }
     }
+    setOpenPayDialog(false)
   }
 
   const handleSaveBill = async () => {
-    await refreshBills()
     setOpenDialog(false)
+    await refreshBills()
   }
-  
+
   const handleSortChange = (field: 'name' | 'amount' | 'next_payment_date') => {
-    if (field === sortField) {
-      // Toggle direction if clicking the same field
+    if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
     } else {
-      // Set new field and default to ascending
       setSortField(field)
       setSortDirection('asc')
     }
@@ -231,83 +220,67 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
     try {
       if (!dateString) return "N/A";
       
-      // Try to parse the date
-      const date = new Date(dateString);
+      console.log(`Formatting date string: '${dateString}'`);
+      
+      // Ensure we're working with a standardized date format
+      // First try to parse as ISO date (YYYY-MM-DD)
+      let date;
+      
+      // Try different parsing approaches
+      if (dateString.includes('-')) {
+        // Looks like ISO format, use parseISO
+        date = parseISO(dateString);
+      } else {
+        // Try regular Date constructor
+        date = new Date(dateString);
+      }
       
       // Check if the date is valid
       if (isNaN(date.getTime())) {
+        console.error(`Invalid date: '${dateString}'`);
         return "Invalid Date";
       }
       
       // Format the date
-      return format(date, "MMM d, yyyy");
+      const formattedDate = format(date, "MMM d, yyyy");
+      console.log(`Formatted date: '${dateString}' → '${formattedDate}'`);
+      return formattedDate;
     } catch (e) {
-      console.error("Error formatting date:", e);
+      console.error(`Error formatting date '${dateString}':`, e);
       return "Invalid Date";
     }
   };
 
+  // Determine the display status of a bill based on its properties
+  // The database only accepts these enum values: 'unpaid', 'paid', 'overdue', 'cancelled'
+  // We'll use them directly as requested:
+  // - unpaid: default for new bills
+  // - paid: when clicked by the user
+  // - overdue: if the date is past due
+  // - cancelled: if a user cancels the bill
   const getBillStatus = (bill: Bill) => {
-    // If the bill has an explicit status, use it
-    if (bill.status) {
-      // Only return if it's a valid status value
-      if (['paid', 'unpaid', 'overdue', 'cancelled'].includes(bill.status)) {
-        return bill.status;
-      }
+    console.log(`Determining status for bill: ${bill.name}, DB status: ${bill.status}, due date: ${bill.next_due_date}`);
+    
+    // IMPORTANT: Always respect the user-set status if it exists
+    // If the bill is explicitly marked as paid or cancelled, keep that status
+    if (bill.status === 'paid' || bill.status === 'cancelled') {
+      return bill.status;
     }
     
-    // Check if the bill has been marked as paid based on last_paid_date
-    if (bill.last_paid_date) {
-      // Check if this is a recurring bill
-      if (bill.frequency && bill.frequency !== 'one_time') {
-        // For recurring bills, check if the next due date is in the future
-        // If it is, then the current cycle is unpaid even if the last cycle was paid
-        const dueDate = new Date(bill.next_due_date || '');
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        dueDate.setHours(0, 0, 0, 0);
-        
-        if (!isNaN(dueDate.getTime()) && dueDate > today) {
-          return "unpaid";
-        }
-      }
-      
-      // If it's not recurring or the due date has passed, use the paid status
-      const lastPaidDate = new Date(bill.last_paid_date);
-      const dueDate = new Date(bill.next_due_date || '');
-      
-      // If last paid date is after or equal to the due date, the bill is paid
-      if (!isNaN(lastPaidDate.getTime()) && !isNaN(dueDate.getTime()) && lastPaidDate >= dueDate) {
-        return "paid";
-      }
+    // If the bill already has an overdue status, respect it
+    if (bill.status === 'overdue') {
+      return 'overdue';
     }
     
-    // Check if there are any bill payments
-    if (bill.bill_payments && bill.bill_payments.length > 0) {
-      // Sort payments by date, most recent first
-      const sortedPayments = [...bill.bill_payments].sort((a, b) => 
-        new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime()
-      );
-      
-      // Check if the most recent payment is for the current billing cycle
-      const mostRecentPayment = sortedPayments[0];
-      const paymentDate = new Date(mostRecentPayment.payment_date);
-      const dueDate = new Date(bill.next_due_date || '');
-      
-      // If payment date is close to or after the due date, consider it paid for this cycle
-      if (!isNaN(paymentDate.getTime()) && !isNaN(dueDate.getTime())) {
-        // Allow for payments up to 3 days before due date to be considered for the current cycle
-        const paymentForCurrentCycle = paymentDate >= new Date(dueDate.getTime() - 3 * 24 * 60 * 60 * 1000);
-        
-        if (paymentForCurrentCycle && mostRecentPayment.amount_paid > 0) {
-          return "paid";
-        }
-      }
-    }
-    
-    // If status not determined yet, check due date
+    // For unpaid bills, check if they should be marked as overdue based on the due date
     try {
-      const dueDate = new Date(bill.next_due_date || '');
+      if (!bill.next_due_date) {
+        // If no due date, keep the existing status or default to unpaid
+        return bill.status || "unpaid";
+      }
+      
+      // Ensure proper date parsing
+      const dueDate = new Date(bill.next_due_date);
       const today = new Date();
       
       // Set hours to 0 for proper comparison
@@ -315,73 +288,110 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
       dueDate.setHours(0, 0, 0, 0);
       
       if (isNaN(dueDate.getTime())) {
-        return "unpaid"; // Default to unpaid if date is invalid
+        // If invalid date, keep the existing status or default to unpaid
+        return bill.status || "unpaid";
       }
       
       // Calculate the difference in days
       const diffTime = dueDate.getTime() - today.getTime();
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       
-      // If due date has passed, it's overdue
+      console.log(`Bill ${bill.name} due in ${diffDays} days, current status: ${bill.status}`);
+      
+      // If due date has passed, mark as overdue regardless of whether it's recurring
       if (diffDays < 0) {
-        // If automatic payment is enabled, it might be paid automatically
-        if (bill.is_automatic) {
-          return "scheduled";
-        }
         return "overdue";
       }
-      
-      // If due date is within 7 days, it's upcoming
-      if (diffDays <= 7) {
-        return "upcoming";
-      }
-      
-      // More than 7 days away
-      return "unpaid";
+
+      // Otherwise keep the existing status (likely unpaid)
+      return bill.status || "unpaid";
     } catch (e) {
-      console.error("Error determining bill status:", e);
+      console.error(`Error determining bill status for ${bill.name}:`, e);
+      // In case of error, keep the existing status or default to unpaid
+      return bill.status || "unpaid";
     }
-    
-    return "unpaid";
   };
 
+  // Get the badge component for a bill based on its status
   const getBillStatusBadge = (bill: Bill) => {
     const status = getBillStatus(bill);
+    console.log(`Rendering badge for bill: ${bill.name}, status: ${status}`);
     
-    if (status === "paid") {
-      return (
-        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-          <CheckCircle className="mr-1 h-3 w-3" />
-          Paid
-        </Badge>
-      );
+    // Get the due date to determine visual indicators for unpaid bills
+    let dueSoonOrUpcoming = false;
+    let daysUntilDue = 0;
+    
+    if (status === 'unpaid' && bill.next_due_date) {
+      try {
+        const dueDate = new Date(bill.next_due_date);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        dueDate.setHours(0, 0, 0, 0);
+        
+        if (!isNaN(dueDate.getTime())) {
+          const diffTime = dueDate.getTime() - today.getTime();
+          daysUntilDue = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          dueSoonOrUpcoming = true;
+          console.log(`Bill ${bill.name} is due in ${daysUntilDue} days`);
+        }
+      } catch (e) {
+        console.error(`Error calculating days until due for ${bill.name}:`, e);
+      }
     }
     
-    if (status === "overdue") {
-      return (
-        <Badge variant="destructive">
-          <AlertCircle className="mr-1 h-3 w-3" />
-          Overdue
-        </Badge>
-      );
+    switch (status) {
+      case "paid":
+        return (
+          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+            <CheckCircle className="mr-1 h-3 w-3" />
+            Paid
+          </Badge>
+        );
+      case "overdue":
+        return (
+          <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+            <AlertCircle className="mr-1 h-3 w-3" />
+            Overdue
+          </Badge>
+        );
+      case "cancelled":
+        return (
+          <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">
+            <Clock className="mr-1 h-3 w-3" />
+            Cancelled
+          </Badge>
+        );
+      case "unpaid":
+        // For unpaid bills, we'll show different visual indicators based on the due date
+        if (dueSoonOrUpcoming && daysUntilDue <= 7) {
+          return (
+            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+              <Clock className="mr-1 h-3 w-3" />
+              Due Soon ({daysUntilDue} {daysUntilDue === 1 ? 'day' : 'days'})
+            </Badge>
+          );
+        } else if (dueSoonOrUpcoming) {
+          return (
+            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+              <Calendar className="mr-1 h-3 w-3" />
+              Upcoming
+            </Badge>
+          );
+        } else {
+          return (
+            <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">
+              <Clock className="mr-1 h-3 w-3" />
+              Unpaid
+            </Badge>
+          );
+        }
+      default:
+        return (
+          <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">
+            {status}
+          </Badge>
+        );
     }
-    
-    if (status === "upcoming") {
-      return (
-        <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
-          <Clock className="mr-1 h-3 w-3" />
-          Due Soon
-        </Badge>
-      );
-    }
-    
-    // Default unpaid
-    return (
-      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-        <Clock className="mr-1 h-3 w-3" />
-        Unpaid
-      </Badge>
-    );
   };
 
   if (showCalendarView) {
@@ -394,10 +404,10 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Bills</h2>
           <p className="text-muted-foreground">
-            Manage your bills and payments.
+            Manage your recurring bills and payments.
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2">
           <Button onClick={handleAddBill}>
             <Plus className="mr-2 h-4 w-4" />
             Add Bill
@@ -426,25 +436,24 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
             <option value="paid">Paid</option>
             <option value="unpaid">Unpaid</option>
             <option value="overdue">Overdue</option>
-            <option value="upcoming">Upcoming</option>
+            <option value="cancelled">Cancelled</option>
           </select>
-          <Button
-            variant="outline"
+          
+          <Button 
+            variant="outline" 
             size="icon"
             onClick={refreshBills}
             disabled={isRefreshing}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
-              className={`${isRefreshing ? 'animate-spin' : ''}`}
+              className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`}
             >
               <path d="M21 12a9 9 0 0 1-9 9" />
               <path d="M3 12a9 9 0 0 1 9-9" />
@@ -463,29 +472,32 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead onClick={() => handleSortChange('name')} className="cursor-pointer hover:bg-muted/50">
-                    <div className="flex items-center">
-                      Bill
-                      {sortField === 'name' && (
-                        <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                      )}
-                    </div>
+                  <TableHead 
+                    className="cursor-pointer"
+                    onClick={() => handleSortChange('name')}
+                  >
+                    Bill
+                    {sortField === 'name' && (
+                      <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                    )}
                   </TableHead>
-                  <TableHead onClick={() => handleSortChange('amount')} className="cursor-pointer hover:bg-muted/50">
-                    <div className="flex items-center">
-                      Amount
-                      {sortField === 'amount' && (
-                        <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                      )}
-                    </div>
+                  <TableHead 
+                    className="cursor-pointer"
+                    onClick={() => handleSortChange('amount')}
+                  >
+                    Amount
+                    {sortField === 'amount' && (
+                      <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                    )}
                   </TableHead>
-                  <TableHead onClick={() => handleSortChange('next_payment_date')} className="cursor-pointer hover:bg-muted/50">
-                    <div className="flex items-center">
-                      Due Date
-                      {sortField === 'next_payment_date' && (
-                        <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                      )}
-                    </div>
+                  <TableHead 
+                    className="cursor-pointer"
+                    onClick={() => handleSortChange('next_payment_date')}
+                  >
+                    Due Date
+                    {sortField === 'next_payment_date' && (
+                      <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                    )}
                   </TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -493,28 +505,41 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  // Loading state
-                  Array(3).fill(0).map((_, i) => (
-                    <TableRow key={`loading-${i}`}>
-                      <TableCell><Skeleton className="h-6 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-6 w-16" /></TableCell>
+                  // Loading skeleton
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell><Skeleton className="h-6 w-full" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-20" /></TableCell>
                       <TableCell><Skeleton className="h-6 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-6 w-16" /></TableCell>
                       <TableCell className="text-right"><Skeleton className="h-6 w-24 ml-auto" /></TableCell>
                     </TableRow>
                   ))
+                ) : error ? (
+                  // Error message
+                  <TableRow>
+                    <TableCell colSpan={5} className="h-24 text-center">
+                      <div className="flex flex-col items-center justify-center">
+                        <AlertCircle className="h-8 w-8 text-destructive mb-2" />
+                        <p className="text-muted-foreground">{error}</p>
+                        <Button variant="outline" className="mt-4" onClick={refreshBills}>
+                          Try Again
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
                 ) : filteredBills.length === 0 ? (
                   // Empty state
                   <TableRow>
                     <TableCell colSpan={5} className="h-24 text-center">
                       <div className="flex flex-col items-center justify-center">
-                        <p className="mb-2 text-muted-foreground">
-                          {searchQuery || statusFilter 
-                            ? "No bills match your search criteria" 
-                            : "No bills found. Add your first bill to get started."}
+                        <p className="text-muted-foreground mb-2">
+                          {searchQuery || statusFilter
+                            ? "No bills match your filters."
+                            : "You don't have any bills yet."}
                         </p>
                         {!searchQuery && !statusFilter && (
-                          <Button onClick={handleAddBill} variant="outline" size="sm">
+                          <Button variant="outline" className="mt-2" onClick={handleAddBill}>
                             <Plus className="mr-2 h-4 w-4" />
                             Add Your First Bill
                           </Button>
@@ -536,7 +561,10 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
                       <TableCell>
                         <div className="flex items-center">
                           <Calendar className="mr-2 h-4 w-4 text-muted-foreground" />
-                          {formatDate(bill.next_due_date)}
+                          {/* Add more detailed logging to debug date issues */}
+                          <span title={`Original date: ${bill.next_due_date}`}>
+                            {formatDate(bill.next_due_date || '')}
+                          </span>
                         </div>
                       </TableCell>
                       <TableCell>{getBillStatusBadge(bill)}</TableCell>

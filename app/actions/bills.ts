@@ -117,18 +117,31 @@ export async function createBill(formData: FormData) {
       throw new Error("Due date is required")
     }
     
-    // Validate date format
+    // Validate and standardize date format
     let formattedDate;
     try {
+      // Parse the date string
       const dateObj = new Date(due_date);
       if (isNaN(dateObj.getTime())) {
         throw new Error("Invalid date");
       }
-      formattedDate = dateObj.toISOString().split('T')[0];
+      
+      // Ensure consistent date format (YYYY-MM-DD)
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      formattedDate = `${year}-${month}-${day}`;
+      
+      console.log(`Parsed due date from form: '${due_date}' → standardized as: '${formattedDate}'`);
     } catch (e) {
       console.error("Date parsing error:", e);
       // Fallback to today's date if there's an error
-      formattedDate = new Date().toISOString().split('T')[0];
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const day = String(today.getDate()).padStart(2, '0');
+      formattedDate = `${year}-${month}-${day}`;
+      console.log(`Using fallback date due to parsing error: ${formattedDate}`);
     }
 
     // Optional fields with proper defaults
@@ -147,6 +160,50 @@ export async function createBill(formData: FormData) {
     // Get the category ID from the form data
     const categoryId = formData.get("category_id") as string || null
     
+    // Determine initial bill status based on due date
+    // The database only accepts these enum values: 'unpaid', 'paid', 'overdue', 'cancelled'
+    // We'll use them directly as requested:
+    // - unpaid: default for new bills
+    // - paid: when clicked by the user
+    // - overdue: if the date is past due
+    // - cancelled: if a user cancels the bill
+    let initialStatus = "unpaid";
+    try {
+      // Parse the date properly to ensure accurate comparison
+      const dueDate = new Date(formattedDate);
+      const today = new Date();
+      
+      // Set hours to 0 for proper comparison
+      today.setHours(0, 0, 0, 0);
+      dueDate.setHours(0, 0, 0, 0);
+      
+      // Calculate days until due
+      const diffTime = dueDate.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      // Set to 'overdue' if the due date has passed, otherwise use 'unpaid'
+      if (diffDays < 0) {
+        initialStatus = "overdue";
+      } else {
+        initialStatus = "unpaid";
+      }
+      
+      console.log(`Setting initial status for bill: ${initialStatus}, due date: ${formattedDate}, days until due: ${diffDays}`);
+    } catch (e) {
+      console.error("Error calculating initial bill status:", e);
+      // Default to unpaid if there's an error
+      initialStatus = "unpaid";
+    }
+    
+    // Always use the date that the user sets, even if it's in the past
+    let finalDueDate = formattedDate;
+    
+    // Log the date and status for debugging
+    console.log(`Using user-specified due date: ${finalDueDate} with status: ${initialStatus}`);
+    
+    // Note: We're no longer automatically calculating the next occurrence date
+    // Instead, we're using exactly what the user specified
+    
     // Create a new bill record using the correct table and field names based on the actual database schema
     const { data: bill, error } = await supabase
       .from("bills")
@@ -154,7 +211,7 @@ export async function createBill(formData: FormData) {
         user_id: user.id,
         name,
         amount_due: amount,
-        next_due_date: formattedDate,
+        next_due_date: finalDueDate,
         frequency: frequency,
         is_automatic: is_automatic,
         description: formData.get("description") as string || "",
@@ -162,7 +219,7 @@ export async function createBill(formData: FormData) {
         vendor: formData.get("vendor") as string || null,
         expected_payment_account: formData.get("payment_account") as string || null,
         reminder_days: parseInt(formData.get("reminder_days") as string || "3", 10),
-        status: "unpaid",
+        status: initialStatus,
         currency: formData.get("currency") as string || "USD"
       })
       .select()
@@ -174,7 +231,7 @@ export async function createBill(formData: FormData) {
     }
 
     // Create initial payment schedule entry
-    if (bill) {
+    if (bill && supabase) {
       console.log('Creating payment schedule for bill:', bill.id);
       
       try {
@@ -182,7 +239,7 @@ export async function createBill(formData: FormData) {
           bill_id: bill.id,
           user_id: user.id,
           amount_paid: 0, // Initial entry with zero amount
-          payment_date: formattedDate,
+          payment_date: finalDueDate, // Use the final calculated due date
           payment_method: "none",
           note: "Initial payment schedule"
         })
@@ -236,18 +293,31 @@ export async function updateBill(id: string, formData: FormData) {
       throw new Error("Due date is required")
     }
     
-    // Validate date format
+    // Validate and standardize date format
     let formattedDate;
     try {
+      // Parse the date string
       const dateObj = new Date(due_date);
       if (isNaN(dateObj.getTime())) {
         throw new Error("Invalid date");
       }
-      formattedDate = dateObj.toISOString().split('T')[0];
+      
+      // Ensure consistent date format (YYYY-MM-DD)
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      formattedDate = `${year}-${month}-${day}`;
+      
+      console.log(`Parsed due date from form: '${due_date}' → standardized as: '${formattedDate}'`);
     } catch (e) {
       console.error("Date parsing error:", e);
       // Fallback to today's date if there's an error
-      formattedDate = new Date().toISOString().split('T')[0];
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const day = String(today.getDate()).padStart(2, '0');
+      formattedDate = `${year}-${month}-${day}`;
+      console.log(`Using fallback date due to parsing error: ${formattedDate}`);
     }
 
     // Get optional fields
@@ -524,44 +594,44 @@ export async function markBillAsPaid(id: string, formData: FormData) {
       console.error("Error creating bill payment:", paymentError)
     }
 
-    // If it has a frequency other than 'once', treat it as recurring
-    if (bill.frequency && bill.frequency !== 'once') {
-      const nextDueDate = calculateNextDueDate(bill.next_due_date || '', bill.frequency)
-      
-      // Update bill with next payment date
-      const { error: updateError } = await supabase
-        .from("bills")
-        .update({
-          next_due_date: nextDueDate,
-          status: "unpaid" // Reset status for next payment cycle
-        })
-        .eq("id", id)
-        .eq("user_id", user.id)
+    // First mark the bill as paid
+    const { error: updateError } = await supabase
+      .from("bills")
+      .update({
+        status: "paid",
+        last_paid_date: new Date().toISOString().split('T')[0]
+      })
+      .eq("id", id)
+      .eq("user_id", user.id)
 
-      if (updateError) {
-        console.error("Error updating bill next payment date:", updateError)
-        throw new Error("Failed to update next payment date")
-      }
-
-      // Create new payment schedule entry for next payment
-      const { error: newScheduleError } = await supabase.from("bill_payments").insert({
+    if (updateError) {
+      console.error("Error updating bill status:", updateError)
+      throw new Error("Failed to update bill status")
+    }
+    
+    // Create payment schedule entry for record-keeping
+    if (supabase) {
+      const { error: scheduleError } = await supabase.from("bill_payments").insert({
         bill_id: id,
         user_id: user.id,
-        amount_paid: 0, // Initial entry with zero amount
-        payment_date: nextDueDate,
-        payment_method: "none",
-        note: "Scheduled for next payment cycle"
+        amount_paid: bill.amount_due || bill.amount,
+        payment_date: new Date().toISOString().split('T')[0], // Today's date as payment date
+        payment_method: paymentMethod,
+        note: "Payment recorded"
       })
 
-      if (newScheduleError) {
-        console.error("Error creating new payment schedule:", newScheduleError)
+      if (scheduleError) {
+        console.error("Error creating payment schedule:", scheduleError)
+        // Don't throw here, we've already updated the bill status
       }
-    } else {
-      // For non-recurring bills, we don't need to update the bill itself
-      // since there's no is_paid column. The payment record and payment schedule
-      // status will indicate that the bill has been paid.
-      console.log("Non-recurring bill marked as paid via payment record")
     }
+    
+    // We no longer calculate the next due date for recurring bills
+    // Instead, we keep the original due date that the user specified
+    console.log(`Bill marked as paid. Due date remains: ${bill.next_due_date}`);
+    
+    // Note: The user will need to manually update the due date for recurring bills
+    // This gives the user complete control over their bill due dates
 
     revalidatePath("/bills")
     return { success: true }

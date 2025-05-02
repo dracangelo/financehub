@@ -128,16 +128,28 @@ export function BillsCalendar({ initialBills = [] }: BillsCalendarProps) {
 
   const getBillsForDate = (date: Date) => {
     return bills.filter((bill) => {
-      if (!bill.next_payment_date) return false;
+      // Use next_due_date instead of next_payment_date to ensure bills appear on their actual due date
+      if (!bill.next_due_date) return false;
       
       try {
-        const billDate = new Date(bill.next_payment_date)
-        return (
+        // Parse the bill's due date
+        const billDate = new Date(bill.next_due_date);
+        console.log(`Comparing calendar date ${date.toISOString().split('T')[0]} with bill due date ${bill.next_due_date}`);
+        
+        // Check if the dates match (day, month, year)
+        const match = (
           billDate.getDate() === date.getDate() &&
           billDate.getMonth() === date.getMonth() &&
           billDate.getFullYear() === date.getFullYear()
-        )
+        );
+        
+        if (match) {
+          console.log(`Found match for bill ${bill.name} on date ${date.toISOString().split('T')[0]}`);
+        }
+        
+        return match;
       } catch (e) {
+        console.error(`Error comparing dates for bill ${bill.name}:`, e);
         return false;
       }
     })
