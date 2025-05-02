@@ -20,22 +20,35 @@ import { Textarea } from "@/components/ui/textarea"
 import { createBill, updateBill } from "@/app/actions/bills"
 import { format, parseISO } from "date-fns"
 import { cn } from "@/lib/utils"
-import { CalendarIcon, CheckCircle2, AlertCircle, Clock } from "lucide-react"
+import { CalendarIcon, CheckCircle2, AlertCircle, Clock, Plus } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
+import { BillCategorySelector } from "./bill-category-selector"
+import { AddCategoryDialog } from "./add-category-dialog"
 
 interface Bill {
   id: string
   name: string
-  amount: number
-  next_payment_date: string
+  amount?: number
+  amount_due?: number
+  next_payment_date?: string
+  next_due_date?: string
   is_recurring: boolean
-  billing_frequency: string
+  billing_frequency?: string
+  frequency?: string
   auto_pay: boolean
+  is_automatic?: boolean
   payment_schedule?: { status: string; scheduled_date: string }[]
   billers?: { name: string; category: string }
   notes?: string
+  description?: string
   type?: string
+  category_id?: string
+  category?: { id: string; name: string; description: string }
+  status?: string
+  vendor?: string
+  expected_payment_account?: string
+  currency?: string
 }
 
 interface BillDialogProps {
@@ -52,26 +65,38 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
   const [error, setError] = useState<string | null>(null)
   const [dueDate, setDueDate] = useState<Date | undefined>(undefined)
   const [status, setStatus] = useState<string>("unpaid")
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("")
+  const [showAddCategoryDialog, setShowAddCategoryDialog] = useState(false)
 
   useEffect(() => {
     if (bill) {
-      setIsRecurring(bill.is_recurring)
-      setIsAutoPay(bill.auto_pay)
+      // Handle is_recurring/auto_pay with fallbacks for different field names
+      setIsRecurring(bill.is_recurring || false)
+      setIsAutoPay(bill.auto_pay || bill.is_automatic || false)
+      setSelectedCategoryId(bill.category_id || "")
       
-      // Determine status from payment_schedule if available
-      if (bill.payment_schedule && bill.payment_schedule.length > 0) {
+      // Set status from bill status if available, otherwise determine from payment_schedule
+      if (bill.status) {
+        setStatus(bill.status);
+      } else if (bill.payment_schedule && bill.payment_schedule.length > 0) {
         const latestSchedule = bill.payment_schedule[0];
         setStatus(latestSchedule.status || "unpaid");
       } else {
-        // If no payment_schedule, determine status based on due date
+        // If no status info, determine based on due date
         try {
-          const dueDate = new Date(bill.next_payment_date);
-          const today = new Date();
-          
-          if (isNaN(dueDate.getTime())) {
-            setStatus("unpaid");
-          } else if (dueDate < today) {
-            setStatus("overdue");
+          // Handle different field names for due date
+          const dueDateStr = bill.next_due_date || bill.next_payment_date;
+          if (dueDateStr) {
+            const dueDate = new Date(dueDateStr);
+            const today = new Date();
+            
+            if (isNaN(dueDate.getTime())) {
+              setStatus("unpaid");
+            } else if (dueDate < today) {
+              setStatus("overdue");
+            } else {
+              setStatus("unpaid");
+            }
           } else {
             setStatus("unpaid");
           }
@@ -80,10 +105,11 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
         }
       }
       
-      // Format the date properly if it exists
-      if (bill.next_payment_date) {
+      // Format the date properly if it exists (handle different field names)
+      const dueDateStr = bill.next_due_date || bill.next_payment_date;
+      if (dueDateStr) {
         try {
-          const date = new Date(bill.next_payment_date)
+          const date = new Date(dueDateStr)
           if (!isNaN(date.getTime())) {
             setDueDate(date)
           } else {
@@ -100,6 +126,7 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
       setIsAutoPay(false)
       setDueDate(undefined)
       setStatus("unpaid")
+      setSelectedCategoryId("")
     }
   }, [bill, open])
 
@@ -126,14 +153,16 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
       // If it's a recurring bill, ensure we have a recurrence pattern
       if (isRecurring) {
         const recurrencePattern = formData.get("recurrence_pattern") as string || "monthly"
-        formData.set("billing_frequency", recurrencePattern)
+        formData.set("recurrence_pattern", recurrencePattern)
       } else {
-        // Use 'monthly' as default for non-recurring bills to match database constraints
-        formData.set("billing_frequency", "monthly")
+        formData.set("recurrence_pattern", "once")
       }
       
-      // Add auto-pay
+      // Add auto-pay setting
       formData.set("auto_pay", isAutoPay ? "true" : "false")
+      
+      // Set the status
+      formData.set("status", status)
 
       if (bill) {
         await updateBill(bill.id, formData)
@@ -142,6 +171,7 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
       }
 
       onSave()
+      onOpenChange(false)
     } catch (err) {
       console.error("Error saving bill:", err)
       setError(err instanceof Error ? err.message : "Failed to save bill. Please try again.")
@@ -188,7 +218,7 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
                 type="number"
                 step="0.01"
                 min="0"
-                defaultValue={bill?.amount}
+                defaultValue={bill?.amount_due || bill?.amount || 0}
                 className="col-span-3"
                 required
               />
@@ -268,6 +298,32 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
             </div>
 
             <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="category_id" className="text-right">
+                Category
+              </Label>
+              <div className="col-span-3 flex gap-2">
+                <div className="flex-1">
+                  <BillCategorySelector
+                    value={selectedCategoryId}
+                    onChange={setSelectedCategoryId}
+                    placeholder="Select bill category"
+                    includeCustomOption={true}
+                    onAddCustom={() => setShowAddCategoryDialog(true)}
+                  />
+                  <input type="hidden" name="category_id" value={selectedCategoryId} />
+                </div>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="icon" 
+                  onClick={() => setShowAddCategoryDialog(true)}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="notes" className="text-right">
                 Notes
               </Label>
@@ -282,6 +338,17 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
           </DialogFooter>
         </form>
       </DialogContent>
+
+      {/* Add Category Dialog */}
+      <AddCategoryDialog 
+        open={showAddCategoryDialog} 
+        onOpenChange={setShowAddCategoryDialog} 
+        onCategoryAdded={(category) => {
+          if (category?.id) {
+            setSelectedCategoryId(category.id)
+          }
+        }}
+      />
     </Dialog>
   )
 }

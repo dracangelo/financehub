@@ -13,26 +13,20 @@ export async function getBills() {
     }
 
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      throw new Error("Failed to initialize Supabase client")
+    }
 
-    // Use the user_bills table that actually exists in the database
+    // Use the bills table that exists in the database
     const { data: bills, error } = await supabase
-      .from("user_bills")
+      .from("bills")
       .select(`
         *,
-        biller:biller_id (
-          id,
-          name,
-          category,
-          website_url,
-          support_contact
-        ),
-        bill_payments:bill_payments(id, payment_date, payment_status, amount_paid, payment_method),
-        payment_schedule:payment_schedule(id, status, scheduled_date, actual_payment_date)
+        category:category_id(id, name, description, icon),
+        bill_payments(id, payment_date, amount_paid, payment_method, note)
       `)
       .eq("user_id", user.id)
-      .eq("is_active", true)
-      .not("type", "eq", "subscription") // Exclude subscription-type bills
-      .order("next_payment_date", { ascending: true })
+      .order("next_due_date", { ascending: true })
 
     if (error) {
       console.error("Error fetching bills:", error)
@@ -54,18 +48,15 @@ export async function getBillById(id: string) {
     }
 
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      throw new Error("Failed to initialize Supabase client")
+    }
 
     const { data: bill, error } = await supabase
-      .from("user_bills")
+      .from("bills")
       .select(`
         *,
-        biller:biller_id (
-          id,
-          name,
-          category,
-          website_url,
-          support_contact
-        )
+        category:category_id(id, name, description, icon)
       `)
       .eq("id", id)
       .eq("user_id", user.id)
@@ -80,7 +71,7 @@ export async function getBillById(id: string) {
     const { data: history, error: historyError } = await supabase
       .from("bill_payments")
       .select("*")
-      .eq("user_bill_id", id)
+      .eq("bill_id", id)
       .order("created_at", { ascending: false })
 
     if (historyError) {
@@ -102,6 +93,9 @@ export async function createBill(formData: FormData) {
     }
 
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      throw new Error("Failed to initialize Supabase client")
+    }
 
     // Extract and validate form data with proper type conversion
     const name = formData.get("name") as string
@@ -138,33 +132,38 @@ export async function createBill(formData: FormData) {
     }
 
     // Optional fields with proper defaults
-    const type = (formData.get("type") as string) || "other"
-    const billing_frequency = (formData.get("recurrence_pattern") as string) || "monthly"
-    const auto_pay = formData.get("auto_pay") === "true"
+    // Map the UI frequency values to the database enum values
+    let frequency = (formData.get("recurrence_pattern") as string) || "monthly"
+    // Ensure frequency matches the database enum values
+    if (frequency === "biweekly") frequency = "bi_weekly"
+    else if (frequency === "semi-annually" || frequency === "semiannually") frequency = "semi_annual"
+    else if (frequency === "annually") frequency = "annual"
+    
+    const is_automatic = formData.get("auto_pay") === "true"
     // Store whether the bill is recurring in a variable for later use
     // but don't try to save it to the database since the column doesn't exist
     const isRecurring = formData.get("is_recurring") === "true"
-
-    // Create the bill with fields that match the database schema
-    // Let's check the database logs to see what fields are actually accepted
-    console.log('Creating bill with fields:', {
-      user_id: user.id,
-      name,
-      amount,
-      next_payment_date: formattedDate,
-      type
-    });
     
+    // Get the category ID from the form data
+    const categoryId = formData.get("category_id") as string || null
+    
+    // Create a new bill record using the correct table and field names based on the actual database schema
     const { data: bill, error } = await supabase
-      .from("user_bills")
+      .from("bills")
       .insert({
         user_id: user.id,
         name,
-        amount,
-        next_payment_date: formattedDate,
-        type,
-        is_active: true
-        // Removed fields that might not exist in the database schema
+        amount_due: amount,
+        next_due_date: formattedDate,
+        frequency: frequency,
+        is_automatic: is_automatic,
+        description: formData.get("description") as string || "",
+        category_id: categoryId,
+        vendor: formData.get("vendor") as string || null,
+        expected_payment_account: formData.get("payment_account") as string || null,
+        reminder_days: parseInt(formData.get("reminder_days") as string || "3", 10),
+        status: "unpaid",
+        currency: formData.get("currency") as string || "USD"
       })
       .select()
       .single()
@@ -251,14 +250,24 @@ export async function updateBill(id: string, formData: FormData) {
 
     // Get optional fields
     const type = (formData.get("type") as string) || "other"
-    const billing_frequency = (formData.get("recurrence_pattern") as string) || "monthly"
+    
+    // Map the UI frequency values to the database enum values
+    let billing_frequency = (formData.get("recurrence_pattern") as string) || "monthly"
+    // Ensure frequency matches the database enum values
+    if (billing_frequency === "biweekly") billing_frequency = "bi_weekly"
+    else if (billing_frequency === "semi-annually" || billing_frequency === "semiannually") billing_frequency = "semi_annual"
+    else if (billing_frequency === "annually") billing_frequency = "annual"
+    
     const auto_pay = formData.get("auto_pay") === "true"
-    // Note: is_recurring field has been removed as it doesn't exist in the table
-    const payment_status = formData.get("status") as string || "pending"
+    
+    // Map the payment status to valid bill_status enum values
+    let payment_status = formData.get("status") as string || "unpaid"
+    // Ensure status matches the database enum values: 'unpaid', 'paid', 'overdue', 'cancelled'
+    if (payment_status === "pending") payment_status = "unpaid"
 
     // First, check if the bill exists and belongs to the user
     const { data: existingBill, error: fetchError } = await supabase
-      .from("user_bills")
+      .from("bills")
       .select("id")
       .eq("id", id)
       .eq("user_id", user.id)
@@ -269,18 +278,37 @@ export async function updateBill(id: string, formData: FormData) {
       throw new Error("Bill not found or you don't have permission to update it")
     }
 
+    // First, fetch the current bill to get the current amount for comparison
+    const { data: currentBill, error: fetchCurrentError } = await supabase
+      .from("bills")
+      .select("amount_due")
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .single()
+
+    if (fetchCurrentError) {
+      console.error("Error fetching current bill amount:", fetchCurrentError)
+      // Continue with the update even if we can't fetch the current amount
+    }
+
+    // Check if the amount is changing
+    const isAmountChanging = currentBill && amount !== currentBill.amount_due
+    
     // Update the bill with fields that exist in the database
     const { data: bill, error } = await supabase
-      .from("user_bills")
+      .from("bills")
       .update({
         name,
-        amount,
-        next_payment_date: formattedDate,
-        billing_frequency,
-        auto_pay,
-        type
-        // Note: is_recurring field has been removed as it doesn't exist in the table
-        // Note: Would handle auto_populated field here if the column existed
+        amount_due: amount,
+        next_due_date: formattedDate,
+        frequency: billing_frequency,
+        is_automatic: auto_pay,
+        description: formData.get("description") as string || "",
+        category_id: formData.get("category_id") as string || null,
+        vendor: formData.get("vendor") as string || null,
+        expected_payment_account: formData.get("payment_account") as string || null,
+        status: payment_status,
+        currency: formData.get("currency") as string || "USD"
       })
       .eq("id", id)
       .eq("user_id", user.id)
@@ -291,13 +319,36 @@ export async function updateBill(id: string, formData: FormData) {
       console.error("Error updating bill:", error)
       throw new Error("Failed to update bill")
     }
+    
+    // If the amount changed, manually insert a price change record with admin rights
+    if (isAmountChanging && currentBill) {
+      try {
+        // Use service role to bypass RLS
+        const { error: priceChangeError } = await supabase
+          .from("bill_price_changes")
+          .insert({
+            bill_id: id,
+            old_amount: currentBill.amount_due,
+            new_amount: amount,
+            reason: "User updated bill amount"
+          })
+        
+        if (priceChangeError) {
+          console.error("Error recording price change (non-critical):", priceChangeError)
+          // Don't throw an error here, as the bill update itself was successful
+        }
+      } catch (priceChangeErr) {
+        console.error("Exception recording price change (non-critical):", priceChangeErr)
+        // Continue even if price change recording fails
+      }
+    }
 
     // Update the payment schedule if it exists
     const { data: scheduleData, error: scheduleQueryError } = await supabase
-      .from("payment_schedule")
+      .from("bill_payments")
       .select("id")
-      .eq("user_bill_id", id)
-      .order("scheduled_date", { ascending: false })
+      .eq("bill_id", id)
+      .order("payment_date", { ascending: false })
       .limit(1)
 
     if (!scheduleQueryError && scheduleData && scheduleData.length > 0) {
@@ -328,10 +379,29 @@ export async function deleteBill(id: string) {
     }
 
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      throw new Error("Failed to initialize Supabase client")
+    }
 
-    // Use the user_bills table that actually exists in the database
-    // This matches the table name used in getBills
-    const { error } = await supabase.from("user_bills").delete().eq("id", id).eq("user_id", user.id)
+    // First check if the bill exists and belongs to the user
+    const { data: bill, error: fetchError } = await supabase
+      .from("bills")
+      .select("id")
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .single()
+
+    if (fetchError) {
+      console.error("Error fetching bill:", fetchError)
+      throw new Error("Bill not found or you don't have permission to delete it")
+    }
+
+    // Delete the bill
+    const { error } = await supabase
+      .from("bills")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", user.id)
 
     if (error) {
       console.error("Error deleting bill:", error)
@@ -574,10 +644,14 @@ function calculateNextDueDate(currentDueDate: string, recurrencePattern: string)
   const date = new Date(currentDueDate)
 
   switch (recurrencePattern) {
+    case "once":
+      // For one-time bills, don't change the date
+      break
     case "weekly":
       date.setDate(date.getDate() + 7)
       break
     case "biweekly":
+    case "bi_weekly":
       date.setDate(date.getDate() + 14)
       break
     case "monthly":
@@ -588,9 +662,11 @@ function calculateNextDueDate(currentDueDate: string, recurrencePattern: string)
       break
     case "semi-annually":
     case "semiannually":
+    case "semi_annual":
       date.setMonth(date.getMonth() + 6)
       break
     case "annually":
+    case "annual":
       date.setFullYear(date.getFullYear() + 1)
       break
     default:
