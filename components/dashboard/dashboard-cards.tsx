@@ -65,7 +65,7 @@ function ProjectedExpensesContent({ baseProjectedExpense, monthOverMonth, onTota
         setRecurringExpenses(expenses)
         
         // Calculate total monthly expenses (base + recurring monthly equivalents)
-        const recurringTotal = expenses.reduce((sum: number, expense: RecurringExpense) => sum + expense.monthlyEquivalent, 0)
+        const recurringTotal = expenses && Array.isArray(expenses) ? expenses.reduce((sum: number, expense: RecurringExpense) => sum + expense.monthlyEquivalent, 0) : 0
         const newTotalExpense = baseProjectedExpense + recurringTotal
         
         // Update local state
@@ -199,7 +199,7 @@ export function DashboardCards({ accountSummary, cashflowSummary }: DashboardCar
         <CardContent className="pt-4">
           <div className="text-2xl font-bold">{formatCurrency(accountSummary.totalBalance)}</div>
           <div className="mt-2 flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">Across {accountSummary.accountCount} accounts</p>
+            <p className="text-xs text-muted-foreground">Across {accountSummary?.accountCount || 0} accounts</p>
             <div className="text-xs font-medium text-green-600 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded-full">
               Net Worth: {formatCurrency(netWorth)}
             </div>

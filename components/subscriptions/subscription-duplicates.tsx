@@ -99,7 +99,7 @@ export function SubscriptionDuplicates() {
                       <div className="text-right">
                         <div>{formatCurrency(sub.amount)}</div>
                         <div className="text-xs text-muted-foreground capitalize">
-                          {sub.billing_cycle.replace("_", " ")}
+                          {sub.billing_cycle ? sub.billing_cycle.replace("_", " ") : "monthly"}
                         </div>
                       </div>
                     </div>

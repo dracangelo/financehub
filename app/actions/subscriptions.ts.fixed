@@ -260,7 +260,6 @@ export async function createSubscription(formData: FormData) {
         billing_frequency = 'weekly';
         break;
       case 'biweekly':
-      case 'bi-weekly':
         billing_frequency = 'weekly'; // closest match
         break;
       case 'monthly':
@@ -271,10 +270,7 @@ export async function createSubscription(formData: FormData) {
         break;
       case 'semi-annually':
       case 'semiannually':
-      case 'semi_annually':
         billing_frequency = 'quarterly'; // closest match
-        // Standardize the billing_cycle to match the database enum
-        billing_cycle = 'semi-annually';
         break;
       case 'annually':
       case 'yearly':
@@ -385,9 +381,8 @@ export async function createSubscription(formData: FormData) {
         user_id: user.id,
         vendor: provider,
         name,
-        // Use the standardized billing_cycle value that we've normalized above
-        // This ensures it matches one of the valid enum values in the database
-        frequency: billing_cycle,
+        // Use the billing_cycle from the form instead of hardcoding to "monthly"
+        frequency: (formData.get("billing_cycle") as string) || "monthly",
         amount: amount,
         next_renewal_date: next_payment_date,
         // Make sure we're using the correct category_id
