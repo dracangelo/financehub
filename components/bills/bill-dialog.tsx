@@ -109,11 +109,18 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
       const dueDateStr = bill.next_due_date || bill.next_payment_date;
       if (dueDateStr) {
         try {
-          const date = new Date(dueDateStr)
+          // Parse the date string properly
+          const date = parseISO(dueDateStr)
           if (!isNaN(date.getTime())) {
             setDueDate(date)
           } else {
-            setDueDate(undefined)
+            // Try alternative parsing if parseISO fails
+            const fallbackDate = new Date(dueDateStr)
+            if (!isNaN(fallbackDate.getTime())) {
+              setDueDate(fallbackDate)
+            } else {
+              setDueDate(undefined)
+            }
           }
         } catch (e) {
           setDueDate(undefined)
@@ -122,9 +129,11 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
         setDueDate(undefined)
       }
     } else {
+      // For new bills, don't set defaults except for status
       setIsRecurring(false)
       setIsAutoPay(false)
-      setDueDate(undefined)
+      // Don't set a default date for new bills
+      // setDueDate(undefined)
       setStatus("unpaid")
       setSelectedCategoryId("")
     }
@@ -215,11 +224,10 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
               <Input
                 id="amount"
                 name="amount"
+                defaultValue={bill?.amount_due !== undefined ? bill.amount_due : (bill?.amount !== undefined ? bill.amount : "")}
+                className="col-span-3"
                 type="number"
                 step="0.01"
-                min="0"
-                defaultValue={bill?.amount_due || bill?.amount || 0}
-                className="col-span-3"
                 required
               />
             </div>
@@ -234,20 +242,25 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
                     <Button
                       variant="outline"
                       className={cn(
-                        "w-full justify-start text-left font-normal",
+                        "w-full justify-start text-left font-normal col-span-3",
                         !dueDate && "text-muted-foreground"
                       )}
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
-                      {dueDate ? format(dueDate, "PPP") : "Select a date"}
+                      {dueDate ? format(dueDate, "PPP") : <span>Pick a date</span>}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0">
                     <Calendar
                       mode="single"
                       selected={dueDate}
-                      onSelect={(date) => setDueDate(date || undefined)}
+                      onSelect={setDueDate}
                       initialFocus
+                    />
+                    <input
+                      type="hidden"
+                      name="next_payment_date"
+                      value={dueDate ? format(dueDate, "yyyy-MM-dd") : ""}
                     />
                   </PopoverContent>
                 </Popover>
@@ -273,7 +286,7 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
                 <Label htmlFor="recurrence_pattern" className="text-right">
                   Frequency
                 </Label>
-                <Select name="recurrence_pattern" defaultValue={bill?.billing_frequency || "monthly"}>
+                <Select name="recurrence_pattern" defaultValue={bill?.frequency || bill?.billing_frequency || "monthly"}>
                   <SelectTrigger id="recurrence_pattern" className="col-span-3">
                     <SelectValue placeholder="Select frequency" />
                   </SelectTrigger>
@@ -327,7 +340,7 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
               <Label htmlFor="notes" className="text-right">
                 Notes
               </Label>
-              <Textarea id="notes" name="notes" defaultValue={bill?.notes} className="col-span-3" rows={3} />
+              <Textarea id="description" name="description" defaultValue={bill?.description || bill?.notes || ""} className="col-span-3" rows={3} />
             </div>
           </div>
 

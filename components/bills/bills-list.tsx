@@ -27,13 +27,21 @@ import { BillsCalendar } from "./bills-calendar"
 interface Bill {
   id: string
   name: string
-  amount: number
-  next_payment_date: string
+  amount?: number
+  amount_due: number
+  next_payment_date?: string
+  next_due_date: string
   payment_schedule?: { status: string; scheduled_date: string }[]
-  billers?: { name: string; category: string }
-  is_paid?: boolean
-  status?: string
-  scheduled_date?: string
+  bill_payments?: { id: string; payment_date: string; amount_paid: number; payment_method: string; note: string }[]
+  category?: { id: string; name: string; description: string; icon: string }
+  category_id?: string
+  status: string
+  frequency: string
+  description?: string
+  vendor?: string
+  expected_payment_account?: string
+  currency?: string
+  last_paid_date?: string
 }
 
 interface BillsListProps {
@@ -76,8 +84,10 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
       // Validate and sanitize the data
       const validatedBills = data.map((bill: any) => ({
         ...bill,
-        amount: typeof bill.amount === 'number' ? bill.amount : parseFloat(bill.amount) || 0,
-        next_payment_date: bill.next_payment_date || new Date().toISOString().split('T')[0]
+        // Use amount_due as the primary amount field
+        amount_due: typeof bill.amount_due === 'number' ? bill.amount_due : parseFloat(bill.amount_due) || 0,
+        // Ensure next_due_date is available
+        next_due_date: bill.next_due_date || new Date().toISOString().split('T')[0]
       }))
       
       setBills(validatedBills)
@@ -104,7 +114,8 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
       const query = searchQuery.toLowerCase()
       result = result.filter(bill => 
         bill.name.toLowerCase().includes(query) || 
-        (bill.billers?.name && bill.billers.name.toLowerCase().includes(query))
+        (bill.category?.name && bill.category.name.toLowerCase().includes(query)) ||
+        (bill.vendor && bill.vendor.toLowerCase().includes(query))
       )
     }
     
@@ -122,12 +133,14 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
           comparison = a.name.localeCompare(b.name)
           break
         case 'amount':
-          comparison = a.amount - b.amount
+          const aAmount = a.amount_due || 0
+          const bAmount = b.amount_due || 0
+          comparison = aAmount - bAmount
           break
         case 'next_payment_date':
           // Handle invalid dates by treating them as latest
-          const dateA = new Date(a.next_payment_date)
-          const dateB = new Date(b.next_payment_date)
+          const dateA = new Date(a.next_due_date || '')
+          const dateB = new Date(b.next_due_date || '')
           const validDateA = !isNaN(dateA.getTime())
           const validDateB = !isNaN(dateB.getTime())
           
@@ -139,6 +152,7 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
       }
       
       return sortDirection === 'asc' ? comparison : -comparison
+    
     })
     
     setFilteredBills(result)
@@ -234,19 +248,37 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
   };
 
   const getBillStatus = (bill: Bill) => {
-    // First check if the bill has been explicitly marked as paid
-    if (bill.is_paid) {
-      return "paid";
+    // If the bill has an explicit status, use it
+    if (bill.status) {
+      // Only return if it's a valid status value
+      if (['paid', 'unpaid', 'overdue', 'cancelled'].includes(bill.status)) {
+        return bill.status;
+      }
     }
     
-    // Then check payment_schedule if available
-    if (bill.payment_schedule && bill.payment_schedule.length > 0) {
-      const latestSchedule = bill.payment_schedule[0];
-      if (latestSchedule.status === "paid") {
-        return "paid";
+    // Check if the bill has been marked as paid based on last_paid_date
+    if (bill.last_paid_date) {
+      // Check if this is a recurring bill
+      if (bill.frequency && bill.frequency !== 'one_time') {
+        // For recurring bills, check if the next due date is in the future
+        // If it is, then the current cycle is unpaid even if the last cycle was paid
+        const dueDate = new Date(bill.next_due_date || '');
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        dueDate.setHours(0, 0, 0, 0);
+        
+        if (!isNaN(dueDate.getTime()) && dueDate > today) {
+          return "unpaid";
+        }
       }
-      if (latestSchedule.status === "overdue") {
-        return "overdue";
+      
+      // If it's not recurring or the due date has passed, use the paid status
+      const lastPaidDate = new Date(bill.last_paid_date);
+      const dueDate = new Date(bill.next_due_date || '');
+      
+      // If last paid date is after or equal to the due date, the bill is paid
+      if (!isNaN(lastPaidDate.getTime()) && !isNaN(dueDate.getTime()) && lastPaidDate >= dueDate) {
+        return "paid";
       }
     }
     
@@ -257,15 +289,25 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
         new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime()
       );
       
-      // If the most recent payment has a completed status, the bill is paid
-      if (sortedPayments[0].payment_status === "completed") {
-        return "paid";
+      // Check if the most recent payment is for the current billing cycle
+      const mostRecentPayment = sortedPayments[0];
+      const paymentDate = new Date(mostRecentPayment.payment_date);
+      const dueDate = new Date(bill.next_due_date || '');
+      
+      // If payment date is close to or after the due date, consider it paid for this cycle
+      if (!isNaN(paymentDate.getTime()) && !isNaN(dueDate.getTime())) {
+        // Allow for payments up to 3 days before due date to be considered for the current cycle
+        const paymentForCurrentCycle = paymentDate >= new Date(dueDate.getTime() - 3 * 24 * 60 * 60 * 1000);
+        
+        if (paymentForCurrentCycle && mostRecentPayment.amount_paid > 0) {
+          return "paid";
+        }
       }
     }
     
     // If status not determined yet, check due date
     try {
-      const dueDate = new Date(bill.next_payment_date);
+      const dueDate = new Date(bill.next_due_date || '');
       const today = new Date();
       
       // Set hours to 0 for proper comparison
@@ -282,9 +324,9 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
       
       // If due date has passed, it's overdue
       if (diffDays < 0) {
-        // If auto_pay is enabled, mark as paid
-        if (bill.auto_pay) {
-          return "paid";
+        // If automatic payment is enabled, it might be paid automatically
+        if (bill.is_automatic) {
+          return "scheduled";
         }
         return "overdue";
       }
@@ -487,14 +529,14 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
                       <TableCell>
                         <div className="font-medium">{bill.name}</div>
                         <div className="text-xs text-muted-foreground">
-                          {bill.billers?.name || "Uncategorized"}
+                          {bill.category?.name || "Uncategorized"}
                         </div>
                       </TableCell>
-                      <TableCell>{formatCurrency(bill.amount)}</TableCell>
+                      <TableCell>{formatCurrency(bill.amount_due)}</TableCell>
                       <TableCell>
                         <div className="flex items-center">
                           <Calendar className="mr-2 h-4 w-4 text-muted-foreground" />
-                          {formatDate(bill.next_payment_date)}
+                          {formatDate(bill.next_due_date)}
                         </div>
                       </TableCell>
                       <TableCell>{getBillStatusBadge(bill)}</TableCell>
@@ -526,7 +568,12 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
         </Card>
       )}
 
-      <BillDialog open={openDialog} onOpenChange={setOpenDialog} bill={selectedBill} onSave={handleSaveBill} />
+      <BillDialog 
+        open={openDialog} 
+        onOpenChange={setOpenDialog} 
+        bill={selectedBill as any} 
+        onSave={handleSaveBill} 
+      />
 
       <AlertDialog open={openDeleteDialog} onOpenChange={setOpenDeleteDialog}>
         <AlertDialogContent>
