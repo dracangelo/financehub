@@ -10,16 +10,22 @@ import {
 
 export class DebtService {
   private supabase = createClientComponentClient()
-
-  // Helper method to safely get the current user ID without throwing errors
+  
+  // Get the current user ID with proper error handling
   private async getUserId(): Promise<string | null> {
     try {
-      // Get the session directly - this is the most reliable method
-      const { data } = await this.supabase.auth.getSession()
-      const userId = data?.session?.user?.id
+      // Get session data
+      const { data: sessionData } = await this.supabase.auth.getSession()
+      const userId = sessionData?.session?.user?.id
       
       if (userId) {
         return userId
+      }
+      
+      // Try alternate method
+      const { data: userData } = await this.supabase.auth.getUser()
+      if (userData?.user?.id) {
+        return userData.user.id
       }
       
       return null
@@ -31,10 +37,7 @@ export class DebtService {
 
   async getDebts(): Promise<Debt[]> {
     try {
-      // Try to get user directly from the session
-      const { data: sessionData } = await this.supabase.auth.getSession()
-      const userId = sessionData?.session?.user?.id
-      
+      const userId = await this.getUserId()
       if (!userId) {
         console.log('getDebts: No authenticated user found')
         return []
@@ -64,33 +67,70 @@ export class DebtService {
 
   async createDebt(debt: Omit<Debt, 'id' | 'user_id' | 'created_at' | 'updated_at'>): Promise<Debt> {
     try {
-      // Get the session directly
-      const { data: sessionData } = await this.supabase.auth.getSession()
-      const userId = sessionData?.session?.user?.id
+      // Get the authenticated user ID
+      const userId = await this.getUserId()
       
       if (!userId) {
-        console.error('createDebt: No authenticated user found')
         throw new Error('User not authenticated')
       }
       
       console.log(`createDebt: Creating debt for user ${userId}`)
+      console.log('Debt data to insert:', debt)
       
-      // Create the debt
+      // Based on the SQL schema, we need these exact fields:
+      // user_id, name, current_balance, interest_rate, minimum_payment, loan_term
+      let current_balance = 0
+      if ('current_balance' in debt) {
+        current_balance = debt.current_balance
+      } else if ('principal' in (debt as any)) {
+        current_balance = (debt as any).principal
+      }
+      
+      let loan_term = 0
+      if ('loan_term' in debt) {
+        loan_term = debt.loan_term
+      } else if ('term_months' in (debt as any)) {
+        loan_term = (debt as any).term_months
+      }
+      
+      // Try using the RPC function as defined in the SQL file
       const { error } = await this.supabase.rpc('create_debt', {
         _user_id: userId,
         _name: debt.name,
-        _current_balance: debt.current_balance,
-        _interest_rate: debt.interest_rate,
-        _minimum_payment: debt.minimum_payment,
-        _loan_term: debt.loan_term
+        _current_balance: current_balance,
+        _interest_rate: debt.interest_rate || 0,
+        _minimum_payment: debt.minimum_payment || 0,
+        _loan_term: loan_term
       })
-
+      
       if (error) {
-        console.error('Error creating debt:', error)
-        throw error
+        console.error('Error calling create_debt RPC:', error)
+        
+        // Fallback to direct insert if RPC fails
+        console.log('Falling back to direct insert')
+        const { data: insertData, error: insertError } = await this.supabase
+          .from('debts')
+          .insert({
+            user_id: userId,
+            name: debt.name,
+            current_balance: current_balance,
+            interest_rate: debt.interest_rate || 0,
+            minimum_payment: debt.minimum_payment || 0,
+            loan_term: loan_term,
+            due_date: debt.due_date || null
+          })
+          .select()
+          .single()
+        
+        if (insertError) {
+          console.error('Error with direct insert:', insertError)
+          throw insertError
+        }
+        
+        return insertData
       }
       
-      // Fetch the newly created debt
+      // If RPC was successful, fetch the newly created debt
       const { data: newDebt, error: fetchError } = await this.supabase
         .from('debts')
         .select('*')

@@ -9,16 +9,21 @@ import type { Category } from "@/types/finance"
 export async function getCategories() {
   try {
     const supabase = await createServerSupabaseClient()
-    const user = await getAuthenticatedUser()
-
-    if (!user) {
-      return { categories: [] }
-    }
-
+    
     if (!supabase) {
       console.error("Failed to create Supabase client")
       return { categories: [] }
     }
+    
+    // Get authenticated user with the secure method
+    const { data: userData, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !userData?.user) {
+      console.error("Error getting authenticated user:", userError || "No user found")
+      return { categories: [] }
+    }
+    
+    const user = userData.user
 
     const { data, error } = await supabase
       .from("categories")
@@ -96,16 +101,21 @@ async function ensureCategoriesTableExists() {
 export async function ensureStaticCategories() {
   try {
     const supabase = await createServerSupabaseClient()
-    const user = await getAuthenticatedUser()
-
-    if (!user) {
-      return { success: false, message: "User not authenticated", categories: [] }
-    }
     
     if (!supabase) {
       console.error("Failed to create Supabase client")
       return { success: false, message: "Failed to create Supabase client", categories: [] }
     }
+    
+    // Get authenticated user with the secure method
+    const { data: userData, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !userData?.user) {
+      console.error("Error getting authenticated user:", userError || "No user found")
+      return { success: false, message: "User not authenticated", categories: [] }
+    }
+    
+    const user = userData.user
     
     // Check if categories table exists
     await ensureCategoriesTableExists()
@@ -120,9 +130,6 @@ export async function ensureStaticCategories() {
         description,
         parent_category_id,
         is_temporary,
-        color,
-        icon,
-        is_income,
         created_at,
         updated_at`
       )
@@ -157,9 +164,6 @@ export async function ensureStaticCategories() {
       description?: string;
       parent_category_id?: string;
       is_temporary?: boolean;
-      color?: string;
-      icon?: string;
-      is_income?: boolean;
       user_id: string;
       created_at: string;
       updated_at: string;
@@ -182,9 +186,16 @@ export async function ensureStaticCategories() {
 
     // Insert missing categories if any
     if (categoriesToInsert.length > 0) {
+      // Filter out fields that don't exist in the database schema
+      const dbSafeCategories = categoriesToInsert.map(category => {
+        // Use type assertion to handle properties that might not be in the interface
+        const { color, icon, is_income, ...dbCategory } = category as any;
+        return dbCategory;
+      });
+      
       const { error: insertError } = await supabase
         .from("categories")
-        .insert(categoriesToInsert)
+        .insert(dbSafeCategories)
 
       if (insertError) {
         console.error("Error inserting categories:", insertError)
@@ -218,19 +229,19 @@ export async function initializeUserCategories(userId: string) {
     
     // Convert ALL_CATEGORIES to database format with new schema
     const now = new Date().toISOString()
-    const categoriesToInsert = ALL_CATEGORIES.map(category => ({
-      id: crypto.randomUUID(), // Generate UUID
-      user_id: userId,
-      name: category.name,
-      description: null,
-      parent_category_id: null,
-      is_temporary: false,
-      color: category.color || null,
-      icon: category.icon || null,
-      is_income: category.is_income || false,
-      created_at: now,
-      updated_at: now
-    }))
+    const categoriesToInsert = ALL_CATEGORIES.map(category => {
+      // Extract only the fields that exist in the database schema
+      return {
+        id: crypto.randomUUID(), // Generate UUID
+        user_id: userId,
+        name: category.name,
+        description: null,
+        parent_category_id: null,
+        is_temporary: false,
+        created_at: now,
+        updated_at: now
+      };
+    })
 
     const { error } = await supabase
       .from("categories")
@@ -252,17 +263,22 @@ export async function initializeUserCategories(userId: string) {
 export async function getCategoryById(id: string) {
   try {
     const supabase = await createServerSupabaseClient()
-    const user = await getAuthenticatedUser()
-    
-    if (!user) {
-      // If not authenticated, just return static category
-      return ALL_CATEGORIES.find(category => category.id === id) || null
-    }
     
     if (!supabase) {
       console.error("Failed to create Supabase client")
       return ALL_CATEGORIES.find(category => category.id === id) || null
     }
+    
+    // Get authenticated user with the secure method
+    const { data: userData, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !userData?.user) {
+      console.error("Error getting authenticated user:", userError || "No user found")
+      // If not authenticated, just return static category
+      return ALL_CATEGORIES.find(category => category.id === id) || null
+    }
+    
+    const user = userData.user
     
     // Try to get from database first with parent category info
     const { data, error } = await supabase
@@ -288,15 +304,19 @@ export async function getCategoryById(id: string) {
 export async function createCategory(formData: FormData) {
   try {
     const supabase = await createServerSupabaseClient()
-    const user = await getAuthenticatedUser()
-
-    if (!user) {
-      throw new Error("Authentication required")
-    }
     
     if (!supabase) {
       throw new Error("Failed to create Supabase client")
     }
+    
+    // Get authenticated user with the secure method
+    const { data: userData, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !userData?.user) {
+      throw new Error("Authentication required")
+    }
+    
+    const user = userData.user
     
     // Check if categories table exists
     await ensureCategoriesTableExists()
@@ -315,7 +335,7 @@ export async function createCategory(formData: FormData) {
       throw new Error("Name is required")
     }
 
-    // Create category
+    // Create category - only include fields that exist in the database schema
     const { data, error } = await supabase
       .from("categories")
       .insert({
@@ -324,9 +344,6 @@ export async function createCategory(formData: FormData) {
         description,
         parent_category_id: parentCategoryId,
         is_temporary: isTemporary,
-        color,
-        icon,
-        is_income: isIncome,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
@@ -350,15 +367,19 @@ export async function createCategory(formData: FormData) {
 export async function updateCategory(id: string, formData: FormData) {
   try {
     const supabase = await createServerSupabaseClient()
-    const user = await getAuthenticatedUser()
-
-    if (!user) {
-      throw new Error("Authentication required")
-    }
-
+    
     if (!supabase) {
       throw new Error("Failed to create Supabase client")
     }
+    
+    // Get authenticated user with the secure method
+    const { data: userData, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !userData?.user) {
+      throw new Error("Authentication required")
+    }
+    
+    const user = userData.user
 
     // Verify category belongs to user
     const { data: category, error: categoryError } = await supabase
@@ -407,9 +428,6 @@ export async function updateCategory(id: string, formData: FormData) {
         description,
         parent_category_id: parentCategoryId,
         is_temporary: isTemporary,
-        color,
-        icon,
-        is_income: isIncome,
         updated_at: new Date().toISOString()
       })
       .eq("id", id)
