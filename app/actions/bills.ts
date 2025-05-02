@@ -516,7 +516,7 @@ export async function deleteBill(id: string) {
   }
 }
 
-export async function markBillAsPaid(id: string, formData: FormData) {
+export async function markBillAsPaid(id: string, formData?: FormData) {
   try {
     const user = await getCurrentUser()
     if (!user) {
@@ -589,13 +589,23 @@ export async function markBillAsPaid(id: string, formData: FormData) {
     const paymentNotes = isOverdue ? "Overdue bill marked as paid" : "Marked as paid manually"
     
     // Get payment method from form or default to 'other' if not provided or invalid
-    let paymentMethod = formData.get("payment_method") as string || "other"
+    let paymentMethod = "other";
+    
+    // Only try to get payment_method if formData is provided
+    if (formData) {
+      const methodFromForm = formData.get("payment_method");
+      if (methodFromForm && typeof methodFromForm === 'string') {
+        paymentMethod = methodFromForm;
+      }
+    }
     
     // Ensure payment_method is one of the valid enum values
-    const validPaymentMethods = ['credit_card', 'debit_card', 'bank_transfer', 'cash', 'other']
+    const validPaymentMethods = ['credit_card', 'debit_card', 'bank_transfer', 'cash', 'other'];
     if (!validPaymentMethods.includes(paymentMethod)) {
-      paymentMethod = "other"
+      paymentMethod = "other";
     }
+    
+    console.log(`Using payment method: ${paymentMethod} for bill ${id}`);
     
     const { error: paymentError } = await supabase.from("bill_payments").insert({
       bill_id: id,
