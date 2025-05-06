@@ -59,7 +59,7 @@ export async function GET(
 // Handler for PUT requests to update a specific timeline item
 export async function PUT(
   request: Request,
-  context: { params: { id: string | string[] } }
+  { params }: { params: { id: string | string[] } }
 ) {
   try {
     // Get the authenticated user
@@ -74,10 +74,8 @@ export async function PUT(
       return NextResponse.json({ error: "Failed to initialize database connection" }, { status: 500 })
     }
     
-    // Use the existing params pattern without accessing properties directly
-    const { id: timelineId } = context.params
-    // Convert array to string if needed
-    const id = Array.isArray(timelineId) ? timelineId[0] : timelineId
+    // Get the ID parameter
+    const id = Array.isArray(params.id) ? params.id[0] : params.id
     
     if (!id) {
       return NextResponse.json({ error: "Timeline item ID is required" }, { status: 400 })
@@ -86,28 +84,43 @@ export async function PUT(
     // Parse the request body
     const body = await request.json()
 
-    // Create a schema for validation
+    // Create a schema for validation that adapts to database structure
     const updateTimelineSchema = z.object({
       title: z.string().min(1, "Title is required"),
       description: z.string().min(1, "Description is required"),
       due_date: z.string().min(1, "Due date is required"),
       is_recurring: z.boolean().default(false),
       recurrence_pattern: z.string().optional(),
-      is_completed: z.boolean()
+      is_completed: z.boolean().optional(), // Make is_completed optional
+      status: z.string().optional() // Add status field for compatibility
     })
 
     // Log the incoming request body for debugging
     console.log("Received timeline update request:", body)
     
-    // Validate request body
+    // Validate the request body
     const result = updateTimelineSchema.safeParse(body)
     if (!result.success) {
-      console.error("Validation error:", result.error.format())
-      return NextResponse.json({ error: "Invalid request data", details: result.error.format() }, { status: 400 })
+      return NextResponse.json({ 
+        error: "Invalid request data",
+        details: result.error.format() 
+      }, { status: 400 })
     }
 
-    // Determine the event type based on recurring pattern
-    const eventType = result.data.is_recurring ? (result.data.recurrence_pattern || 'recurring') : 'one-time'
+    // Convert is_completed to status if needed
+    const updateData = {
+      title: result.data.title,
+      description: result.data.description,
+      due_date: new Date(result.data.due_date),
+      is_recurring: result.data.is_recurring,
+      recurrence_pattern: result.data.recurrence_pattern,
+      status: result.data.is_completed ? "completed" : "pending"
+    }
+
+    // If status was provided directly, use that instead
+    if (result.data.status) {
+      updateData.status = result.data.status
+    }
 
     try {
       // Check if the tax_timeline table has the is_completed column
@@ -127,7 +140,6 @@ export async function PUT(
             title: result.data.title,
             description: result.data.description,
             due_date: new Date(result.data.due_date),
-            type: eventType,
             status: result.data.is_completed ? 'completed' : 'pending',
             is_recurring: result.data.is_recurring,
             recurrence_pattern: result.data.recurrence_pattern
@@ -154,7 +166,6 @@ export async function PUT(
             title: result.data.title,
             description: result.data.description,
             due_date: new Date(result.data.due_date),
-            type: eventType,
             status: result.data.is_completed ? 'completed' : 'pending',
             is_recurring: result.data.is_recurring,
             recurrence_pattern: result.data.recurrence_pattern,

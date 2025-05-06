@@ -26,9 +26,11 @@ interface Liability {
   name: string
   type: string
   amount: number
+  amount_due?: number
   interest_rate?: number
   due_date?: string
   description?: string
+  liability_type?: string
 }
 
 interface LiabilityListProps {
@@ -77,14 +79,12 @@ export function LiabilityList({ liabilities }: LiabilityListProps) {
               <TableBody>
                 {liabilities.map((liability) => (
                   <TableRow key={liability.id}>
-                    <TableCell className="font-medium">{liability.name}</TableCell>
+                    <TableCell className="font-medium">{liability.name || liability.liability_type || 'Unnamed Liability'}</TableCell>
                     <TableCell>
-                      {liability.type.split('_').map(word => 
-                        word.charAt(0).toUpperCase() + word.slice(1)
-                      ).join(' ')}
+                      {liability.type || liability.liability_type || 'Unknown'}
                     </TableCell>
                     <TableCell className="text-right">
-                      {formatCurrency(liability.amount)}
+                      {formatCurrency(liability.amount_due || liability.amount || 0)}
                     </TableCell>
                     <TableCell>
                       <div className="flex space-x-1">
@@ -110,7 +110,7 @@ export function LiabilityList({ liabilities }: LiabilityListProps) {
           Total Liabilities: {liabilities.length}
         </div>
         <div className="font-medium">
-          Total Amount: {formatCurrency(liabilities.reduce((sum, liability) => sum + liability.amount, 0))}
+          Total Amount: {formatCurrency(liabilities.reduce((sum, liability) => sum + (liability.amount_due || liability.amount || 0), 0))}
         </div>
       </CardFooter>
     </Card>

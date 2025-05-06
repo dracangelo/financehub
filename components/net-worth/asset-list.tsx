@@ -28,6 +28,7 @@ interface Asset {
   value: number
   acquired_at?: string
   description?: string
+  asset_type?: string
 }
 
 interface AssetListProps {
@@ -76,11 +77,9 @@ export function AssetList({ assets }: AssetListProps) {
               <TableBody>
                 {assets.map((asset) => (
                   <TableRow key={asset.id}>
-                    <TableCell className="font-medium">{asset.name}</TableCell>
+                    <TableCell className="font-medium">{asset.name || asset.asset_type || 'Unnamed Asset'}</TableCell>
                     <TableCell>
-                      {asset.type.split('_').map(word => 
-                        word.charAt(0).toUpperCase() + word.slice(1)
-                      ).join(' ')}
+                      {asset.type || asset.asset_type || 'Unknown'}
                     </TableCell>
                     <TableCell className="text-right">
                       {formatCurrency(asset.value)}

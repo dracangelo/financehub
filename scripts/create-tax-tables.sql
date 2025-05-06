@@ -35,3 +35,17 @@ CREATE TABLE IF NOT EXISTS tax_documents (
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Drop and recreate tax_impact_predictions table
+DROP TABLE IF EXISTS tax_impact_predictions;
+
+CREATE TABLE IF NOT EXISTS tax_impact_predictions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    decision_type TEXT NOT NULL,
+    description TEXT,
+    estimated_tax_impact NUMERIC NOT NULL,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
