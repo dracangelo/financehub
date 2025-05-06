@@ -139,7 +139,15 @@ export function TaxTimelineList() {
       const itemToUpdate = timelineItems.find(item => item.id === id)
       if (!itemToUpdate) return
       
-      const updatedItem = { ...itemToUpdate, is_completed: isCompleted }
+      // Make sure we include all required fields according to the schema
+      const updatedItem = {
+        title: itemToUpdate.title,
+        description: itemToUpdate.description || '',
+        due_date: itemToUpdate.due_date,
+        is_recurring: itemToUpdate.is_recurring || false,
+        recurrence_pattern: itemToUpdate.recurrence_pattern || '',
+        is_completed: isCompleted
+      }
       
       // Optimistically update the UI first
       setTimelineItems(prev => 
@@ -165,13 +173,10 @@ export function TaxTimelineList() {
         throw new Error(data.error || 'Failed to update timeline item status')
       }
       
-      // If it's a mock response with success flag, keep our optimistic update
-      // Otherwise use the server response
-      if (!data.success) {
-        setTimelineItems(prev => 
-          prev.map(item => item.id === data.id ? data : item)
-        )
-      }
+      // Update with the server response data
+      setTimelineItems(prev => 
+        prev.map(item => item.id === data.id ? data : item)
+      )
     } catch (error) {
       console.error("Error updating timeline item status:", error)
       toast({

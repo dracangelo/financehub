@@ -16,7 +16,7 @@ const timelineEventSchema = z.object({
 // Handler for GET requests to fetch a specific timeline item
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
   try {
     const user = await getCurrentUser()
@@ -24,14 +24,17 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Use the id from params directly without accessing as property
-    const { id } = params
+    // Access the id parameter safely
+    const id = Array.isArray(context.params.id) ? context.params.id[0] : context.params.id
     
     if (!id) {
       return NextResponse.json({ error: "Timeline item ID is required" }, { status: 400 })
     }
 
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return NextResponse.json({ error: "Failed to initialize database connection" }, { status: 500 })
+    }
 
     // Get the specific timeline event for the user
     const { data, error } = await supabase
@@ -56,32 +59,50 @@ export async function GET(
 // Handler for PUT requests to update a specific timeline item
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: { id: string | string[] } }
 ) {
   try {
+    // Get the authenticated user
     const user = await getCurrentUser()
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
-
-    // Use the id from params directly without accessing as property
-    const { id } = params
+    
+    // Initialize Supabase client
+    const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return NextResponse.json({ error: "Failed to initialize database connection" }, { status: 500 })
+    }
+    
+    // Use the existing params pattern without accessing properties directly
+    const { id: timelineId } = context.params
+    // Convert array to string if needed
+    const id = Array.isArray(timelineId) ? timelineId[0] : timelineId
     
     if (!id) {
       return NextResponse.json({ error: "Timeline item ID is required" }, { status: 400 })
     }
-
-    const supabase = await createServerSupabaseClient()
+    
+    // Parse the request body
     const body = await request.json()
 
-    // Create an updated schema that includes is_completed
-    const updateTimelineSchema = timelineEventSchema.extend({
-      is_completed: z.boolean().default(false)
+    // Create a schema for validation
+    const updateTimelineSchema = z.object({
+      title: z.string().min(1, "Title is required"),
+      description: z.string().min(1, "Description is required"),
+      due_date: z.string().min(1, "Due date is required"),
+      is_recurring: z.boolean().default(false),
+      recurrence_pattern: z.string().optional(),
+      is_completed: z.boolean()
     })
 
+    // Log the incoming request body for debugging
+    console.log("Received timeline update request:", body)
+    
     // Validate request body
     const result = updateTimelineSchema.safeParse(body)
     if (!result.success) {
+      console.error("Validation error:", result.error.format())
       return NextResponse.json({ error: "Invalid request data", details: result.error.format() }, { status: 400 })
     }
 
@@ -89,55 +110,68 @@ export async function PUT(
     const eventType = result.data.is_recurring ? (result.data.recurrence_pattern || 'recurring') : 'one-time'
 
     try {
-      // Check if tax_timeline table exists
-      const { error: checkError } = await supabase
+      // Check if the tax_timeline table has the is_completed column
+      const { error: schemaError } = await supabase
         .from("tax_timeline")
-        .select("id")
+        .select("is_completed")
         .limit(1)
-
-      // If table doesn't exist, return a mock successful response
-      if (checkError && checkError.code === "42P01") {
-        console.log("tax_timeline table doesn't exist yet, returning mock response")
+      
+      // If there's an error with the schema, try to update without the is_completed field
+      if (schemaError && schemaError.message.includes("is_completed")) {
+        console.log("The tax_timeline table doesn't have the is_completed column, using status field instead")
+        
+        // Update using only the fields that exist in the current schema
+        const { data, error } = await supabase
+          .from("tax_timeline")
+          .update({
+            title: result.data.title,
+            description: result.data.description,
+            due_date: new Date(result.data.due_date),
+            type: eventType,
+            status: result.data.is_completed ? 'completed' : 'pending',
+            is_recurring: result.data.is_recurring,
+            recurrence_pattern: result.data.recurrence_pattern
+          })
+          .eq("id", id)
+          .eq("user_id", user.id)
+          .select()
+          .single()
+        
+        if (error) {
+          console.error("Error updating timeline event:", error)
+          throw error
+        }
+        
         return NextResponse.json({
-          id,
-          ...result.data,
-          user_id: user.id,
-          updated_at: new Date().toISOString()
+          ...data,
+          is_completed: data.status === 'completed'
         })
+      } else {
+        // Update with all fields including is_completed
+        const { data, error } = await supabase
+          .from("tax_timeline")
+          .update({
+            title: result.data.title,
+            description: result.data.description,
+            due_date: new Date(result.data.due_date),
+            type: eventType,
+            status: result.data.is_completed ? 'completed' : 'pending',
+            is_recurring: result.data.is_recurring,
+            recurrence_pattern: result.data.recurrence_pattern,
+            is_completed: result.data.is_completed,
+            updated_at: new Date()
+          })
+          .eq("id", id)
+          .eq("user_id", user.id)
+          .select()
+          .single()
+
+        if (error) throw error
+        return NextResponse.json(data)
       }
-
-      // Update the timeline event
-      const { data, error } = await supabase
-        .from("tax_timeline")
-        .update({
-          title: result.data.title,
-          description: result.data.description,
-          due_date: result.data.due_date,
-          type: eventType,
-          status: result.data.is_completed ? 'completed' : 'pending',
-          is_recurring: result.data.is_recurring,
-          recurrence_pattern: result.data.recurrence_pattern,
-          is_completed: result.data.is_completed,
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", id)
-        .eq("user_id", user.id) // Ensure user can only update their own items
-        .select()
-        .single()
-
-      if (error) throw error
-      return NextResponse.json(data)
     } catch (updateError) {
       console.error("Error updating timeline event:", updateError)
-      
-      // For any database error, return the original item with the requested changes
-      // This ensures the UI stays consistent even if the database operation fails
-      return NextResponse.json({
-        ...body,
-        id,
-        user_id: user.id,
-        updated_at: new Date().toISOString()
-      })
+      return NextResponse.json({ error: "Failed to update timeline event" }, { status: 500 })
     }
   } catch (error) {
     console.error("Error in PUT /api/tax/timeline/[id]:", error)
@@ -148,7 +182,7 @@ export async function PUT(
 // Handler for DELETE requests to remove a specific timeline item
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
   try {
     const user = await getCurrentUser()
@@ -156,14 +190,17 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Use the id from params directly without accessing as property
-    const { id } = params
+    // Access the id parameter safely
+    const id = Array.isArray(context.params.id) ? context.params.id[0] : context.params.id
     
     if (!id) {
       return NextResponse.json({ error: "Timeline item ID is required" }, { status: 400 })
     }
 
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return NextResponse.json({ error: "Failed to initialize database connection" }, { status: 500 })
+    }
 
     // Delete the timeline event
     const { error } = await supabase

@@ -2,151 +2,227 @@
 -- INTEGRATED TAX PLANNING & PREPARATION
 -- ========================================
 
+-- Tax Recommendations (for tax optimization suggestions)
+CREATE TABLE IF NOT EXISTS tax_recommendations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    priority TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    potential_savings NUMERIC DEFAULT 0,
+    action_items TEXT[] DEFAULT '{}',
+    deadline TIMESTAMPTZ,
+    is_completed BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Tax Deductions (for tracking tax deductible expenses)
+CREATE TABLE IF NOT EXISTS tax_deductions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    description TEXT,
+    amount NUMERIC NOT NULL CHECK (amount >= 0),
+    max_amount NUMERIC CHECK (max_amount >= 0),
+    category_id TEXT,
+    tax_year TEXT NOT NULL,
+    notes TEXT,
+    date_added TIMESTAMPTZ DEFAULT now(),
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Tax Timeline (for tracking tax-related events and deadlines)
+CREATE TABLE IF NOT EXISTS tax_timeline (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    due_date TIMESTAMPTZ NOT NULL,
+    type TEXT DEFAULT 'one-time',
+    status TEXT DEFAULT 'pending',
+    is_recurring BOOLEAN DEFAULT FALSE,
+    recurrence_pattern TEXT,
+    is_completed BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Add is_completed column if it doesn't exist
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_name = 'tax_timeline' AND column_name = 'is_completed') THEN
+        ALTER TABLE tax_timeline ADD COLUMN is_completed BOOLEAN DEFAULT FALSE;
+    END IF;
+END $$;
+
 -- Tax Optimization Recommendations
-create table if not exists tax_optimization_recommendations (
-    id uuid primary key default gen_random_uuid(),
-    user_id uuid not null references users(id) on delete cascade,
-    recommendation_type text not null check (recommendation_type in ('year-round', 'transactional')),
-    recommendation_text text not null,
-    is_implemented boolean default false,
-    implemented_at timestamptz,
-    created_at timestamptz default now()
+CREATE TABLE IF NOT EXISTS tax_optimization_recommendations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    recommendation_type TEXT NOT NULL CHECK (recommendation_type IN ('year-round', 'transactional')),
+    recommendation_text TEXT NOT NULL,
+    is_implemented BOOLEAN DEFAULT FALSE,
+    implemented_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Tax-Advantaged Account Recommendations (e.g., IRAs, 401(k)s)
-create table if not exists tax_advantaged_accounts (
-    id uuid primary key default gen_random_uuid(),
-    user_id uuid not null references users(id) on delete cascade,
-    account_type text not null check (account_type in ('IRA', '401k', 'HSA', 'Other')),
-    recommended_contribution numeric not null,
-    suggested_tax_impact numeric not null,
-    is_implemented boolean default false,
-    implemented_at timestamptz,
-    created_at timestamptz default now()
+-- Tax-Advantaged Account Recommendations
+CREATE TABLE IF NOT EXISTS tax_advantaged_accounts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    account_type TEXT NOT NULL CHECK (account_type IN ('IRA', '401k', 'HSA', 'Other')),
+    recommended_contribution NUMERIC NOT NULL CHECK (recommended_contribution >= 0),
+    suggested_tax_impact NUMERIC NOT NULL CHECK (suggested_tax_impact >= 0),
+    is_implemented BOOLEAN DEFAULT FALSE,
+    implemented_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Deduction Finder (Automatic Detection of Deductible Expenses)
-create table if not exists deduction_finder (
-    id uuid primary key default gen_random_uuid(),
-    user_id uuid not null references users(id) on delete cascade,
-    expense_category text not null,
-    potential_deduction numeric not null,
-    is_claimed boolean default false,
-    claimed_at timestamptz,
-    created_at timestamptz default now()
+-- Deduction Finder
+CREATE TABLE IF NOT EXISTS deduction_finder (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expense_category TEXT NOT NULL,
+    potential_deduction NUMERIC NOT NULL CHECK (potential_deduction >= 0),
+    is_claimed BOOLEAN DEFAULT FALSE,
+    claimed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Tax Document Organization System (For Tax Season Readiness)
-create table if not exists tax_documents (
-    id uuid primary key default gen_random_uuid(),
-    user_id uuid not null references users(id) on delete cascade,
-    document_name text not null,
-    document_type text not null check (document_type in ('W2', '1099', 'Receipts', 'Other')),
-    document_url text,
-    is_uploaded boolean default false,
-    uploaded_at timestamptz,
-    created_at timestamptz default now()
+-- Tax Document Organizer
+CREATE TABLE IF NOT EXISTS tax_documents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    document_type TEXT NOT NULL,
+    file_url TEXT,
+    file_name TEXT,
+    file_metadata_id UUID,
+    due_date TIMESTAMPTZ,
+    notes TEXT,
+    status TEXT DEFAULT 'received',
+    is_uploaded BOOLEAN DEFAULT TRUE,
+    uploaded_at TIMESTAMPTZ DEFAULT now(),
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Tax Impact Predictions (For Major Financial Decisions)
-create table if not exists tax_impact_predictions (
-    id uuid primary key default gen_random_uuid(),
-    user_id uuid not null references users(id) on delete cascade,
-    financial_decision text not null,
-    estimated_tax_impact numeric not null,
-    prediction_date timestamptz,
-    created_at timestamptz default now()
+-- Add or update columns in tax_documents if they don't exist or have wrong type
+DO $$ 
+BEGIN
+    -- Check if due_date column exists and has the right type
+    IF EXISTS (SELECT 1 FROM information_schema.columns 
+               WHERE table_name = 'tax_documents' AND column_name = 'due_date' 
+               AND data_type != 'timestamp with time zone') THEN
+        ALTER TABLE tax_documents ALTER COLUMN due_date TYPE TIMESTAMPTZ USING due_date::TIMESTAMPTZ;
+    END IF;
+
+    -- Make sure all required columns exist
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_name = 'tax_documents' AND column_name = 'is_uploaded') THEN
+        ALTER TABLE tax_documents ADD COLUMN is_uploaded BOOLEAN DEFAULT TRUE;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_name = 'tax_documents' AND column_name = 'status') THEN
+        ALTER TABLE tax_documents ADD COLUMN status TEXT DEFAULT 'received';
+    END IF;
+END $$;
+
+-- Tax Impact Predictions
+CREATE TABLE IF NOT EXISTS tax_impact_predictions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    financial_decision TEXT NOT NULL,
+    estimated_tax_impact NUMERIC NOT NULL CHECK (estimated_tax_impact >= 0),
+    prediction_date TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Tax Professional Integration (Seamless Handoff for Tax Filing)
-create table if not exists tax_professional_integrations (
-    id uuid primary key default gen_random_uuid(),
-    user_id uuid not null references users(id) on delete cascade,
-    professional_name text not null,
-    contact_info jsonb,
-    is_active boolean default true,
-    created_at timestamptz default now()
+-- Tax Professional Integration
+CREATE TABLE IF NOT EXISTS tax_professional_integrations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    professional_name TEXT NOT NULL,
+    contact_info JSONB,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Tax Filing Tracker (To Track Filing Progress)
-create table if not exists tax_filing_tracker (
-    id uuid primary key default gen_random_uuid(),
-    user_id uuid not null references users(id) on delete cascade,
-    filing_year int not null,
-    filing_status text not null check (filing_status in ('in_progress', 'submitted', 'approved', 'rejected')),
-    filed_at timestamptz,
-    created_at timestamptz default now()
+-- Tax Filing Tracker
+CREATE TABLE IF NOT EXISTS tax_filing_tracker (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    filing_year INT NOT NULL CHECK (filing_year > 1990),
+    filing_status TEXT NOT NULL CHECK (filing_status IN ('in_progress', 'submitted', 'approved', 'rejected')),
+    filed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Tax Report Generation (For Simplified Filing)
-create table if not exists tax_reports (
-    id uuid primary key default gen_random_uuid(),
-    user_id uuid not null references users(id) on delete cascade,
-    report_year int not null,
-    report_url text not null,
-    is_generated boolean default false,
-    generated_at timestamptz,
-    created_at timestamptz default now()
+-- Tax Report Generation
+CREATE TABLE IF NOT EXISTS tax_reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    report_year INT NOT NULL CHECK (report_year > 1990),
+    report_url TEXT NOT NULL,
+    is_generated BOOLEAN DEFAULT FALSE,
+    generated_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- ========================================
--- INTEGRATION WITH DEBT AND INCOME
+-- TAX IMPACT ON DEBT AND INCOME
 -- ========================================
 
--- Adding tax impact on debt payments (Mortgage, Interest)
-create table if not exists debt_tax_impact (
-    id uuid primary key default gen_random_uuid(),
-    user_id uuid not null references users(id) on delete cascade,
-    debt_type text not null check (debt_type in ('mortgage', 'credit_card', 'student_loan', 'auto_loan', 'other')),
-    interest_paid numeric not null,
-    potential_tax_deduction numeric not null, -- Based on the debt type and interest rates
-    created_at timestamptz default now()
+-- Debt Tax Impact
+CREATE TABLE IF NOT EXISTS debt_tax_impact (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    debt_type TEXT NOT NULL CHECK (debt_type IN ('mortgage', 'credit_card', 'student_loan', 'auto_loan', 'other')),
+    interest_paid NUMERIC NOT NULL CHECK (interest_paid >= 0),
+    potential_tax_deduction NUMERIC NOT NULL CHECK (potential_tax_deduction >= 0),
+    created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Track user's income sources for tax calculations (employment, freelance, etc.)
-create table if not exists income_tax_impact (
-    id uuid primary key default gen_random_uuid(),
-    user_id uuid not null references users(id) on delete cascade,
-    income_type text not null check (income_type in ('salary', 'freelance', 'investment', 'side_hustle', 'pension', 'other')),
-    income_amount numeric not null,
-    estimated_tax_impact numeric not null, -- Tax impact based on income type and applicable tax brackets
-    created_at timestamptz default now()
+-- Income Tax Impact
+CREATE TABLE IF NOT EXISTS income_tax_impact (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    income_type TEXT NOT NULL CHECK (income_type IN ('salary', 'freelance', 'investment', 'side_hustle', 'pension', 'other')),
+    income_amount NUMERIC NOT NULL CHECK (income_amount >= 0),
+    estimated_tax_impact NUMERIC NOT NULL CHECK (estimated_tax_impact >= 0),
+    created_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- ========================================
--- INTEGRATED VIEWS FOR TAX CALCULATION AND PLANNING
+-- VIEWS FOR TAX CALCULATIONS
 -- ========================================
 
--- View to summarize total debt-related tax impact
-create or replace view debt_tax_impact_summary as
-select 
-    d.user_id,
-    sum(d.interest_paid) as total_interest_paid,
-    sum(d.potential_tax_deduction) as total_tax_deduction
-from debt_tax_impact d
-group by d.user_id;
+CREATE OR REPLACE VIEW debt_tax_impact_summary AS
+SELECT 
+    user_id,
+    SUM(interest_paid) AS total_interest_paid,
+    SUM(potential_tax_deduction) AS total_tax_deduction
+FROM debt_tax_impact
+GROUP BY user_id;
 
--- View to summarize total income-related tax impact
-create or replace view income_tax_impact_summary as
-select 
-    i.user_id,
-    sum(i.income_amount) as total_income,
-    sum(i.estimated_tax_impact) as total_tax_impact
-from income_tax_impact i
-group by i.user_id;
+CREATE OR REPLACE VIEW income_tax_impact_summary AS
+SELECT 
+    user_id,
+    SUM(income_amount) AS total_income,
+    SUM(estimated_tax_impact) AS total_tax_impact
+FROM income_tax_impact
+GROUP BY user_id;
 
--- View to integrate tax savings opportunities from both debt and income
-create or replace view total_tax_optimization_summary as
-select 
+CREATE OR REPLACE VIEW total_tax_optimization_summary AS
+SELECT 
     t.user_id,
-    coalesce(sum(d.potential_tax_deduction), 0) as debt_tax_savings,
-    coalesce(sum(i.estimated_tax_impact), 0) as income_tax_savings,
-    coalesce(sum(d.potential_tax_deduction), 0) + coalesce(sum(i.estimated_tax_impact), 0) as total_tax_savings
-from tax_optimization_recommendations t
-left join debt_tax_impact d on t.user_id = d.user_id
-left join income_tax_impact i on t.user_id = i.user_id
-group by t.user_id;
-
--- ========================================
--- END OF INTEGRATION WITH DEBT AND INCOME
--- ========================================
+    COALESCE(SUM(d.potential_tax_deduction), 0) AS debt_tax_savings,
+    COALESCE(SUM(i.estimated_tax_impact), 0) AS income_tax_savings,
+    COALESCE(SUM(d.potential_tax_deduction), 0) + COALESCE(SUM(i.estimated_tax_impact), 0) AS total_tax_savings
+FROM tax_optimization_recommendations t
+LEFT JOIN debt_tax_impact d ON t.user_id = d.user_id
+LEFT JOIN income_tax_impact i ON t.user_id = i.user_id
+GROUP BY t.user_id;

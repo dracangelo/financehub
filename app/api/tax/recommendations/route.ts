@@ -24,27 +24,35 @@ export async function GET(request: Request) {
 
     const supabase = await createServerSupabaseClient()
 
-    // Get all recommendations for the user
-    const { data, error } = await supabase
-      .from("tax_recommendations")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("priority", { ascending: false })
+    try {
+      // Get all recommendations for the user
+      const { data, error } = await supabase
+        .from("tax_recommendations")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("priority", { ascending: false })
 
-    // If there's an error or no data, return an empty array
-    if (error || !data || data.length === 0) {
-      console.error("Error fetching tax recommendations or table doesn't exist:", error)
-      
-      // Return empty array instead of dummy data
+      // If there's an error, check if it's because the table doesn't exist
+      if (error) {
+        console.error("Error fetching tax recommendations or table doesn't exist:", error)
+        // If the table doesn't exist, return an empty array instead of an error
+        if (error.code === '42P01') {
+          return NextResponse.json([])
+        }
+        return NextResponse.json({ error: "Failed to fetch tax recommendations" }, { status: 500 })
+      }
+
+      // Return data or empty array if data is null
+      return NextResponse.json(data || [])
+    } catch (err) {
+      console.error("Error with tax_recommendations table:", err)
+      // Return empty array for any error
       return NextResponse.json([])
     }
-
-    return NextResponse.json(data)
   } catch (error) {
     console.error("Error in GET /api/tax/recommendations:", error)
-    
-    // Return an error message instead of dummy data
-    return NextResponse.json({ error: "Unable to retrieve tax recommendations" }, { status: 500 })
+    // Return empty array instead of error message
+    return NextResponse.json([])
   }
 }
 

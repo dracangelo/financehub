@@ -32,57 +32,18 @@ export async function GET(request: Request) {
 
       if (error) {
         console.error("Error fetching timeline events:", error)
+        // If the table doesn't exist, return an empty array instead of an error
+        if (error.code === '42P01') {
+          return NextResponse.json([])
+        }
         return NextResponse.json({ error: "Failed to fetch timeline events" }, { status: 500 })
       }
 
       return NextResponse.json(data || [])
     } catch (err) {
       console.log("Tax timeline table might not exist yet:", err)
-      
-      // Return dummy data if table doesn't exist
-      const dummyTimeline = [
-        {
-          id: "1",
-          title: "File Q1 Estimated Taxes",
-          description: "First quarter estimated tax payments due",
-          due_date: new Date(new Date().getFullYear(), 3, 15).toISOString(),
-          type: "deadline",
-          status: new Date() > new Date(new Date().getFullYear(), 3, 15) ? "completed" : "pending"
-        },
-        {
-          id: "2",
-          title: "File Q2 Estimated Taxes",
-          description: "Second quarter estimated tax payments due",
-          due_date: new Date(new Date().getFullYear(), 5, 15).toISOString(),
-          type: "deadline",
-          status: new Date() > new Date(new Date().getFullYear(), 5, 15) ? "completed" : "pending"
-        },
-        {
-          id: "3",
-          title: "File Q3 Estimated Taxes",
-          description: "Third quarter estimated tax payments due",
-          due_date: new Date(new Date().getFullYear(), 8, 15).toISOString(),
-          type: "deadline",
-          status: new Date() > new Date(new Date().getFullYear(), 8, 15) ? "completed" : "pending"
-        },
-        {
-          id: "4",
-          title: "File Q4 Estimated Taxes",
-          description: "Fourth quarter estimated tax payments due",
-          due_date: new Date(new Date().getFullYear(), 0, 15).toISOString(),
-          type: "deadline",
-          status: "pending"
-        },
-        {
-          id: "5",
-          title: "Tax Return Deadline",
-          description: "Federal income tax returns due",
-          due_date: new Date(new Date().getFullYear(), 3, 15).toISOString(),
-          type: "deadline",
-          status: new Date() > new Date(new Date().getFullYear(), 3, 15) ? "completed" : "pending"
-        }
-      ]
-      return NextResponse.json(dummyTimeline)
+      // Return empty array instead of dummy data
+      return NextResponse.json([])
     }
   } catch (error) {
     console.error("Error in GET /api/tax/timeline:", error)

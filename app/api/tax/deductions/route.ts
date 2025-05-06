@@ -25,19 +25,29 @@ export async function GET(request: Request) {
 
     const supabase = await createServerSupabaseClient()
 
-    // Get all deductions for the user
-    const { data, error } = await supabase
-      .from("tax_deductions")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
+    try {
+      // Get all deductions for the user
+      const { data, error } = await supabase
+        .from("tax_deductions")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
 
-    if (error) {
-      console.error("Error fetching tax deductions:", error)
-      return NextResponse.json({ error: "Failed to fetch tax deductions" }, { status: 500 })
+      if (error) {
+        console.error("Error fetching tax deductions:", error)
+        // If the table doesn't exist, return an empty array instead of an error
+        if (error.code === '42P01') {
+          return NextResponse.json([])
+        }
+        return NextResponse.json({ error: "Failed to fetch tax deductions" }, { status: 500 })
+      }
+
+      return NextResponse.json(data || [])
+    } catch (err) {
+      console.error("Error fetching tax deductions:", err)
+      // Return empty array for any error
+      return NextResponse.json([])
     }
-
-    return NextResponse.json(data)
   } catch (error) {
     console.error("Error in GET /api/tax/deductions:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
