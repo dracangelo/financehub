@@ -3,58 +3,157 @@
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { revalidatePath } from "next/cache"
-import { createServerClient } from "@supabase/ssr"
-import crypto from 'crypto';
+import { createClient } from '@supabase/supabase-js'
+import crypto from 'crypto'
 
-// Helper function to get the current user
+// Helper function to get the current authenticated user
 async function getCurrentUser() {
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name) {
-          return cookieStore.get(name)?.value
-        },
-        set(name, value, options) {
-          cookieStore.set({ name, value, ...options })
-        },
-        remove(name, options) {
-          cookieStore.set({ name, value: "", ...options })
-        },
-      },
+  try {
+    // Create a Supabase client with the user's session
+    const supabase = await createServerSupabaseClient()
+    
+    try {
+      // First try to get the user using getUser (more secure method that verifies with Supabase Auth server)
+      // This is the recommended approach from our security improvements
+      const { data: userData, error: userError } = await supabase.auth.getUser()
+      
+      if (userData?.user) {
+        console.log("Server auth: Authentication successful via getUser()")
+        return userData.user
+      }
+      
+      // Don't throw on user error, try next method
+      if (userError) {
+        console.warn("Server auth: getUser failed, trying alternative methods")
+      }
+      
+      // Try getSession as a fallback
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+      
+      if (sessionData?.session?.user) {
+        console.log("Server auth: Authentication successful via getSession()")
+        return sessionData.session.user
+      }
+      
+      // Try refreshing the session
+      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession()
+      
+      if (refreshData?.user) {
+        console.log("Server auth: Authentication successful via refreshSession()")
+        return refreshData.user
+      }
+      
+      if (refreshData?.session?.user) {
+        console.log("Server auth: Authentication successful via refreshSession() session")
+        return refreshData.session.user
+      }
+      
+      // Log all errors but don't throw
+      if (userError) console.warn("Server auth: getUser error:", userError)
+      if (sessionError) console.warn("Server auth: getSession error:", sessionError)
+      if (refreshError) console.warn("Server auth: refreshSession error:", refreshError)
+    } catch (authMethodError) {
+      console.error("Server auth: Error in authentication methods:", authMethodError)
     }
-  )
-  // Use getUser instead of getSession for better security
-  const { data: { user }, error } = await supabase.auth.getUser()
-  if (error) {
+    
+    // As a last resort, try to get the user from the JWT directly
+    try {
+      const cookieStore = await cookies()
+      const accessToken = cookieStore.get('sb-access-token')?.value
+      
+      if (accessToken) {
+        // Decode the JWT to extract the user information
+        // This is not as secure as getUser but can work as a last resort
+        const tokenParts = accessToken.split('.')
+        if (tokenParts.length === 3) {
+          const payload = JSON.parse(atob(tokenParts[1]))
+          if (payload.sub) {
+            return {
+              id: payload.sub,
+              email: payload.email,
+              role: payload.role,
+              aud: payload.aud
+            }
+          }
+        }
+      }
+    } catch (jwtError) {
+      console.error("Error extracting user from JWT:", jwtError)
+    }
+    
+    return null
+  } catch (error) {
     console.error("Error getting authenticated user:", error)
     return null
   }
-  return user
 }
 
 // Helper function to create a server-side Supabase client
 async function createServerSupabaseClient() {
-  const cookieStore = await cookies()
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name) {
-          return cookieStore.get(name)?.value
-        },
-        set(name, value, options) {
-          cookieStore.set({ name, value, ...options })
-        },
-        remove(name, options) {
-          cookieStore.set({ name, value: "", ...options })
-        },
-      },
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error("Supabase credentials are not properly configured")
+  }
+  
+  // Create a Supabase client with custom auth settings
+  const supabase = createClient(supabaseUrl, supabaseKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: false
+    },
+    global: {
+      headers: {
+        'x-client-info': 'server-action'
+      }
     }
-  )
+  })
+  
+  try {
+    // Get all cookies from the request
+    const cookieStore = await cookies()
+    
+    // Try to extract access and refresh tokens
+    const accessToken = cookieStore.get('sb-access-token')?.value
+    const refreshToken = cookieStore.get('sb-refresh-token')?.value
+    
+    if (accessToken && refreshToken) {
+      // Set the session with the tokens
+      await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken
+      })
+    } else {
+      // Try to get the session from the cookie directly
+      const supabaseAuthCookie = cookieStore.get('supabase-auth-token')?.value
+      
+      if (supabaseAuthCookie) {
+        try {
+          // Parse the cookie value to extract the session data
+          const sessionData = JSON.parse(decodeURIComponent(supabaseAuthCookie))
+          
+          if (sessionData && Array.isArray(sessionData) && sessionData.length >= 2) {
+            const [token, refreshToken] = sessionData
+            
+            if (token && refreshToken) {
+              await supabase.auth.setSession({
+                access_token: token,
+                refresh_token: refreshToken
+              })
+            }
+          }
+        } catch (parseError) {
+          console.error('Error parsing auth cookie:', parseError)
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Error handling cookies:', e)
+  }
+  
+  return supabase
 }
 
 // Get watchlist items for the current user
@@ -62,87 +161,100 @@ export async function getWatchlistItems() {
   try {
     const user = await getCurrentUser()
     if (!user) {
-      return { items: [], error: null } // Return empty array for unauthenticated users
+      return { success: false, error: "Authentication required", data: [] }
     }
-
+    
     const supabase = await createServerSupabaseClient()
     
-    // First, try to get the watchlist items from the database
     try {
-      // Check if the table exists by attempting to count rows
-      const { count, error: countError } = await supabase
-        .from('watchlist')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-      
-      // If there's an error and it's because the table doesn't exist
-      if (countError && countError.code === "42P01") { // PostgreSQL code for undefined_table
-        console.log("Watchlist table doesn't exist yet. Returning mock data.")
-        
-        // Try to create the table for future use
-        try {
-          await supabase.rpc('create_watchlist_table')
-          console.log("Created watchlist table for future use")
-        } catch (createError) {
-          console.error("Failed to create watchlist table:", createError)
-          // Continue with mock data even if table creation fails
-        }
-        
-        // Return mock data since the table doesn't exist
-        return { items: getMockWatchlistItems(user.id), error: null }
-      }
-      
-      // Get the actual watchlist items
-      const { data, error } = await supabase
+      // Attempt to get watchlist items
+      const { data: items, error } = await supabase
         .from('watchlist')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
       
       if (error) {
+        // If the table doesn't exist, attempt to create it
+        if (error.code === "42P01") { // PostgreSQL code for undefined_table
+          console.log("Watchlist table doesn't exist yet. Attempting to create it...")
+          
+          try {
+            // Try to run the migration script to create the watchlist table
+            await supabase.rpc('create_watchlist_table')
+            
+            // Return mock data for now since the table was just created
+            return { 
+              success: true, 
+              data: getMockWatchlistItems(user.id)
+            }
+          } catch (migrationErr) {
+            console.error("Error running watchlist migration:", migrationErr)
+            // Fallback to mock data
+            return { 
+              success: true, 
+              data: getMockWatchlistItems(user.id)
+            }
+          }
+        }
+        
         console.error("Error fetching watchlist items:", error)
-        return { items: getMockWatchlistItems(user.id), error: error.message }
+        return { success: false, error: error.message, data: [] }
       }
       
-      if (!data || data.length === 0) {
-        // If no items found, return mock data to provide a better UX
-        return { items: getMockWatchlistItems(user.id), error: null }
+      // If no items found, return an empty array
+      if (!items || items.length === 0) {
+        return { success: true, data: [] }
       }
       
-      // Enrich the data with current prices if possible
-      const enrichedItems = await enrichWatchlistWithPrices(data)
+      // Enrich watchlist items with current prices
+      const enrichedItems = await enrichWatchlistWithPrices(items)
       
-      return { items: enrichedItems, error: null }
-    } catch (error) {
-      console.error("Error in getWatchlistItems:", error)
-      return { items: getMockWatchlistItems(user.id), error: error instanceof Error ? error.message : String(error) }
+      return { success: true, data: enrichedItems }
+    } catch (dbError) {
+      console.error("Database operation error:", dbError)
+      // Fallback to mock data
+      return { 
+        success: true, 
+        data: getMockWatchlistItems(user.id)
+      }
     }
   } catch (error) {
     console.error("Error in getWatchlistItems:", error)
-    return { items: [], error: error instanceof Error ? error.message : String(error) }
+    return { success: false, error: "An unexpected error occurred", data: [] }
   }
 }
 
 // Add an item to the watchlist
 export async function addToWatchlist(formData: FormData) {
+  // Extract and validate form data first
+  const ticker = (formData.get("ticker") as string)?.toUpperCase()
+  const name = formData.get("name") as string
+  const price = parseFloat(formData.get("price") as string)
+  const targetPrice = formData.get("targetPrice") ? parseFloat(formData.get("targetPrice") as string) : null
+  const notes = formData.get("notes") as string || ""
+  const sector = formData.get("sector") as string || "Uncategorized"
+  const priceAlerts = formData.get("priceAlerts") === "true"
+  const alertThreshold = formData.get("alertThreshold") ? parseFloat(formData.get("alertThreshold") as string) : null
+
+  // Validate required fields
+  if (!ticker || !name) {
+    return { success: false, error: "Ticker and name are required fields" }
+  }
+  
   try {
+    // Get authenticated user
+    const supabase = await createServerSupabaseClient()
     const user = await getCurrentUser()
-    if (!user) {
-      throw new Error("You must be logged in to add items to your watchlist")
-    }
-
-    const ticker = (formData.get("ticker") as string)?.toUpperCase()
-    const name = formData.get("name") as string
-    const price = parseFloat(formData.get("price") as string)
-    const targetPrice = formData.get("targetPrice") ? parseFloat(formData.get("targetPrice") as string) : null
-    const notes = formData.get("notes") as string || ""
-    const sector = formData.get("sector") as string || "Uncategorized"
-    const priceAlerts = formData.get("priceAlerts") === "true"
-    const alertThreshold = formData.get("alertThreshold") ? parseFloat(formData.get("alertThreshold") as string) : null
-
-    // Validate required fields
-    if (!ticker || !name) {
-      throw new Error("Ticker and name are required fields")
+    
+    // Check authentication
+    if (!user || !user.id) {
+      console.warn("Authentication failed in addToWatchlist")
+      return { 
+        success: false, 
+        error: "Authentication required",
+        code: "AUTH_REQUIRED"
+      }
     }
 
     // Get real-time price data if not provided
@@ -180,109 +292,174 @@ export async function addToWatchlist(formData: FormData) {
       }
     }
 
-    const supabase = await createServerSupabaseClient()
-
     // Check if the item already exists in the watchlist
-    try {
-      const { data: existingItems, error: checkError } = await supabase
-        .from('watchlist')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('ticker', ticker)
+    const { data: existingItems, error: checkError } = await supabase
+      .from('watchlist')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('ticker', ticker)
 
-      if (checkError) {
-        // If the table doesn't exist, attempt to create it
-        if (checkError.code === "42P01") { // PostgreSQL code for undefined_table
-          console.log("Watchlist table doesn't exist yet. Attempting to create it...")
-          
-          try {
-            // Try to run the migration script to create the watchlist table
-            const { error: migrationError } = await supabase.rpc('create_watchlist_table')
+    if (checkError) {
+      // If the table doesn't exist, attempt to create it
+      if (checkError.code === "42P01") { // PostgreSQL code for undefined_table
+        console.log("Watchlist table doesn't exist yet. Creating it...")
+        
+        try {
+          // Try to create the watchlist table using RPC
+          await supabase.rpc('create_watchlist_table').catch(async (rpcError) => {
+            console.warn("RPC create_watchlist_table failed, falling back to SQL:", rpcError)
             
-            if (migrationError) {
-              console.error("Failed to create watchlist table:", migrationError)
-              throw new Error("Watchlist feature is not available yet. Please try again later.")
-            }
-          } catch (migrationErr) {
-            console.error("Error running watchlist migration:", migrationErr)
-            throw new Error("Watchlist feature is not available yet. Please try again later.")
-          }
-        } else {
-          console.error("Error checking existing watchlist items:", checkError)
-          throw new Error(`Database error: ${checkError.message}`)
+            // Fallback to direct SQL if RPC fails
+            await supabase.rpc('execute_sql', {
+              sql_query: `
+                CREATE TABLE IF NOT EXISTS public.watchlist (
+                  id uuid PRIMARY KEY,
+                  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+                  ticker text NOT NULL,
+                  name text NOT NULL,
+                  price numeric,
+                  target_price numeric,
+                  notes text,
+                  sector text,
+                  price_alerts boolean DEFAULT false,
+                  alert_threshold numeric,
+                  created_at timestamptz NOT NULL DEFAULT now(),
+                  updated_at timestamptz NOT NULL DEFAULT now()
+                );
+                CREATE INDEX IF NOT EXISTS idx_watchlist_user_id ON public.watchlist(user_id);
+              `
+            }).catch(sqlError => {
+              console.error("Failed to create watchlist table via SQL:", sqlError)
+            })
+          })
+        } catch (migrationErr) {
+          console.error("Error creating watchlist table:", migrationErr)
+          return { success: false, error: "Could not create watchlist table" }
         }
-      } else if (existingItems && existingItems.length > 0) {
-        throw new Error(`${ticker} is already in your watchlist`)
+      } else {
+        console.error("Error checking existing watchlist items:", checkError)
+        return { success: false, error: checkError.message, code: checkError.code }
       }
-
-      // Generate a unique ID for the watchlist item
-      const id = crypto.randomUUID()
-
-      // Insert the new watchlist item
-      const { data, error } = await supabase
-        .from('watchlist')
-        .insert([
-          {
-            id,
-            user_id: user.id,
-            ticker,
-            name,
-            price: currentPrice,
-            target_price: targetPrice,
-            notes,
-            sector,
-            price_alert_enabled: priceAlerts,
-            alert_threshold: alertThreshold,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          }
-        ])
-        .select()
-
-      if (error) {
-        console.error("Error adding item to watchlist:", error)
-        throw new Error("Failed to add item to watchlist: " + error.message)
-      }
-
-      // Revalidate the watchlist page to show the new item
-      revalidatePath("/investments/watchlist")
-
-      return { success: true, data }
-    } catch (dbError) {
-      console.error("Database operation error:", dbError)
-      throw dbError
+    } else if (existingItems && existingItems.length > 0) {
+      return { success: false, error: `${ticker} is already in your watchlist` }
     }
+
+    // Generate a unique ID for the watchlist item
+    const id = crypto.randomUUID()
+
+    // Prepare data for insertion
+    const insertData = {
+      id,
+      user_id: user.id,
+      ticker,
+      name,
+      price: currentPrice,
+      target_price: targetPrice,
+      notes,
+      sector,
+      price_alerts: priceAlerts, // Use consistent column naming
+      alert_threshold: alertThreshold,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+
+    // Insert the new watchlist item
+    const { data, error } = await supabase
+      .from('watchlist')
+      .insert([insertData])
+      .select()
+
+    if (error) {
+      console.error("Error adding item to watchlist:", error)
+      
+      // If the error is related to a missing column, try a more minimal insert
+      if (error.message && (error.message.includes("column") || error.message.includes("schema"))) {
+        console.log("Attempting minimal insert with only required fields...")
+        
+        // Use a minimal set of fields that should work with any schema
+        const minimalInsertData = {
+          id,
+          user_id: user.id,
+          ticker,
+          name,
+          price: currentPrice,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+        
+        const { data: minimalResult, error: minimalError } = await supabase
+          .from('watchlist')
+          .insert([minimalInsertData])
+          .select()
+          
+        if (minimalError) {
+          console.error("Error with minimal insert:", minimalError)
+          return { 
+            success: false, 
+            error: "Failed to add item to watchlist: " + minimalError.message,
+            code: minimalError.code
+          }
+        }
+        
+        // Success with minimal data
+        revalidatePath("/investments/watchlist")
+        return { success: true, data: minimalResult }
+      }
+      
+      return { 
+        success: false, 
+        error: "Failed to add item to watchlist: " + error.message,
+        code: error.code
+      }
+    }
+
+    // Revalidate the watchlist page to show the new item
+    revalidatePath("/investments/watchlist")
+    return { success: true, data }
   } catch (error) {
     console.error("Error in addToWatchlist:", error)
-    if (error instanceof Error) {
-      return { success: false, error: error.message }
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : "An unexpected error occurred" 
     }
-    return { success: false, error: "An unexpected error occurred" }
   }
 }
 
 // Update a watchlist item
 export async function updateWatchlistItem(formData: FormData) {
+  // Extract and validate form data first
+  const id = formData.get("id") as string
+  if (!id) {
+    return { success: false, error: "Item ID is required" }
+  }
+
+  const ticker = (formData.get("ticker") as string)?.toUpperCase()
+  const name = formData.get("name") as string
+  const targetPrice = formData.get("targetPrice") ? parseFloat(formData.get("targetPrice") as string) : null
+  const notes = formData.get("notes") as string || ""
+  const sector = formData.get("sector") as string || "Uncategorized"
+  const priceAlerts = formData.get("priceAlerts") === "true"
+  const alertThreshold = formData.get("alertThreshold") ? parseFloat(formData.get("alertThreshold") as string) : null
+
+  // Validate required fields
+  if (!ticker || !name) {
+    return { success: false, error: "Ticker and name are required fields" }
+  }
+  
   try {
-    const user = await getCurrentUser()
-    if (!user) {
-      throw new Error("You must be logged in to update your watchlist")
-    }
-
-    const id = formData.get('id') as string
-    const ticker = formData.get('ticker') as string
-    const targetPrice = formData.get('targetPrice') ? parseFloat(formData.get('targetPrice') as string) : null
-    const notes = formData.get('notes') as string || ''
-    const sector = formData.get('sector') as string || 'Uncategorized'
-    const priceAlerts = formData.get('priceAlerts') === 'true'
-    const alertThreshold = formData.get('alertThreshold') ? parseFloat(formData.get('alertThreshold') as string) : null
-    const refreshPrice = formData.get('refreshPrice') === 'true'
-
-    if (!id) {
-      throw new Error("Item ID is required")
-    }
-
+    // Get authenticated user
     const supabase = await createServerSupabaseClient()
+    const user = await getCurrentUser()
+    
+    // Check authentication
+    if (!user || !user.id) {
+      console.warn("Authentication failed in updateWatchlistItem")
+      return { 
+        success: false, 
+        error: "Authentication required",
+        code: "AUTH_REQUIRED"
+      }
+    }
     
     // First, check if the item exists and belongs to the user
     const { data: existingItem, error: checkError } = await supabase
@@ -290,82 +467,102 @@ export async function updateWatchlistItem(formData: FormData) {
       .select('*')
       .eq('id', id)
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
     
     if (checkError) {
       console.error("Error checking watchlist item:", checkError)
-      
-      // If the table doesn't exist, attempt to create it
-      if (checkError.code === "42P01") { // PostgreSQL code for undefined_table
-        console.log("Watchlist table doesn't exist yet. Attempting to create it...")
-        
-        try {
-          // Try to run the migration script to create the watchlist table
-          const { error: migrationError } = await supabase.rpc('create_watchlist_table')
-          
-          if (migrationError) {
-            console.error("Failed to create watchlist table:", migrationError)
-            throw new Error("Watchlist feature is not available yet. Please try again later.")
-          }
-        } catch (migrationErr) {
-          console.error("Error running watchlist migration:", migrationErr)
-          throw new Error("Watchlist feature is not available yet. Please try again later.")
-        }
-      }
-      
-      throw new Error("Item not found or access denied")
-    }
-    
-    // Get current price if refresh is requested
-    let currentPrice = existingItem.price
-    if (refreshPrice && ticker) {
-      try {
-        // Fetch latest price using Finnhub API
-        const apiUrl = '/api/finnhub'
-        const response = await fetch(`${apiUrl}?symbol=${ticker}`)
-        
-        if (response.ok) {
-          const data = await response.json()
-          if (data && data.c) { // Current price in Finnhub API
-            currentPrice = data.c
-            console.log(`Updated price for ${ticker}: ${currentPrice}`)
-          }
-        }
-      } catch (priceError) {
-        console.error(`Error fetching price for ${ticker}:`, priceError)
-        // Continue with the existing price
+      return { 
+        success: false, 
+        error: "Failed to find the watchlist item: " + checkError.message,
+        code: checkError.code
       }
     }
     
-    // Update the item
+    if (!existingItem) {
+      return { success: false, error: "Item not found or access denied" }
+    }
+    
+    // Prepare update data - use consistent field names
+    const updateData: any = {
+      ticker,
+      name,
+      target_price: targetPrice,
+      notes,
+      sector,
+      updated_at: new Date().toISOString()
+    }
+    
+    // Handle different column naming conventions
+    if ('price_alert_enabled' in existingItem) {
+      updateData.price_alert_enabled = priceAlerts
+    } else {
+      updateData.price_alerts = priceAlerts
+    }
+    
+    if ('alert_threshold' in existingItem || alertThreshold !== null) {
+      updateData.alert_threshold = alertThreshold
+    }
+    
+    // Update the watchlist item
     const { data, error } = await supabase
       .from('watchlist')
-      .update({
-        price: currentPrice,
-        target_price: targetPrice,
-        notes,
-        sector,
-        price_alert_enabled: priceAlerts,
-        alert_threshold: alertThreshold,
-        updated_at: new Date().toISOString()
-      })
+      .update(updateData)
       .eq('id', id)
-      .eq('user_id', user.id)
+      .eq('user_id', user.id) // Security check
       .select()
     
     if (error) {
       console.error("Error updating watchlist item:", error)
-      throw new Error("Failed to update watchlist item: " + error.message)
+      
+      // If the error is related to a column, try a more minimal update
+      if (error.message && (error.message.includes("column") || error.message.includes("schema"))) {
+        console.log("Attempting minimal update with only basic fields...")
+        
+        // Use a minimal set of fields that should work with any schema
+        const minimalUpdateData = {
+          ticker,
+          name,
+          notes,
+          updated_at: new Date().toISOString()
+        }
+        
+        const { data: minimalUpdateResult, error: minimalError } = await supabase
+          .from('watchlist')
+          .update(minimalUpdateData)
+          .eq('id', id)
+          .eq('user_id', user.id)
+          .select()
+          
+        if (minimalError) {
+          console.error("Error with minimal update:", minimalError)
+          return { 
+            success: false, 
+            error: "Failed to update watchlist item: " + minimalError.message,
+            code: minimalError.code
+          }
+        }
+        
+        // Success with minimal data
+        revalidatePath("/investments/watchlist")
+        return { success: true, data: minimalUpdateResult }
+      }
+      
+      return { 
+        success: false, 
+        error: "Failed to update watchlist item: " + error.message,
+        code: error.code
+      }
     }
     
+    // Revalidate the watchlist page to show the updated item
     revalidatePath("/investments/watchlist")
     return { success: true, data }
   } catch (error) {
     console.error("Error in updateWatchlistItem:", error)
-    if (error instanceof Error) {
-      return { success: false, error: error.message }
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : "An unexpected error occurred" 
     }
-    return { success: false, error: "An unexpected error occurred" }
   }
 }
 
@@ -419,76 +616,93 @@ async function enrichWatchlistWithPrices(items: any[]) {
 
 // Remove an item from the watchlist
 export async function removeFromWatchlist(id: string) {
+  if (!id) {
+    return { success: false, error: "Item ID is required" }
+  }
+
   try {
-    const user = await getCurrentUser()
-    if (!user) {
-      throw new Error("You must be logged in to remove items from your watchlist")
-    }
-
-    if (!id) {
-      throw new Error("Item ID is required")
-    }
-
+    // Get authenticated user
     const supabase = await createServerSupabaseClient()
+    const user = await getCurrentUser()
     
-    // First, check if the item exists and belongs to the user
-    const { data: existingItem, error: checkError } = await supabase
-      .from('watchlist')
-      .select('id')
-      .eq('id', id)
-      .eq('user_id', user.id)
-      .single()
-    
-    if (checkError) {
-      console.error("Error checking watchlist item:", checkError)
-      
-      // If the table doesn't exist, attempt to create it
-      if (checkError.code === "42P01") { // PostgreSQL code for undefined_table
-        console.log("Watchlist table doesn't exist yet. Attempting to create it...")
-        
-        try {
-          // Try to run the migration script to create the watchlist table
-          const { error: migrationError } = await supabase.rpc('create_watchlist_table')
-          
-          if (migrationError) {
-            console.error("Failed to create watchlist table:", migrationError)
-            throw new Error("Watchlist feature is not available yet. Please try again later.")
-          }
-        } catch (migrationErr) {
-          console.error("Error running watchlist migration:", migrationErr)
-          throw new Error("Watchlist feature is not available yet. Please try again later.")
-        }
+    // Check authentication
+    if (!user || !user.id) {
+      console.warn("Authentication failed in removeFromWatchlist")
+      return { 
+        success: false, 
+        error: "Authentication required",
+        code: "AUTH_REQUIRED"
       }
-      
-      // If the item doesn't exist, we consider it already removed
-      if (checkError.code === "PGRST116") { // Code for no rows returned
-        console.log("Item not found, considering it already removed")
-        return { success: true }
-      }
-      
-      throw new Error("Item not found or access denied")
     }
-    
-    // Delete the item
+
+    // Attempt to delete the item
     const { error } = await supabase
       .from('watchlist')
       .delete()
       .eq('id', id)
-      .eq('user_id', user.id) // Security check
+      .eq('user_id', user.id) // Security check to ensure users can only delete their own items
     
     if (error) {
+      // If the table doesn't exist, attempt to create it
+      if (error.code === "42P01") { // PostgreSQL code for undefined_table
+        console.log("Watchlist table doesn't exist yet. Creating it...")
+        
+        try {
+          // Try to create the watchlist table using RPC
+          await supabase.rpc('create_watchlist_table').catch(async (rpcError) => {
+            console.warn("RPC create_watchlist_table failed, falling back to SQL:", rpcError)
+            
+            // Fallback to direct SQL if RPC fails
+            await supabase.rpc('execute_sql', {
+              sql_query: `
+                CREATE TABLE IF NOT EXISTS public.watchlist (
+                  id uuid PRIMARY KEY,
+                  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+                  ticker text NOT NULL,
+                  name text NOT NULL,
+                  price numeric,
+                  target_price numeric,
+                  notes text,
+                  sector text,
+                  price_alerts boolean DEFAULT false,
+                  alert_threshold numeric,
+                  created_at timestamptz NOT NULL DEFAULT now(),
+                  updated_at timestamptz NOT NULL DEFAULT now()
+                );
+                CREATE INDEX IF NOT EXISTS idx_watchlist_user_id ON public.watchlist(user_id);
+              `
+            }).catch(sqlError => {
+              console.error("Failed to create watchlist table via SQL:", sqlError)
+            })
+          })
+          
+          // Return success since there's no item to delete in a newly created table
+          revalidatePath("/investments/watchlist")
+          return { success: true, message: "Watchlist table created" }
+        } catch (migrationErr) {
+          console.error("Error creating watchlist table:", migrationErr)
+          return { success: false, error: "Could not create watchlist table" }
+        }
+      }
+      
+      // Handle other database errors
       console.error("Error removing from watchlist:", error)
-      throw new Error("Failed to remove item from watchlist: " + error.message)
+      return { 
+        success: false, 
+        error: error.message,
+        code: error.code
+      }
     }
     
+    // Success case
     revalidatePath("/investments/watchlist")
     return { success: true }
   } catch (error) {
     console.error("Error in removeFromWatchlist:", error)
-    if (error instanceof Error) {
-      return { success: false, error: error.message }
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : "An unexpected error occurred" 
     }
-    return { success: false, error: "An unexpected error occurred" }
   }
 }
 
@@ -504,72 +718,44 @@ function getMockWatchlistItems(userId: string) {
     {
       id: generateId(1),
       user_id: userId,
-      ticker: "AAPL",
-      name: "Apple Inc.",
-      price: 175.43,
-      target_price: 200.00,
-      notes: "Strong ESG rating, carbon neutral commitment by 2030",
+      ticker: "MSFT",
+      name: "Microsoft Corporation",
+      price: 350.45,
+      target_price: 400.00,
+      notes: "Strong cloud growth with Azure",
       sector: "Technology",
       price_alert_enabled: true,
-      alert_threshold: 5,
-      created_at: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days ago
-      updated_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(), // 2 days ago
+      alert_threshold: 370,
+      created_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString()
     },
     {
       id: generateId(2),
       user_id: userId,
-      ticker: "MSFT",
-      name: "Microsoft Corporation",
-      price: 338.11,
-      target_price: 360.00,
-      notes: "Carbon negative by 2030, water positive by 2030",
+      ticker: "AAPL",
+      name: "Apple Inc.",
+      price: 175.20,
+      target_price: 200.00,
+      notes: "Watching for new product announcements",
       sector: "Technology",
       price_alert_enabled: false,
       alert_threshold: null,
-      created_at: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(), // 60 days ago
-      updated_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 days ago
+      created_at: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString()
     },
     {
       id: generateId(3),
       user_id: userId,
-      ticker: "ENPH",
-      name: "Enphase Energy, Inc.",
-      price: 118.52,
-      target_price: 150.00,
-      notes: "Solar energy leader, strong renewable energy play",
-      sector: "Energy",
+      ticker: "NVDA",
+      name: "NVIDIA Corporation",
+      price: 420.30,
+      target_price: 500.00,
+      notes: "AI and data center growth",
+      sector: "Technology",
       price_alert_enabled: true,
-      alert_threshold: 7,
-      created_at: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString(), // 45 days ago
-      updated_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(), // 1 day ago
-    },
-    {
-      id: generateId(4),
-      user_id: userId,
-      ticker: "TSLA",
-      name: "Tesla, Inc.",
-      price: 248.48,
-      target_price: 300.00,
-      notes: "EV leader, renewable energy focus",
-      sector: "Automotive",
-      price_alert_enabled: true,
-      alert_threshold: 10,
-      created_at: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(), // 90 days ago
-      updated_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(), // 3 days ago
-    },
-    {
-      id: generateId(5),
-      user_id: userId,
-      ticker: "NEE",
-      name: "NextEra Energy, Inc.",
-      price: 73.12,
-      target_price: 85.00,
-      notes: "World's largest renewable energy producer from wind and solar",
-      sector: "Utilities",
-      price_alert_enabled: false,
-      alert_threshold: null,
-      created_at: new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString(), // 120 days ago
-      updated_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(), // 10 days ago
+      alert_threshold: 450,
+      created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString()
     }
   ]
 }

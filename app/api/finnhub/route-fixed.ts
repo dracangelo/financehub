@@ -49,51 +49,36 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Symbol parameter is required' }, { status: 400 })
     }
     
-    // Generate a consistent mock price based on the symbol to make it look realistic
-    const symbolHash = symbol.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
-    const mockPrice = 100 + (symbolHash % 900) / 10
-    const mockChange = (symbolHash % 20 - 10) / 10
-    
-    // Create custom mock data for this symbol
-    const customMockData = {
-      c: parseFloat(mockPrice.toFixed(2)),                // Current price
-      h: parseFloat((mockPrice * 1.02).toFixed(2)),      // High price of the day
-      l: parseFloat((mockPrice * 0.98).toFixed(2)),      // Low price of the day
-      o: parseFloat((mockPrice * 0.99).toFixed(2)),      // Open price of the day
-      pc: parseFloat((mockPrice - mockChange).toFixed(2)), // Previous close price
-      d: parseFloat(mockChange.toFixed(2)),              // Change
-      dp: parseFloat(((mockChange / mockPrice) * 100).toFixed(2)) // Percent change
-    }
-    
-    // Check if we should use real API or mock data
-    const useRealApi = process.env.USE_REAL_FINNHUB_API === 'true'
     const apiKey = process.env.FINNHUB_API_KEY
     
-    // If we're not using the real API or don't have an API key, return mock data
-    if (!useRealApi || !apiKey) {
-      console.log(`Using mock data for ${symbol}`)
-      return NextResponse.json(customMockData)
+    if (!apiKey) {
+      console.error('Finnhub API key not found in environment variables')
+      // Return mock data for development if API key is not available
+      return NextResponse.json(MOCK_STOCK_DATA)
     }
     
-    // Try to fetch from the real API
+    // Fetch quote data from Finnhub
     try {
       const response = await fetch(
         `${FINNHUB_API_URL}/quote?symbol=${encodeURIComponent(symbol)}&token=${apiKey}`,
         { 
-          cache: 'no-store',
-          headers: { 'Content-Type': 'application/json' }
+          cache: 'no-store', // Disable caching to ensure fresh data
+          headers: {
+            'Content-Type': 'application/json',
+          }
         }
       )
       
-      // If the API call fails, use mock data
       if (!response.ok) {
         const errorText = await response.text()
         console.error(`Finnhub API error: ${response.status} ${response.statusText}`, errorText)
-        return NextResponse.json(customMockData)
+        // Return mock data instead of throwing an error
+        return NextResponse.json(MOCK_STOCK_DATA)
       }
       
-      // If successful, return the real data
       const data = await response.json()
+      
+      // Add CORS headers
       return NextResponse.json(data, {
         headers: {
           'Access-Control-Allow-Origin': '*',
@@ -103,10 +88,12 @@ export async function GET(request: NextRequest) {
       })
     } catch (fetchError) {
       console.error('Error fetching from Finnhub API:', fetchError)
-      return NextResponse.json(customMockData)
+      // Return mock data if the API call fails
+      return NextResponse.json(MOCK_STOCK_DATA)
     }
   } catch (error) {
     console.error('Error processing stock data request:', error)
+    // Return mock data even if there's an error in processing
     return NextResponse.json(MOCK_STOCK_DATA)
   }
 }
@@ -121,60 +108,36 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Query parameter is required' }, { status: 400 })
     }
     
-    // Generate custom mock search results based on the query
-    const customMockResults = {
-      count: 3,
-      result: [
-        {
-          description: `${query.toUpperCase()} INC`,
-          displaySymbol: query.toUpperCase().substring(0, 4),
-          symbol: query.toUpperCase().substring(0, 4),
-          type: "Common Stock"
-        },
-        {
-          description: `${query.toUpperCase()} HOLDINGS`,
-          displaySymbol: `${query.toUpperCase().substring(0, 3)}H`,
-          symbol: `${query.toUpperCase().substring(0, 3)}H`,
-          type: "Common Stock"
-        },
-        {
-          description: `GLOBAL ${query.toUpperCase()} ETF`,
-          displaySymbol: `G${query.toUpperCase().substring(0, 3)}`,
-          symbol: `G${query.toUpperCase().substring(0, 3)}`,
-          type: "ETF"
-        }
-      ]
-    }
-    
-    // Check if we should use real API or mock data
-    const useRealApi = process.env.USE_REAL_FINNHUB_API === 'true'
     const apiKey = process.env.FINNHUB_API_KEY
     
-    // If we're not using the real API or don't have an API key, return mock data
-    if (!useRealApi || !apiKey) {
-      console.log(`Using mock search results for "${query}"`)
-      return NextResponse.json(customMockResults)
+    if (!apiKey) {
+      console.error('Finnhub API key not found in environment variables')
+      // Return mock data for development if API key is not available
+      return NextResponse.json(MOCK_SEARCH_RESULTS)
     }
     
-    // Try to fetch from the real API
+    // Search for symbols using Finnhub
     try {
       const response = await fetch(
         `${FINNHUB_API_URL}/search?q=${encodeURIComponent(query)}&token=${apiKey}`,
         { 
-          cache: 'no-store',
-          headers: { 'Content-Type': 'application/json' }
+          cache: 'no-store', // Disable caching to ensure fresh data
+          headers: {
+            'Content-Type': 'application/json',
+          }
         }
       )
       
-      // If the API call fails, use mock data
       if (!response.ok) {
         const errorText = await response.text()
         console.error(`Finnhub API error: ${response.status} ${response.statusText}`, errorText)
-        return NextResponse.json(customMockResults)
+        // Return mock data instead of throwing an error
+        return NextResponse.json(MOCK_SEARCH_RESULTS)
       }
       
-      // If successful, return the real data
       const data = await response.json()
+      
+      // Add CORS headers
       return NextResponse.json(data, {
         headers: {
           'Access-Control-Allow-Origin': '*',
@@ -184,10 +147,12 @@ export async function POST(request: NextRequest) {
       })
     } catch (fetchError) {
       console.error('Error fetching from Finnhub API:', fetchError)
-      return NextResponse.json(customMockResults)
+      // Return mock data if the API call fails
+      return NextResponse.json(MOCK_SEARCH_RESULTS)
     }
   } catch (error) {
     console.error('Error processing stock search request:', error)
+    // Return mock data even if there's an error in processing
     return NextResponse.json(MOCK_SEARCH_RESULTS)
   }
 }

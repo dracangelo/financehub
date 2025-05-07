@@ -37,6 +37,10 @@ export type Report = {
 async function ensureReportsTableExists() {
   const supabase = await createServerSupabaseClient()
   
+  if (!supabase) {
+    throw new Error("Failed to initialize Supabase client")
+  }
+  
   try {
     // Check if reports table exists
     const { error: tableCheckError } = await supabase
@@ -91,6 +95,10 @@ For more information, see README-REPORTS.md
 export async function getReports() {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      throw new Error("Failed to initialize Supabase client")
+    }
+    
     const user = await getAuthenticatedUser()
 
     if (!user) {
@@ -128,6 +136,10 @@ export async function getReports() {
 export async function getReportById(id: string) {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      throw new Error("Failed to initialize Supabase client")
+    }
+    
     const user = await getAuthenticatedUser()
 
     if (!user) {
@@ -165,6 +177,10 @@ export async function getReportById(id: string) {
 export async function generateReport(reportRequest: ReportRequest) {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      throw new Error("Failed to initialize Supabase client")
+    }
+    
     const user = await getAuthenticatedUser()
 
     if (!user) {
@@ -245,6 +261,9 @@ export async function generateReport(reportRequest: ReportRequest) {
 async function processReport(reportId: string) {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      throw new Error("Failed to initialize Supabase client")
+    }
     
     // Check if we're using a temporary in-memory table
     if (global._tempReportsTable) {
@@ -330,9 +349,14 @@ async function processReport(reportId: string) {
 async function generateReportFile(report: Report): Promise<string> {
   const supabase = await createServerSupabaseClient()
   
+  if (!supabase) {
+    throw new Error("Failed to initialize Supabase client")
+  }
+  
   try {
     // Fetch data based on report type and time range
     let data: any[] = []
+    const timeFilter = getTimeRangeFilter(report.time_range)
     
     switch (report.type) {
       case 'overview':
@@ -409,9 +433,48 @@ async function generateReportFile(report: Report): Promise<string> {
     // Create a unique filename
     const filename = `${report.type}_${report.format}_${uuidv4()}.${getFileExtension(report.format)}`
     
-    // In a real application, we would generate the actual file here and upload it to storage
-    // For now, we'll return a placeholder URL - the actual file generation happens on the client side
-    return `https://storage.example.com/reports/${filename}?records=${data.length}`
+    // Prepare file path for storage
+    const filePath = `reports/${report.user_id}/${filename}`
+    
+    // If we have real data, we would generate the file here and upload to storage
+    // For demonstration purposes, we'll create a metadata file with report info
+    const metadata = {
+      report_id: report.id,
+      report_type: report.type,
+      report_format: report.format,
+      time_range: report.time_range,
+      generated_at: new Date().toISOString(),
+      record_count: data.length,
+      user_id: report.user_id
+    }
+    
+    // Convert metadata to string
+    const metadataStr = JSON.stringify(metadata, null, 2)
+    
+    // Upload metadata file to storage (in a real app, this would be the actual report file)
+    const { error: uploadError } = await supabase.storage
+      .from('reports')
+      .upload(filePath, metadataStr, {
+        contentType: 'application/json',
+        cacheControl: '3600'
+      })
+    
+    if (uploadError) {
+      console.error('Error uploading report metadata:', uploadError)
+      throw new Error('Failed to upload report file')
+    }
+    
+    // Get public URL for the file
+    const { data: urlData } = await supabase.storage
+      .from('reports')
+      .getPublicUrl(filePath)
+    
+    if (!urlData || !urlData.publicUrl) {
+      // If we can't get a public URL, use a placeholder
+      return `https://storage.example.com/reports/${filename}?records=${data.length}`
+    }
+    
+    return urlData.publicUrl
   } catch (error) {
     console.error("Error generating report file:", error)
     throw new Error("Failed to generate report file")
@@ -422,6 +485,10 @@ async function generateReportFile(report: Report): Promise<string> {
 export async function deleteReport(id: string) {
   try {
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      throw new Error("Failed to initialize Supabase client")
+    }
+    
     const user = await getAuthenticatedUser()
 
     if (!user) {
@@ -471,7 +538,7 @@ function formatReportType(type: ReportType): string {
     case 'investments':
       return 'Investment Performance'
     default:
-      return 'Financial'
+      return String(type).charAt(0).toUpperCase() + String(type).slice(1).replace(/-/g, ' ')
   }
 }
 
@@ -484,8 +551,38 @@ function getFileExtension(format: ReportFormat): string {
     case 'excel':
       return 'xlsx'
     default:
-      return 'pdf'
+      return 'txt'
   }
+}
+
+function getTimeRangeFilter(timeRange: TimeRange): { start: Date, end: Date } {
+  const end = new Date()
+  let start = new Date()
+  
+  switch (timeRange) {
+    case '7d':
+      start.setDate(end.getDate() - 7)
+      break
+    case '30d':
+      start.setDate(end.getDate() - 30)
+      break
+    case '90d':
+      start.setDate(end.getDate() - 90)
+      break
+    case '1y':
+      start.setFullYear(end.getFullYear() - 1)
+      break
+    case 'ytd':
+      start = new Date(end.getFullYear(), 0, 1) // January 1st of current year
+      break
+    case 'all':
+      start = new Date(2000, 0, 1) // Far in the past
+      break
+    default:
+      start.setDate(end.getDate() - 30) // Default to 30 days
+  }
+  
+  return { start, end }
 }
 
 // Add TypeScript declaration for global variable
