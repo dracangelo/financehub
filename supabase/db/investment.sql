@@ -192,3 +192,54 @@ end;
 $$;
 
 comment on function sync_asset_from_finnhub is 'Triggers a sync of asset data from Finnhub for a given symbol.';
+
+-- ===============================================
+-- Add missing columns to investments table
+-- ===============================================
+-- This addresses the error: "Could not find the 'cost_basis' column of 'investments' in the schema cache"
+
+-- First, check if the investments table exists
+DO $$ 
+BEGIN
+  IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'investments') THEN
+    -- Add cost_basis column (required by the application)
+    ALTER TABLE IF EXISTS investments 
+    ADD COLUMN IF NOT EXISTS cost_basis numeric DEFAULT 0;
+
+    -- Add other columns used in the add-investment.ts file
+    ALTER TABLE IF EXISTS investments 
+    ADD COLUMN IF NOT EXISTS ticker text;
+
+    ALTER TABLE IF EXISTS investments 
+    ADD COLUMN IF NOT EXISTS account_id uuid REFERENCES accounts(id) ON DELETE SET NULL;
+
+    ALTER TABLE IF EXISTS investments 
+    ADD COLUMN IF NOT EXISTS category_id uuid REFERENCES categories(id) ON DELETE SET NULL;
+
+    ALTER TABLE IF EXISTS investments 
+    ADD COLUMN IF NOT EXISTS currency text DEFAULT 'USD';
+
+    ALTER TABLE IF EXISTS investments 
+    ADD COLUMN IF NOT EXISTS quantity numeric;
+
+    ALTER TABLE IF EXISTS investments 
+    ADD COLUMN IF NOT EXISTS initial_price numeric;
+
+    ALTER TABLE IF EXISTS investments 
+    ADD COLUMN IF NOT EXISTS current_price numeric;
+
+    -- Add updated_at trigger if it doesn't exist
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_trigger 
+      WHERE tgname = 'trg_update_investments_updated'
+    ) THEN
+      CREATE TRIGGER trg_update_investments_updated
+      BEFORE UPDATE ON investments
+      FOR EACH ROW
+      EXECUTE PROCEDURE update_updated_at_column();
+    END IF;
+
+    -- Comment on the table
+    COMMENT ON TABLE investments IS 'Stores user investment data with enhanced fields for tracking performance';
+  END IF;
+END $$;
