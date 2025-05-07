@@ -89,29 +89,6 @@ export function AddInvestmentForm({ onInvestmentAdded, className, investment, is
     if (open) {
       const fetchAssetClasses = async () => {
         try {
-          console.log("Fetching asset classes...");
-          const classes = await getAssetClasses();
-          console.log("Received asset classes:", classes);
-          
-          // Ensure we have valid asset classes
-          if (classes && Array.isArray(classes) && classes.length > 0) {
-            // Filter out any null or undefined values
-            const validClasses = classes.filter(c => c !== null && c !== undefined);
-            console.log("Valid asset classes:", validClasses);
-            
-            if (validClasses.length > 0) {
-              setAssetClasses(validClasses);
-              
-              // Set default type if not already set
-              if (!type) {
-                setType(validClasses[0]);
-                console.log("Default type set to:", validClasses[0]);
-              }
-              return;
-            }
-          }
-          
-          // Fallback to default classes if no valid classes from server
           const defaultClasses = [
             "Stocks", 
             "Bonds", 
@@ -122,15 +99,18 @@ export function AddInvestmentForm({ onInvestmentAdded, className, investment, is
             "Crypto",
             "Real Estate"
           ];
-          console.log("Using default asset classes:", defaultClasses);
-          setAssetClasses(defaultClasses);
-          
-          if (!type) {
-            setType(defaultClasses[0]);
-            console.log("Default type set to:", defaultClasses[0]);
+          const classes = await getAssetClasses();
+          let validClasses: string[] = [];
+          if (classes && Array.isArray(classes)) {
+            validClasses = classes.filter((c): c is string => typeof c === 'string' && c.trim() !== '');
+          }
+          // Merge and deduplicate
+          const mergedClasses = Array.from(new Set([...defaultClasses, ...validClasses]));
+          setAssetClasses(mergedClasses);
+          if (!type || !mergedClasses.includes(type)) {
+            setType(mergedClasses[0]);
           }
         } catch (error) {
-          console.error("Error fetching asset classes:", error);
           const defaultClasses = [
             "Stocks", 
             "Bonds", 
@@ -141,16 +121,12 @@ export function AddInvestmentForm({ onInvestmentAdded, className, investment, is
             "Crypto",
             "Real Estate"
           ];
-          console.log("Using fallback asset classes due to error:", defaultClasses);
           setAssetClasses(defaultClasses);
-          
           if (!type) {
             setType(defaultClasses[0]);
-            console.log("Default type set to:", defaultClasses[0]);
           }
         }
       };
-      
       fetchAssetClasses();
     }
   }, [open, type]);
@@ -275,7 +251,7 @@ export function AddInvestmentForm({ onInvestmentAdded, className, investment, is
           )}
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px] max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEditMode ? "Edit Investment" : "Add New Investment"}</DialogTitle>
           <DialogDescription>

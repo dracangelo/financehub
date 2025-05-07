@@ -99,10 +99,28 @@ export function PortfolioHoldings({ portfolioId, portfolioName }: PortfolioHoldi
         }
 
         // Fetch asset classes
-        const assetClassesResult = await getAssetClasses()
-        if (assetClassesResult.data) {
-          setAssetClasses(assetClassesResult.data)
+        const defaultClasses = [
+          "Stocks", 
+          "Bonds", 
+          "Cash", 
+          "Alternative",
+          "Shares",
+          "Bills",
+          "Crypto",
+          "Real Estate"
+        ];
+        let mergedClasses: string[] = [...defaultClasses];
+        try {
+          const assetClassesResult = await getAssetClasses();
+          let validClasses: string[] = [];
+          if (assetClassesResult && assetClassesResult.data && Array.isArray(assetClassesResult.data)) {
+            validClasses = assetClassesResult.data.filter((c: any): c is string => typeof c === 'string' && c.trim() !== '');
+          }
+          mergedClasses = Array.from(new Set([...defaultClasses, ...validClasses]));
+        } catch (err) {
+          // fallback to defaultClasses
         }
+        setAssetClasses(mergedClasses);
       } catch (error) {
         console.error("Error fetching data:", error)
         toast({
@@ -352,7 +370,7 @@ export function PortfolioHoldings({ portfolioId, portfolioName }: PortfolioHoldi
               Add Holding
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
+          <DialogContent className="sm:max-w-[500px] max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Add New Holding</DialogTitle>
               <DialogDescription>
@@ -658,9 +676,151 @@ export function PortfolioHoldings({ portfolioId, portfolioName }: PortfolioHoldi
         </Table>
       )}
 
+      {/* Add Holding Dialog */}
+      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <DialogContent className="sm:max-w-[500px] max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Add Holding</DialogTitle>
+            <DialogDescription>
+              Add a new investment holding to your portfolio.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleAddSubmit}>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="symbol" className="text-right">
+                  Symbol
+                </Label>
+                <Input
+                  id="symbol"
+                  value={symbol}
+                  onChange={(e) => setSymbol(e.target.value)}
+                  className="col-span-3"
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="name" className="text-right">
+                  Name
+                </Label>
+                <Input
+                  id="name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="col-span-3"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="asset-class" className="text-right">
+                  Asset Class
+                </Label>
+                <Select
+                  value={assetClass}
+                  onValueChange={(value) => setAssetClass(value as AssetClass)}
+                >
+                  <SelectTrigger className="col-span-3">
+                    <SelectValue placeholder="Select asset class" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {assetClasses.map((ac) => (
+                      <SelectItem key={ac} value={ac}>
+                        {ac.charAt(0).toUpperCase() + ac.slice(1).replace('_', ' ')}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="units" className="text-right">
+                  Units
+                </Label>
+                <Input
+                  id="units"
+                  type="number"
+                  step="0.000001"
+                  min="0"
+                  value={units}
+                  onChange={(e) => setUnits(e.target.value)}
+                  className="col-span-3"
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="purchase-price" className="text-right">
+                  Purchase Price
+                </Label>
+                <Input
+                  id="purchase-price"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={purchasePrice}
+                  onChange={(e) => setPurchasePrice(e.target.value)}
+                  className="col-span-3"
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="current-price" className="text-right">
+                  Current Price
+                </Label>
+                <Input
+                  id="current-price"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={currentPrice}
+                  onChange={(e) => setCurrentPrice(e.target.value)}
+                  className="col-span-3"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="currency" className="text-right">
+                  Currency
+                </Label>
+                <Select
+                  value={currency}
+                  onValueChange={setCurrency}
+                >
+                  <SelectTrigger className="col-span-3">
+                    <SelectValue placeholder="Select currency" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {currencies.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="acquired-at" className="text-right">
+                  Acquired Date
+                </Label>
+                <Input
+                  id="acquired-at"
+                  type="date"
+                  value={acquiredAt}
+                  onChange={(e) => setAcquiredAt(e.target.value)}
+                  className="col-span-3"
+                  required
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="submit" disabled={isLoading}>
+                {isLoading ? "Adding..." : "Add Holding"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      </div>
+
       {/* Edit Holding Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[500px] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Holding</DialogTitle>
             <DialogDescription>

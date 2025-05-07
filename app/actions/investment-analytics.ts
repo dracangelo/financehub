@@ -11,14 +11,14 @@ async function getCurrentUser() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name) {
-          return cookies().get(name)?.value
+        get: async (name) => {
+          return (await cookies()).get(name)?.value
         },
-        set(name, value, options) {
-          cookies().set({ name, value, ...options })
+        set: async (name, value, options) => {
+          (await cookies()).set({ name, value, ...options })
         },
-        remove(name, options) {
-          cookies().set({ name, value: "", ...options })
+        remove: async (name, options) => {
+          (await cookies()).set({ name, value: "", ...options })
         },
       },
     }
@@ -34,14 +34,14 @@ async function createServerSupabaseClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name) {
-          return cookies().get(name)?.value
+        get: async (name) => {
+          return (await cookies()).get(name)?.value
         },
-        set(name, value, options) {
-          cookies().set({ name, value, ...options })
+        set: async (name, value, options) => {
+          (await cookies()).set({ name, value, ...options })
         },
-        remove(name, options) {
-          cookies().set({ name, value: "", ...options })
+        remove: async (name, options) => {
+          (await cookies()).set({ name, value: "", ...options })
         },
       },
     }
