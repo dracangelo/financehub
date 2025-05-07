@@ -7,9 +7,21 @@ import { PostgrestError } from "@supabase/supabase-js"
 import { v4 as uuidv4 } from "uuid"
 
 // Types for report data
-export type ReportType = 'overview' | 'income-expense' | 'net-worth' | 'investments'
+export type ReportType = 
+  | 'overview' 
+  | 'income-expense' 
+  | 'net-worth' 
+  | 'investments' 
+  | 'budget-analysis' 
+  | 'spending-categories' 
+  | 'income-sources' 
+  | 'expense-trends' 
+  | 'savings-goals' 
+  | 'debt-analysis' 
+  | 'investment-performance' 
+  | 'custom'
 export type ReportFormat = 'pdf' | 'csv' | 'excel'
-export type TimeRange = '7d' | '30d' | '90d' | '1y' | 'ytd' | 'all'
+export type TimeRange = '7d' | '30d' | '90d' | '1y' | 'ytd' | 'all' | 'custom'
 
 export type ReportRequest = {
   type: ReportType
@@ -17,6 +29,29 @@ export type ReportRequest = {
   timeRange: TimeRange
   title?: string
   description?: string
+  customDateRange?: {
+    startDate: string
+    endDate: string
+  }
+  comparisonType?: 'previous-period' | 'year-over-year' | 'custom' | 'none'
+  comparisonTimeRange?: TimeRange
+  comparisonCustomDateRange?: {
+    startDate: string
+    endDate: string
+  }
+  dataFilters?: {
+    categories?: string[]
+    accounts?: string[]
+    tags?: string[]
+    minAmount?: number
+    maxAmount?: number
+  }
+  groupBy?: 'day' | 'week' | 'month' | 'quarter' | 'year' | 'category' | 'account' | 'tag'
+  sortBy?: 'date' | 'amount' | 'name' | 'category'
+  sortDirection?: 'asc' | 'desc'
+  includeCharts?: boolean
+  chartTypes?: ('bar' | 'line' | 'pie' | 'area' | 'scatter')[] 
+  customFields?: Record<string, any>
 }
 
 export type Report = {
