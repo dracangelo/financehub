@@ -37,15 +37,21 @@ export default function ProfilePage() {
   useEffect(() => {
     const fetchUserAndProfile = async () => {
       try {
+        console.log('Fetching user and profile data...')
         // Get authenticated user
         const { data: { user } } = await supabase.auth.getUser()
+        console.log('Auth user retrieved:', user ? 'User found' : 'No user')
         setUser(user)
 
         if (user) {
           // Fetch profile data
+          console.log('Fetching profile data from API...')
           const response = await fetch("/api/profile")
+          console.log('Profile API response status:', response.status)
+          
           if (response.ok) {
             const profileData = await response.json()
+            console.log('Profile data retrieved:', profileData)
             setProfile(profileData)
             
             // Split full name into first and last name
@@ -53,9 +59,14 @@ export default function ProfilePage() {
               const nameParts = profileData.full_name.split(" ")
               setFirstName(nameParts[0] || "")
               setLastName(nameParts.slice(1).join(" ") || "")
+              console.log('Name parsed:', { firstName: nameParts[0], lastName: nameParts.slice(1).join(" ") })
             }
             
             setPhone(profileData.phone || "")
+          } else {
+            console.error('Failed to fetch profile data, status:', response.status)
+            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+            console.error('Error details:', errorData)
           }
         }
       } catch (error) {
@@ -78,6 +89,13 @@ export default function ProfilePage() {
     
     setSaving(true)
     try {
+      // Log the data being sent to help with debugging
+      console.log('Saving profile with data:', {
+        first_name: firstName,
+        last_name: lastName,
+        phone
+      })
+      
       const response = await fetch("/api/profile", {
         method: "PATCH",
         headers: {
@@ -90,16 +108,32 @@ export default function ProfilePage() {
         })
       })
 
+      // Log the response status to help with debugging
+      console.log('Profile update response status:', response.status)
+      
       if (response.ok) {
         const updatedProfile = await response.json()
+        console.log('Updated profile data:', updatedProfile)
+        
+        // Update the profile state with the new data
         setProfile(updatedProfile)
+        
+        // Update the form fields to reflect the changes
+        if (updatedProfile.full_name) {
+          const nameParts = updatedProfile.full_name.split(" ")
+          setFirstName(nameParts[0] || "")
+          setLastName(nameParts.slice(1).join(" ") || "")
+        }
+        setPhone(updatedProfile.phone || "")
+        
         toast({
           title: "Success",
           description: "Profile updated successfully"
         })
       } else {
-        const error = await response.json()
-        throw new Error(error.error || "Failed to update profile")
+        const errorData = await response.json()
+        console.error('Error response from API:', errorData)
+        throw new Error(errorData.error || "Failed to update profile")
       }
     } catch (error) {
       console.error("Error updating profile:", error)
@@ -134,6 +168,8 @@ export default function ProfilePage() {
       // Convert file to base64
       const base64 = await convertFileToBase64(file)
       
+      console.log('Uploading profile picture...')
+      
       // Update profile with base64 image
       const response = await fetch("/api/profile", {
         method: "PATCH",
@@ -145,16 +181,23 @@ export default function ProfilePage() {
         })
       })
 
+      console.log('Profile picture upload response status:', response.status)
+      
       if (response.ok) {
         const updatedProfile = await response.json()
+        console.log('Updated profile with new picture:', updatedProfile)
+        
+        // Update the profile state with the new data
         setProfile(updatedProfile)
+        
         toast({
           title: "Success",
           description: "Profile picture updated successfully"
         })
       } else {
-        const error = await response.json()
-        throw new Error(error.error || "Failed to update profile picture")
+        const errorData = await response.json()
+        console.error('Error response from API:', errorData)
+        throw new Error(errorData.error || "Failed to update profile picture")
       }
     } catch (error) {
       console.error("Error updating profile picture:", error)
