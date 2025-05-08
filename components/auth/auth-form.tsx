@@ -128,11 +128,8 @@ export function AuthForm({ defaultTab = "login" }: { defaultTab?: "login" | "reg
         await updateLastLoginTimestamp(data.user.id)
       }
       
-      // Redirect to dashboard
-      setTimeout(() => {
-        router.push("/dashboard")
-        router.refresh()
-      }, 1000)
+      // Use window.location for a more reliable redirect
+      window.location.href = "/dashboard"
     } catch (err) {
       console.error("Login error:", err)
       if (err instanceof Error) {
