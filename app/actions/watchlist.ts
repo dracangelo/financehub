@@ -112,41 +112,71 @@ async function createServerSupabaseClient() {
   })
   
   try {
-    // Get all cookies from the request
-    const cookieStore = await cookies()
+    // Get all cookies from the request - cookies() is synchronous in server actions
+    const cookieStore = cookies()
     
-    // Try to extract access and refresh tokens
-    const accessToken = cookieStore.get('sb-access-token')?.value
-    const refreshToken = cookieStore.get('sb-refresh-token')?.value
+    // Try all possible cookie formats
+    // 1. Try the standard sb-access-token and sb-refresh-token
+    const accessTokenCookie = cookieStore.get('sb-access-token')
+    const refreshTokenCookie = cookieStore.get('sb-refresh-token')
+    const accessToken = accessTokenCookie?.value
+    const refreshToken = refreshTokenCookie?.value
     
     if (accessToken && refreshToken) {
-      // Set the session with the tokens
-      await supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken
-      })
-    } else {
-      // Try to get the session from the cookie directly
-      const supabaseAuthCookie = cookieStore.get('supabase-auth-token')?.value
-      
-      if (supabaseAuthCookie) {
-        try {
-          // Parse the cookie value to extract the session data
-          const sessionData = JSON.parse(decodeURIComponent(supabaseAuthCookie))
+      try {
+        // Set the session with the tokens
+        await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken
+        })
+        return supabase
+      } catch (sessionError) {
+        console.warn('Error setting session with sb tokens:', sessionError)
+        // Continue to try other methods
+      }
+    }
+    
+    // 2. Try the supabase-auth-token cookie (array format)
+    const supabaseAuthCookie = cookieStore.get('supabase-auth-token')
+    if (supabaseAuthCookie?.value) {
+      try {
+        // Parse the cookie value to extract the session data
+        const sessionData = JSON.parse(decodeURIComponent(supabaseAuthCookie.value))
+        
+        if (sessionData && Array.isArray(sessionData) && sessionData.length >= 2) {
+          const [token, refreshToken] = sessionData
           
-          if (sessionData && Array.isArray(sessionData) && sessionData.length >= 2) {
-            const [token, refreshToken] = sessionData
-            
-            if (token && refreshToken) {
+          if (token && refreshToken) {
+            try {
               await supabase.auth.setSession({
                 access_token: token,
                 refresh_token: refreshToken
               })
+              return supabase
+            } catch (arraySessionError) {
+              console.warn('Error setting session with array format:', arraySessionError)
             }
           }
-        } catch (parseError) {
-          console.error('Error parsing auth cookie:', parseError)
         }
+      } catch (parseError) {
+        console.warn('Error parsing auth cookie:', parseError)
+      }
+    }
+    
+    // 3. Try the sb-auth-token cookie
+    const sbAuthTokenCookie = cookieStore.get('sb-auth-token')
+    if (sbAuthTokenCookie?.value) {
+      try {
+        const tokenData = JSON.parse(sbAuthTokenCookie.value)
+        if (tokenData?.access_token && tokenData?.refresh_token) {
+          await supabase.auth.setSession({
+            access_token: tokenData.access_token,
+            refresh_token: tokenData.refresh_token
+          })
+          return supabase
+        }
+      } catch (sbTokenError) {
+        console.warn('Error parsing sb-auth-token:', sbTokenError)
       }
     }
   } catch (e) {

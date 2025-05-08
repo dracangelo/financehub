@@ -11,16 +11,31 @@ import { createAuthClient, getCurrentUserClient } from '@/lib/services/auth-serv
 // Get the current user directly from the client - returns null if not authenticated instead of throwing
 export async function getClientUser() {
   try {
-    // Use the new centralized auth service for more robust authentication
-    const { user, error } = await getCurrentUserClient();
+    // Use the API endpoint for more reliable authentication
+    const response = await fetch('/api/auth/check');
+    const data = await response.json();
     
-    if (user) {
-      console.log("Authentication successful via auth service");
-      return user;
+    if (data.authenticated && data.user) {
+      console.log("Authentication successful via API endpoint");
+      return data.user;
     }
     
-    if (error) {
-      console.warn("Authentication error in getClientUser:", error.message);
+    // Fallback to the centralized auth service if API fails
+    if (!data.authenticated) {
+      try {
+        const { user, error } = await getCurrentUserClient();
+        
+        if (user) {
+          console.log("Authentication successful via auth service fallback");
+          return user;
+        }
+        
+        if (error) {
+          console.warn("Authentication error in getClientUser:", error.message);
+        }
+      } catch (fallbackError) {
+        console.error("Error in auth service fallback:", fallbackError);
+      }
     }
     
     return null;

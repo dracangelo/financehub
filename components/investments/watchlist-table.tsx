@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   Table,
   TableBody,
@@ -33,23 +35,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { ArrowUpDown, Bell, Edit, MoreHorizontal, Plus, Trash } from "lucide-react"
+import { ArrowUpDown, Bell, Edit, MoreHorizontal, Plus, Trash, TrendingUp, TrendingDown, AlertTriangle, Clock, ExternalLink } from "lucide-react"
 import { updateWatchlistItem, removeFromWatchlist } from "@/app/actions/watchlist"
 import { toast } from "sonner"
+import { WatchlistItem } from "@/app/(protected)/investments/watchlist/watchlist-content"
 
-type WatchlistItem = {
-  id: string
-  ticker: string
-  name: string
-  price: number
-  target_price: number | null
-  notes: string
-  sector: string
-  created_at: string
-  updated_at: string
-  price_alerts: boolean
-  alert_threshold: number | null
-}
+// Using the imported WatchlistItem type instead of redefining it here
 
 type WatchlistTableProps = {
   items: WatchlistItem[]
@@ -91,11 +82,11 @@ export function WatchlistTable({ items = [], onAddNew }: WatchlistTableProps) {
   
   // Sort items
   const sortedItems = [...watchlistItems].sort((a, b) => {
-    const aValue = a[sortColumn]
-    const bValue = b[sortColumn]
+    const aValue = a[sortColumn] as string | number | null | undefined
+    const bValue = b[sortColumn] as string | number | null | undefined
     
-    if (aValue === null) return sortDirection === "asc" ? -1 : 1
-    if (bValue === null) return sortDirection === "asc" ? 1 : -1
+    if (aValue === null || aValue === undefined) return sortDirection === "asc" ? -1 : 1
+    if (bValue === null || bValue === undefined) return sortDirection === "asc" ? 1 : -1
     
     if (typeof aValue === "string" && typeof bValue === "string") {
       return sortDirection === "asc" 
@@ -192,6 +183,12 @@ export function WatchlistTable({ items = [], onAddNew }: WatchlistTableProps) {
                     <ArrowUpDown className="ml-2 h-4 w-4" />
                   </div>
                 </TableHead>
+                <TableHead className="cursor-pointer" onClick={() => handleSort("price_change_percent")}>
+                  <div className="flex items-center">
+                    Change %
+                    <ArrowUpDown className="ml-2 h-4 w-4" />
+                  </div>
+                </TableHead>
                 <TableHead className="cursor-pointer" onClick={() => handleSort("target_price")}>
                   <div className="flex items-center">
                     Target Price
@@ -212,18 +209,112 @@ export function WatchlistTable({ items = [], onAddNew }: WatchlistTableProps) {
             <TableBody>
               {sortedItems.map((item) => {
                 const priceDiff = getPriceDifference(item.price, item.target_price)
+                const isAlertActive = item.price_alerts && item.alert_threshold !== null
+                const isAlertTriggered = isAlertActive && item.price >= (item.alert_threshold || 0)
+                const hasReachedTarget = item.target_price !== null && item.price >= item.target_price
+                
+                // Format the price change percentage
+                const priceChangePercent = item.price_change_percent !== undefined 
+                  ? item.price_change_percent.toFixed(2) 
+                  : null
+                
+                // Determine if the stock is up or down for the day
+                const isUp = item.price_change_percent !== undefined && item.price_change_percent > 0
+                const isDown = item.price_change_percent !== undefined && item.price_change_percent < 0
+                
                 return (
-                  <TableRow key={item.id}>
-                    <TableCell className="font-medium">{item.ticker}</TableCell>
-                    <TableCell>{item.name}</TableCell>
-                    <TableCell>${item.price.toFixed(2)}</TableCell>
+                  <TableRow key={item.id} className={isAlertTriggered ? 'bg-amber-50 dark:bg-amber-950/20' : ''}>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center space-x-1">
+                        <span>{item.ticker}</span>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <a 
+                                href={`https://finance.yahoo.com/quote/${item.ticker}`} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-muted-foreground hover:text-primary"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>View on Yahoo Finance</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <span>{item.name}</span>
+                        {item.last_updated && (
+                          <span className="text-xs text-muted-foreground flex items-center">
+                            <Clock className="h-3 w-3 mr-1" />
+                            {new Date(item.last_updated).toLocaleTimeString()}
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center">
+                        <span className="font-medium">${item.price.toFixed(2)}</span>
+                        {item.previous_close && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <Badge variant="outline" className="ml-2 px-1">
+                                  <span className="text-xs">Prev: ${item.previous_close.toFixed(2)}</span>
+                                </Badge>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Previous close price</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {priceChangePercent !== null ? (
+                        <div className="flex items-center">
+                          <span className={`font-medium ${isUp ? 'text-green-500' : isDown ? 'text-red-500' : ''}`}>
+                            {isUp ? '+' : ''}{priceChangePercent}%
+                          </span>
+                          {isUp ? (
+                            <TrendingUp className="ml-1 h-4 w-4 text-green-500" />
+                          ) : isDown ? (
+                            <TrendingDown className="ml-1 h-4 w-4 text-red-500" />
+                          ) : null}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">N/A</span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       {item.target_price ? (
                         <div className="flex flex-col">
-                          <span>${item.target_price.toFixed(2)}</span>
+                          <div className="flex items-center">
+                            <span className={hasReachedTarget ? 'text-green-500 font-medium' : ''}>
+                              ${item.target_price.toFixed(2)}
+                            </span>
+                            {hasReachedTarget && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger>
+                                    <TrendingUp className="ml-1 h-4 w-4 text-green-500" />
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Target price reached!</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
+                          </div>
                           {priceDiff && (
                             <span className={`text-xs ${parseFloat(priceDiff) > 0 ? 'text-green-500' : 'text-red-500'}`}>
-                              {parseFloat(priceDiff) > 0 ? '+' : ''}{priceDiff}%
+                              {parseFloat(priceDiff) > 0 ? '+' : ''}{priceDiff}% from current
                             </span>
                           )}
                         </div>
@@ -231,11 +322,34 @@ export function WatchlistTable({ items = [], onAddNew }: WatchlistTableProps) {
                         <span className="text-muted-foreground">Not set</span>
                       )}
                     </TableCell>
-                    <TableCell>{item.sector || 'N/A'}</TableCell>
+                    <TableCell>
+                      {item.sector ? (
+                        <Badge variant="outline">{item.sector}</Badge>
+                      ) : (
+                        <span className="text-muted-foreground">N/A</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end items-center space-x-2">
-                        {item.price_alerts && (
-                          <Bell className="h-4 w-4 text-amber-500" aria-label="Price alert enabled" />
+                        {isAlertActive && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                {isAlertTriggered ? (
+                                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                                ) : (
+                                  <Bell className="h-4 w-4 text-muted-foreground" />
+                                )}
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>
+                                  {isAlertTriggered 
+                                    ? `Alert triggered! Price is above $${item.alert_threshold?.toFixed(2)}` 
+                                    : `Alert set at $${item.alert_threshold?.toFixed(2)}`}
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         )}
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -254,6 +368,18 @@ export function WatchlistTable({ items = [], onAddNew }: WatchlistTableProps) {
                             <DropdownMenuItem onClick={() => handleDelete(item.id)}>
                               <Trash className="mr-2 h-4 w-4" />
                               Remove
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem asChild>
+                              <a 
+                                href={`https://finance.yahoo.com/quote/${item.ticker}`} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="flex items-center cursor-pointer"
+                              >
+                                <ExternalLink className="mr-2 h-4 w-4" />
+                                View Details
+                              </a>
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -306,27 +432,52 @@ export function WatchlistTable({ items = [], onAddNew }: WatchlistTableProps) {
                 <Label htmlFor="price" className="text-right">
                   Current Price
                 </Label>
-                <Input
-                  id="price"
-                  name="price"
-                  type="number"
-                  step="0.01"
-                  defaultValue={selectedItem?.price}
-                  readOnly
-                  className="col-span-1"
-                />
+                <div className="col-span-1">
+                  <div className="flex items-center">
+                    <Input
+                      id="price"
+                      name="price"
+                      type="number"
+                      step="0.01"
+                      defaultValue={selectedItem?.price}
+                      readOnly
+                    />
+                  </div>
+                  {selectedItem?.previous_close && (
+                    <div className="mt-1 text-xs text-muted-foreground flex items-center">
+                      <span>Prev: ${selectedItem.previous_close.toFixed(2)}</span>
+                      {selectedItem.price_change_percent !== undefined && (
+                        <span className={`ml-2 ${selectedItem.price_change_percent > 0 ? 'text-green-500' : selectedItem.price_change_percent < 0 ? 'text-red-500' : ''}`}>
+                          {selectedItem.price_change_percent > 0 ? '+' : ''}{selectedItem.price_change_percent.toFixed(2)}%
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <Label htmlFor="targetPrice" className="text-right">
                   Target Price
                 </Label>
-                <Input
-                  id="targetPrice"
-                  name="targetPrice"
-                  type="number"
-                  step="0.01"
-                  defaultValue={selectedItem?.target_price || ''}
-                  placeholder="Set a target price"
-                  className="col-span-1"
-                />
+                <div className="col-span-1">
+                  <Input
+                    id="targetPrice"
+                    name="targetPrice"
+                    type="number"
+                    step="0.01"
+                    defaultValue={selectedItem?.target_price || ''}
+                    placeholder="Set a target price"
+                  />
+                  {selectedItem?.price && (
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {selectedItem.target_price ? (
+                        <span>
+                          {((selectedItem.target_price - selectedItem.price) / selectedItem.price * 100).toFixed(2)}% from current
+                        </span>
+                      ) : (
+                        <span>Set a price target to track performance</span>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
               
               <div className="grid grid-cols-4 items-center gap-4">
@@ -363,40 +514,106 @@ export function WatchlistTable({ items = [], onAddNew }: WatchlistTableProps) {
                 />
               </div>
               
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="priceAlertEnabled" className="text-right">
-                  Price Alerts
-                </Label>
-                <div className="flex items-center space-x-2 col-span-3">
-                  <Switch
-                    id="priceAlertEnabled"
-                    name="priceAlertEnabled"
-                    defaultChecked={selectedItem?.price_alerts}
-                  />
-                  <Label htmlFor="priceAlertEnabled">
-                    Enable price alerts
+              <div className="border-t pt-4 mt-2">
+                <h3 className="text-sm font-medium mb-3">Price Alert Settings</h3>
+                
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="priceAlertEnabled" className="text-right">
+                    Price Alerts
                   </Label>
+                  <div className="flex items-center space-x-2 col-span-3">
+                    <Switch
+                      id="priceAlertEnabled"
+                      name="priceAlertEnabled"
+                      defaultChecked={selectedItem?.price_alerts}
+                    />
+                    <Label htmlFor="priceAlertEnabled">
+                      Enable price alerts
+                    </Label>
+                  </div>
                 </div>
-              </div>
-              
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="alertThreshold" className="text-right">
-                  Alert Threshold
-                </Label>
-                <Input
-                  id="alertThreshold"
-                  name="alertThreshold"
-                  type="number"
-                  step="0.01"
-                  defaultValue={selectedItem?.alert_threshold || ''}
-                  placeholder="Price threshold for alerts"
-                  className="col-span-3"
-                  disabled={!selectedItem?.price_alerts}
-                />
-                <div className="col-span-4 pl-[25%]">
-                  <p className="text-sm text-muted-foreground">
-                    You'll be notified when the price reaches this threshold.
-                  </p>
+                
+                <div className="grid grid-cols-4 items-center gap-4 mt-2">
+                  <Label htmlFor="alertThreshold" className="text-right">
+                    Alert Threshold
+                  </Label>
+                  <div className="col-span-3 space-y-2">
+                    <Input
+                      id="alertThreshold"
+                      name="alertThreshold"
+                      type="number"
+                      step="0.01"
+                      defaultValue={selectedItem?.alert_threshold || ''}
+                      placeholder="Price threshold for alerts"
+                      disabled={!selectedItem?.price_alerts}
+                    />
+                    <div className="flex flex-col space-y-1">
+                      <p className="text-sm text-muted-foreground">
+                        You'll be notified when the price reaches this threshold.
+                      </p>
+                      
+                      {selectedItem?.price && selectedItem?.alert_threshold && (
+                        <div className="text-sm">
+                          <span className={`${selectedItem.alert_threshold > selectedItem.price ? 'text-amber-500' : 'text-green-500'}`}>
+                            {selectedItem.alert_threshold > selectedItem.price ? (
+                              <>
+                                <AlertTriangle className="inline h-3 w-3 mr-1" />
+                                {((selectedItem.alert_threshold - selectedItem.price) / selectedItem.price * 100).toFixed(2)}% above current price
+                              </>
+                            ) : (
+                              <>
+                                <Bell className="inline h-3 w-3 mr-1" />
+                                Alert will trigger immediately (price is already above threshold)
+                              </>
+                            )}
+                          </span>
+                        </div>
+                      )}
+                      
+                      <div className="flex space-x-2 mt-1">
+                        {selectedItem?.price && (
+                          <>
+                            <Button 
+                              type="button" 
+                              variant="outline" 
+                              size="sm"
+                              className="text-xs h-7 px-2"
+                              onClick={() => {
+                                const input = document.getElementById('alertThreshold') as HTMLInputElement
+                                if (input) input.value = (selectedItem.price * 1.05).toFixed(2)
+                              }}
+                            >
+                              +5%
+                            </Button>
+                            <Button 
+                              type="button" 
+                              variant="outline" 
+                              size="sm"
+                              className="text-xs h-7 px-2"
+                              onClick={() => {
+                                const input = document.getElementById('alertThreshold') as HTMLInputElement
+                                if (input) input.value = (selectedItem.price * 1.1).toFixed(2)
+                              }}
+                            >
+                              +10%
+                            </Button>
+                            <Button 
+                              type="button" 
+                              variant="outline" 
+                              size="sm"
+                              className="text-xs h-7 px-2"
+                              onClick={() => {
+                                const input = document.getElementById('alertThreshold') as HTMLInputElement
+                                if (input) input.value = (selectedItem.price * 1.2).toFixed(2)
+                              }}
+                            >
+                              +20%
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

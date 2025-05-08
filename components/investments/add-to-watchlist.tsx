@@ -15,9 +15,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { addToWatchlist } from "@/app/actions/watchlist"
+// Using API endpoint instead of server action
+// import { addToWatchlist } from "@/app/actions/watchlist"
 import { toast } from "sonner"
-import { Search, Loader2 } from "lucide-react"
+import { Search, Loader2, AlertTriangle, Bell } from "lucide-react"
 
 type AddToWatchlistProps = {
   open: boolean
@@ -87,10 +88,63 @@ export function AddToWatchlist({ open, onOpenChange }: AddToWatchlistProps) {
     setShowSearchResults(false)
   }
   
-  const handleSubmit = async (formData: FormData) => {
+  // Get user ID from session
+  const [userId, setUserId] = useState<string | null>(null)
+  
+  // Fetch user ID on component mount
+  useEffect(() => {
+    const fetchUserId = async () => {
+      try {
+        const response = await fetch('/api/auth/session')
+        if (response.ok) {
+          const data = await response.json()
+          if (data.user?.id) {
+            setUserId(data.user.id)
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching user session:', error)
+      }
+    }
+    
+    fetchUserId()
+  }, [])
+  
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
     setIsSubmitting(true)
+    
+    if (!userId) {
+      toast.error('User authentication required')
+      setIsSubmitting(false)
+      return
+    }
+    
     try {
-      const result = await addToWatchlist(formData)
+      // Prepare the data to send to the API
+      const data = {
+        userId,
+        ticker: tickerValue,
+        name: nameValue,
+        price: parseFloat(priceValue) || 0,
+        targetPrice: targetPriceValue ? parseFloat(targetPriceValue) : null,
+        notes: notesValue,
+        sector: sectorValue,
+        priceAlerts: priceAlertEnabled,
+        alertThreshold: alertThresholdValue ? parseFloat(alertThresholdValue) : null
+      }
+      
+      // Call the API endpoint
+      const response = await fetch('/api/watchlist/add', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+      })
+      
+      const result = await response.json()
+      
       if (result.success) {
         toast.success("Investment added to watchlist")
         resetForm()
@@ -224,7 +278,7 @@ export function AddToWatchlist({ open, onOpenChange }: AddToWatchlistProps) {
           </DialogDescription>
         </DialogHeader>
         
-        <form action={handleSubmit} className="overflow-y-auto pr-2">
+        <form onSubmit={handleSubmit} className="overflow-y-auto pr-2">
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="search" className="text-right">
@@ -359,45 +413,102 @@ export function AddToWatchlist({ open, onOpenChange }: AddToWatchlistProps) {
               />
             </div>
             
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="priceAlertEnabled" className="text-right">
-                Price Alerts
-              </Label>
-              <div className="flex items-center space-x-2 col-span-3">
-                <Switch
-                  id="priceAlertEnabled"
-                  name="priceAlertEnabled"
-                  checked={priceAlertEnabled}
-                  onCheckedChange={setPriceAlertEnabled}
-                />
-                <Label htmlFor="priceAlertEnabled">
-                  Enable price alerts
-                </Label>
-              </div>
-            </div>
-            
-            {priceAlertEnabled && (
+            <div className="border-t pt-4 mt-2">
+              <h3 className="text-sm font-medium mb-3">Price Alert Settings</h3>
+              
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="alertThreshold" className="text-right">
-                  Alert Threshold
+                <Label htmlFor="priceAlertEnabled" className="text-right">
+                  Price Alerts
                 </Label>
-                <Input
-                  id="alertThreshold"
-                  name="alertThreshold"
-                  type="number"
-                  step="0.01"
-                  value={alertThresholdValue}
-                  onChange={(e) => setAlertThresholdValue(e.target.value)}
-                  placeholder="Price threshold for alerts"
-                  className="col-span-3"
-                />
-                <div className="col-span-4 pl-[25%]">
-                  <p className="text-sm text-muted-foreground">
-                    You'll be notified when the price reaches this threshold.
-                  </p>
+                <div className="flex items-center space-x-2 col-span-3">
+                  <Switch
+                    id="priceAlertEnabled"
+                    name="priceAlertEnabled"
+                    checked={priceAlertEnabled}
+                    onCheckedChange={setPriceAlertEnabled}
+                  />
+                  <Label htmlFor="priceAlertEnabled">
+                    Enable price alerts
+                  </Label>
                 </div>
               </div>
-            )}
+              
+              {priceAlertEnabled && (
+                <div className="grid grid-cols-4 items-center gap-4 mt-2">
+                  <Label htmlFor="alertThreshold" className="text-right">
+                    Alert Threshold
+                  </Label>
+                  <div className="col-span-3 space-y-2">
+                    <Input
+                      id="alertThreshold"
+                      name="alertThreshold"
+                      type="number"
+                      step="0.01"
+                      value={alertThresholdValue}
+                      onChange={(e) => setAlertThresholdValue(e.target.value)}
+                      placeholder="Price threshold for alerts"
+                    />
+                    <div className="flex flex-col space-y-1">
+                      <p className="text-sm text-muted-foreground">
+                        You'll be notified when the price reaches this threshold.
+                      </p>
+                      
+                      {priceValue && alertThresholdValue && (
+                        <div className="text-sm">
+                          <span className={`${parseFloat(alertThresholdValue) > parseFloat(priceValue) ? 'text-amber-500' : 'text-green-500'}`}>
+                            {parseFloat(alertThresholdValue) > parseFloat(priceValue) ? (
+                              <>
+                                <AlertTriangle className="inline h-3 w-3 mr-1" />
+                                {((parseFloat(alertThresholdValue) - parseFloat(priceValue)) / parseFloat(priceValue) * 100).toFixed(2)}% above current price
+                              </>
+                            ) : (
+                              <>
+                                <Bell className="inline h-3 w-3 mr-1" />
+                                Alert will trigger immediately (price is already above threshold)
+                              </>
+                            )}
+                          </span>
+                        </div>
+                      )}
+                      
+                      <div className="flex space-x-2 mt-1">
+                        {priceValue && (
+                          <>
+                            <Button 
+                              type="button" 
+                              variant="outline" 
+                              size="sm"
+                              className="text-xs h-7 px-2"
+                              onClick={() => setAlertThresholdValue((parseFloat(priceValue) * 1.05).toFixed(2))}
+                            >
+                              +5%
+                            </Button>
+                            <Button 
+                              type="button" 
+                              variant="outline" 
+                              size="sm"
+                              className="text-xs h-7 px-2"
+                              onClick={() => setAlertThresholdValue((parseFloat(priceValue) * 1.1).toFixed(2))}
+                            >
+                              +10%
+                            </Button>
+                            <Button 
+                              type="button" 
+                              variant="outline" 
+                              size="sm"
+                              className="text-xs h-7 px-2"
+                              onClick={() => setAlertThresholdValue((parseFloat(priceValue) * 1.2).toFixed(2))}
+                            >
+                              +20%
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           
           <DialogFooter>
