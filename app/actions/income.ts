@@ -401,6 +401,9 @@ export async function createIncome(formData: FormData) {
     // Calculate adjusted amount with deductions and side hustles
     const adjustedAmount = amount - totalDeductions + totalHustles;
     
+    // Calculate monthly equivalent amount for display purposes
+    const monthlyEquivalentAmount = convertToMonthlyAmount(adjustedAmount, recurrence);
+
     const incomeData = {
       user_id: userId,
       source_name: sourceName,
@@ -606,8 +609,8 @@ export async function updateIncome(id: string, formData: FormData) {
     // Calculate adjusted amount with deductions and side hustles
     const adjustedAmount = updateData.amount - totalDeductions + totalHustles;
     
-    // Calculate monthly equivalent amount with the adjusted amount
-    updateData.monthly_equivalent_amount = convertToMonthlyAmount(adjustedAmount, updateData.recurrence || recurrence);
+    // Calculate monthly equivalent amount for display purposes only
+    const displayMonthlyEquivalentAmount = convertToMonthlyAmount(adjustedAmount, updateData.recurrence || recurrence);
 
     console.log("Income data to update:", updateData);
 
