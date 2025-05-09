@@ -79,15 +79,25 @@ interface ExpenseFormProps {
   name?: string;
 }
 
-export function ExpenseForm({ categories, expense, isEditing = false, users = [] }: ExpenseFormProps) {
+export function ExpenseForm({
+  categories,
+  expense,
+  isEditing = false,
+  users = [],
+  id,
+  name,
+}: ExpenseFormProps) {
   const router = useRouter();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [rateLimitError, setRateLimitError] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Location search state
   const [locationEnabled, setLocationEnabled] = useState(false);
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
   const [showSplitOptions, setShowSplitOptions] = useState(false);
   const [availableUsers, setAvailableUsers] = useState(users);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Location search state
   const [locationSearchQuery, setLocationSearchQuery] = useState("");
@@ -304,6 +314,7 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
   async function onSubmit(data: ExpenseFormValues) {
     if (isSubmitting) return; // Prevent multiple submissions
     setIsSubmitting(true);
+    setRateLimitError(false);
 
     try {
       // Prepare the expense data
@@ -314,11 +325,9 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
         category_ids: data.category_ids || [],
         budget_item_id: data.budget_item_id === 'none' ? null : data.budget_item_id,
         expense_date: data.expense_date,
-        location_name: data.location_name || locationSearchQuery || null,
-        latitude: data.latitude,
-        longitude: data.longitude,
-        recurrence: data.recurrence,
-        is_impulse: data.is_impulse,
+        location_name: data.location_name || null,
+        recurrence: data.recurrence || 'none',
+        is_impulse: data.is_impulse || false,
         notes: data.notes || null,
         warranty_expiration_date: data.warranty_expiration_date || null,
       };
@@ -330,16 +339,24 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
       let expenseId;
 
       // Create or update the expense
-      if (isEditing && expense?.id) {
-        await updateExpense(expense.id, expenseData);
-        expenseId = expense.id;
-      } else {
-        const result = await createExpense(expenseData);
-        expenseId = result?.id;
-      }
+      try {
+        if (isEditing && expense?.id) {
+          await updateExpense(expense.id, expenseData);
+          expenseId = expense.id;
+        } else {
+          const result = await createExpense(expenseData);
+          expenseId = result?.id;
+        }
 
-      if (!expenseId) {
-        throw new Error("Failed to get expense ID");
+        if (!expenseId) {
+          throw new Error("Failed to get expense ID");
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("over_request_rate_limit")) {
+          setRateLimitError(true);
+          throw new Error("Too many requests. Please wait a moment and try again.");
+        }
+        throw error;
       }
 
       // Handle receipt upload if there's a receipt image
@@ -404,6 +421,17 @@ export function ExpenseForm({ categories, expense, isEditing = false, users = []
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit as any)} className="space-y-6">
+        {rateLimitError && (
+          <div className="mb-4 p-4 rounded-md bg-destructive/10 text-destructive">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4" />
+              <div>
+                <p className="font-medium">Rate Limit</p>
+                <p className="text-sm">You're making too many requests. Please wait a moment and try again.</p>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Merchant Name */}
           <FormField
