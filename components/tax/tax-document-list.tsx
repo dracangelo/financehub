@@ -30,7 +30,12 @@ export function TaxDocumentList() {
         throw new Error('Failed to fetch documents')
       }
       const data = await response.json()
-      setDocuments(data)
+      // Map the API response to the TaxDocument interface
+      const mappedDocuments = data.map((doc: any) => ({
+        ...doc,
+        type: doc.document_type || doc.type || 'Other' // Map document_type to type
+      }))
+      setDocuments(mappedDocuments)
     } catch (error) {
       console.error("Error fetching tax documents:", error)
       toast({
@@ -55,7 +60,7 @@ export function TaxDocumentList() {
       const newDocument: TaxDocument = {
         id: document.id || `temp-${Date.now()}`,
         name: document.name,
-        type: document.document_type || 'other',
+        type: document.document_type || document.type || 'Other',
         status: document.status || 'received',
         due_date: document.due_date,
         file_url: document.file_url || '',
@@ -97,8 +102,13 @@ export function TaxDocumentList() {
       }
       
       const updatedDocument = await response.json()
+      // Ensure the document type is correctly mapped
+      const mappedDocument = {
+        ...updatedDocument,
+        type: updatedDocument.document_type || updatedDocument.type || 'Other'
+      }
       setDocuments(prev => 
-        prev.map(doc => doc.id === updatedDocument.id ? updatedDocument : doc)
+        prev.map(doc => doc.id === mappedDocument.id ? mappedDocument : doc)
       )
       setEditingDocument(null)
       toast({

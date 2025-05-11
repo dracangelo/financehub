@@ -111,11 +111,18 @@ export function TaxDocumentItem({ document, onEdit, onDelete, onStatusChange }: 
         </div>
         <div className="flex-1">
           <div className="flex items-center justify-between">
-            <h4 className="font-medium">{document.name}</h4>
-            <div className="flex items-center space-x-2">
-              <Badge className={getStatusColor(document.status)}>
-                {document.status}
-              </Badge>
+            <div>
+              <h4 className="font-medium">{document.name}</h4>
+              <div className="flex items-center space-x-2 mt-1">
+                <Badge variant="secondary" className="text-xs font-medium">
+                  {document.type}
+                </Badge>
+                <Badge className={getStatusColor(document.status)}>
+                  {document.status}
+                </Badge>
+              </div>
+            </div>
+            <div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -162,9 +169,8 @@ export function TaxDocumentItem({ document, onEdit, onDelete, onStatusChange }: 
               </DropdownMenu>
             </div>
           </div>
-          <div className="flex items-center space-x-2 mt-1">
-            <Badge variant="outline">{document.type}</Badge>
-            {document.categories && (
+          {document.categories && (
+            <div className="flex items-center space-x-2 mt-1">
               <Badge 
                 variant="outline" 
                 style={{ 
@@ -174,8 +180,8 @@ export function TaxDocumentItem({ document, onEdit, onDelete, onStatusChange }: 
               >
                 {document.categories.name}
               </Badge>
-            )}
-          </div>
+            </div>
+          )}
           {document.due_date && (
             <p className="text-sm text-muted-foreground mt-1">
               Due: {formatDate(document.due_date)}

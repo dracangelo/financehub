@@ -67,6 +67,8 @@ export async function POST(request: Request) {
     let file: File | null = null
     
     // Handle different request types
+    let status = 'received' // Default status
+    
     if (contentType.includes('multipart/form-data')) {
       // Handle multipart form data for file uploads
       const formData = await request.formData()
@@ -76,6 +78,7 @@ export async function POST(request: Request) {
       type = formData.get("type") as string
       due_date = formData.get("due_date") as string
       notes = formData.get("notes") as string | null
+      status = formData.get("status") as string || 'received' // Get status from form data
       file = formData.get("file") as File | null
     } else {
       // Handle JSON request
@@ -84,6 +87,7 @@ export async function POST(request: Request) {
       type = body.type
       due_date = body.due_date
       notes = body.notes || null
+      status = body.status || 'received' // Get status from JSON
       // No file in JSON request
     }
     
@@ -324,7 +328,7 @@ export async function POST(request: Request) {
             file_metadata: fileMetadata ? JSON.stringify(fileMetadata) : null,
             due_date: new Date(due_date), // Convert string date to Date object for TIMESTAMPTZ
             notes: notes || "",
-            status: "received",
+            status: status, // Use the status from form data
             is_uploaded: true,
             uploaded_at: new Date()
           })
@@ -344,7 +348,7 @@ export async function POST(request: Request) {
             document_type: type,
             due_date: new Date(due_date).toISOString(),
             notes: notes || "",
-            status: "received",
+            status: status,
             uploaded_at: new Date().toISOString(),
             success: true,
             message: "Document uploaded but database insertion failed"
