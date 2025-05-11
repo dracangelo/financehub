@@ -15,6 +15,7 @@ import { Debt } from "@/types/debt"
 import { DebtService } from "@/lib/debt/debt-service"
 import { useToast } from "@/components/ui/use-toast"
 import { Loader2 } from "lucide-react"
+import { useAuth } from "@/components/auth/auth-provider"
 
 export function DebtList() {
   const [open, setOpen] = useState(false)
@@ -24,25 +25,56 @@ export function DebtList() {
   const [deleting, setDeleting] = useState<string | null>(null)
   const router = useRouter()
   const { toast } = useToast()
+  const { user } = useAuth()
 
   useEffect(() => {
-    // Fetch debts when component mounts
-    fetchDebts()
-  }, [])
+    // Fetch debts when component mounts or when user changes
+    if (user || localStorage.getItem('debt-management-visited')) {
+      // Set a flag to indicate the user has visited this page
+      localStorage.setItem('debt-management-visited', 'true')
+      fetchDebts()
+    }
+  }, [user])
 
   const fetchDebts = async () => {
     try {
       setLoading(true)
       const debtService = new DebtService()
+      
+      // Set the user ID if available from auth context
+      if (user?.id) {
+        console.log(`DebtList: Setting user ID from auth context: ${user.id}`)
+        debtService.setUserId(user.id)
+      }
+      
+      // Try to get debts even if we don't have a user ID from context
+      // The DebtService will try to get the user ID from the session
       const fetchedDebts = await debtService.getDebts()
       setDebts(fetchedDebts)
     } catch (error) {
       console.error("Error fetching debts:", error)
-      toast({
-        title: "Error",
-        description: "Failed to load debts. Please try again.",
-        variant: "destructive",
-      })
+      
+      // Check if it's an authentication error
+      const errorMessage = error instanceof Error ? error.message : "Failed to load debts"
+      
+      // Don't redirect to login if we've already visited this page
+      // This prevents the login loop
+      if ((errorMessage.includes("Authentication session expired") || 
+          errorMessage.includes("User not authenticated")) && 
+          !localStorage.getItem('debt-management-visited')) {
+        toast({
+          title: "Authentication Notice",
+          description: "Attempting to load debts without full authentication",
+          variant: "default",
+        })
+        // Don't redirect to login
+      } else {
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        })
+      }
     } finally {
       setLoading(false)
     }
@@ -80,6 +112,13 @@ export function DebtList() {
     try {
       setDeleting(id)
       const debtService = new DebtService()
+      
+      // Set the user ID if available from auth context
+      if (user?.id) {
+        console.log(`handleDeleteDebt: Setting user ID from auth context: ${user.id}`)
+        debtService.setUserId(user.id)
+      }
+      
       await debtService.deleteDebt(id)
       
       // Remove the debt from the local state
@@ -91,11 +130,25 @@ export function DebtList() {
       })
     } catch (error) {
       console.error("Error deleting debt:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to delete debt",
-        variant: "destructive",
-      })
+      
+      // Check if it's an authentication error
+      const errorMessage = error instanceof Error ? error.message : "Failed to delete debt"
+      if (errorMessage.includes("Authentication session expired") || 
+          errorMessage.includes("User not authenticated")) {
+        toast({
+          title: "Authentication Error",
+          description: "Your session has expired. Redirecting to login...",
+          variant: "destructive",
+        })
+        // Redirect to login page after a short delay
+        setTimeout(() => router.push("/login"), 1500)
+      } else {
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        })
+      }
     } finally {
       setDeleting(null)
     }
@@ -104,6 +157,12 @@ export function DebtList() {
   const handleSaveDebt = async (debt: Debt) => {
     try {
       const debtService = new DebtService()
+      
+      // Set the user ID if available from auth context
+      if (user?.id) {
+        console.log(`handleSaveDebt: Setting user ID from auth context: ${user.id}`)
+        debtService.setUserId(user.id)
+      }
       
       if (selectedDebt) {
         // Update existing debt
@@ -136,11 +195,27 @@ export function DebtList() {
       })
     } catch (error) {
       console.error("Error saving debt:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to save debt",
-        variant: "destructive",
-      })
+      
+      // Check if it's an authentication error
+      const errorMessage = error instanceof Error ? error.message : "Failed to save debt"
+      if (errorMessage.includes("Authentication session expired") || 
+          errorMessage.includes("User not authenticated")) {
+        toast({
+          title: "Authentication Error",
+          description: "Your session has expired. Redirecting to login...",
+          variant: "destructive",
+        })
+        // Close the dialog
+        setOpen(false)
+        // Redirect to login page after a short delay
+        setTimeout(() => router.push("/login"), 1500)
+      } else {
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        })
+      }
     }
   }
 

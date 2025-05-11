@@ -137,6 +137,8 @@ export async function POST(request: Request) {
           
           // SQL to create the tax_impact_predictions table
           const createTableSQL = `
+          DROP TABLE IF EXISTS tax_impact_predictions;
+          
           CREATE TABLE IF NOT EXISTS tax_impact_predictions (
               id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
               user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -151,13 +153,12 @@ export async function POST(request: Request) {
           
           try {
             // Try to execute the SQL
-            await supabaseAdmin.rpc('pgexec', { sql: createTableSQL })
-              .then(() => {
-                console.log("Table created successfully via RPC");
-              })
-              .catch((rpcError: any) => {
-                console.log("Error creating table via RPC, continuing with prediction creation", rpcError);
-              });
+            try {
+              await supabaseAdmin.rpc('pgexec', { sql: createTableSQL });
+              console.log("Table created successfully via RPC");
+            } catch (rpcError: any) {
+              console.log("Error creating table via RPC, continuing with prediction creation", rpcError);
+            }
             
             console.log("Table created or already exists, trying to insert prediction again");
             
