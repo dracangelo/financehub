@@ -40,12 +40,23 @@ export class DebtService {
         return userData.user.id
       }
       
-      // If we still don't have a user ID, try to refresh the session
-      const refreshResult = await this.supabase.auth.refreshSession()
-      if (refreshResult.data?.session?.user?.id) {
-        console.log(`getUserId: Found user ID after refresh: ${refreshResult.data.session.user.id}`)
-        this.cachedUserId = refreshResult.data.session.user.id
-        return refreshResult.data.session.user.id
+      // If we still don't have a user ID, try to refresh the session only if we have a session
+      // First check if we have a session to avoid AuthSessionMissingError
+      const { data: checkSession } = await this.supabase.auth.getSession()
+      if (checkSession?.session) {
+        try {
+          const refreshResult = await this.supabase.auth.refreshSession()
+          if (refreshResult.data?.session?.user?.id) {
+            console.log(`getUserId: Found user ID after refresh: ${refreshResult.data.session.user.id}`)
+            this.cachedUserId = refreshResult.data.session.user.id
+            return refreshResult.data.session.user.id
+          }
+        } catch (refreshError) {
+          console.error('Error refreshing session:', refreshError)
+          // Continue to localStorage fallbacks
+        }
+      } else {
+        console.log('No existing session to refresh')
       }
       
       // Last attempt: check localStorage for a persisted auth token

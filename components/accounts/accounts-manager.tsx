@@ -516,7 +516,8 @@ export function AccountsManager({ initialAccounts }: AccountsManagerProps) {
   }
 
   // Format account type
-  const formatAccountType = (type: string) => {
+  const formatAccountType = (type: string | null | undefined) => {
+    if (!type) return "Unknown"
     return type.replace("_", " ").replace(/\b\w/g, (l) => l.toUpperCase())
   }
 

@@ -457,17 +457,27 @@ export function CrudInterface<T>({
           <Pagination>
             <PaginationContent>
               <PaginationItem>
+                <PaginationPrevious
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  aria-disabled={currentPage === 1}
+                  className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
+                />
+              </PaginationItem>
+              
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => (
+                <PaginationItem key={pageNum}>
+                  <PaginationLink
+                    onClick={() => setCurrentPage(pageNum)}
+                    isActive={currentPage === pageNum}
+                  >
+                    {pageNum}
+                  </PaginationLink>
                 </PaginationItem>
-              );
-            }
-            return (
-              <PaginationItem key={page}>
-                <PaginationLink
-                  onClick={() => setCurrentPage(page)}
-                  isActive={currentPage === page}
-                >
-                  {page}
-                </PaginationLink>
+              ))}
+              
+              <PaginationItem>
+                <PaginationNext
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                   aria-disabled={currentPage === totalPages}
                   className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""}
                 />

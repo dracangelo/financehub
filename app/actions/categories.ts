@@ -5,6 +5,7 @@ import { getAuthenticatedUser } from "@/lib/auth/server"
 import { ALL_CATEGORIES } from "@/lib/constants/categories"
 import { revalidatePath } from "next/cache"
 import type { Category } from "@/types/finance"
+import { v4 as uuidv4 } from 'uuid'
 
 export async function getCategories() {
   try {
@@ -59,12 +60,15 @@ export async function getCategories() {
   }
 }
 
-// Separate function for revalidation
-async function revalidateCategories() {
+// Separate function for revalidation - exported as a server action
+// This should only be called from client components or other server actions, not during rendering
+export async function revalidateCategories() {
+  "use server"
   revalidatePath("/transactions")
   revalidatePath("/categories")
   revalidatePath("/dashboard")
   revalidatePath("/budgets")
+  return { revalidated: true }
 }
 
 // Check if the categories table exists
@@ -175,8 +179,10 @@ export async function ensureStaticCategories() {
     // Check all categories
     ALL_CATEGORIES.forEach(category => {
       if (!existingCategoryMap.has(category.name)) {
+        // Generate a new UUID instead of using the predefined one
         categoriesToInsert.push({
           ...category,
+          id: uuidv4(), // Generate a new UUID to avoid primary key conflicts
           user_id: user.id,
           created_at: now,
           updated_at: now
@@ -186,24 +192,39 @@ export async function ensureStaticCategories() {
 
     // Insert missing categories if any
     if (categoriesToInsert.length > 0) {
-      // Filter out fields that don't exist in the database schema
+      // Filter out fields that don't exist in the database schema and ensure all required fields are present
       const dbSafeCategories = categoriesToInsert.map(category => {
         // Use type assertion to handle properties that might not be in the interface
         const { color, icon, is_income, ...dbCategory } = category as any;
-        return dbCategory;
+        
+        // Ensure all required fields have values
+        return {
+          ...dbCategory,
+          user_id: user.id,  // Make sure user_id is set
+          created_at: now,   // Make sure timestamps are set
+          updated_at: now
+        };
       });
       
-      const { error: insertError } = await supabase
-        .from("categories")
-        .insert(dbSafeCategories)
+      try {
+        const { error: insertError } = await supabase
+          .from("categories")
+          .insert(dbSafeCategories)
 
-      if (insertError) {
-        console.error("Error inserting categories:", insertError)
-        return { success: false, message: "Failed to insert categories", categories: existingCategories || [] }
+        if (insertError) {
+          console.error("Error inserting categories:", insertError)
+          // Log more details about the error
+          console.error("Error details:", JSON.stringify(insertError, null, 2))
+          console.error("First category being inserted:", JSON.stringify(dbSafeCategories[0], null, 2))
+          return { success: false, message: `Failed to insert categories: ${insertError.message}`, categories: existingCategories || [] }
+        }
+      } catch (insertCatchError) {
+        console.error("Exception during category insertion:", insertCatchError)
+        return { success: false, message: `Exception during category insertion: ${insertCatchError}`, categories: existingCategories || [] }
       }
 
-      // Only revalidate if we actually inserted categories
-      await revalidateCategories()
+      // Don't call revalidation during rendering - return a flag indicating revalidation is needed
+      // The client component can then call revalidateCategories() as needed
     }
 
     return { 
