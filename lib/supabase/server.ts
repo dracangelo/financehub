@@ -109,6 +109,32 @@ export async function createServerSupabaseClient(context?: {
       return null
     }
     
+    // Add timeout to fetch operations
+    const fetchWithTimeout = (url: string, options: any = {}) => {
+      const timeout = 10000; // 10 seconds timeout
+      
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), timeout);
+      
+      const fetchOptions = {
+        ...options,
+        signal: controller.signal
+      };
+      
+      return fetch(url, fetchOptions)
+        .then(response => {
+          clearTimeout(id);
+          return response;
+        })
+        .catch(error => {
+          clearTimeout(id);
+          if (error.name === 'AbortError') {
+            throw new Error(`Request timed out after ${timeout}ms`);
+          }
+          throw error;
+        });
+    };
+    
     // First try to use the App Router cookies() API if available
     // We don't import it directly to avoid breaking Pages Router
     let appRouterCookies = null;
@@ -187,6 +213,9 @@ export async function createServerSupabaseClient(context?: {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
       {
         cookies: cookieHandler,
+        global: {
+          fetch: fetchWithTimeout
+        }
       }
     )
   } catch (error) {

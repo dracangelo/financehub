@@ -74,85 +74,133 @@ export function ClientWatchlist() {
   useEffect(() => {
     async function fetchWatchlistItems() {
       try {
-        // Try to fetch the watchlist items directly
+        console.log('Fetching watchlist items...');
+        
+        // Fetch the authenticated user ID from the session API
+        let userId;
+        try {
+          const sessionResponse = await fetch('/api/auth/session');
+          if (sessionResponse.ok) {
+            const sessionData = await sessionResponse.json();
+            if (sessionData.authenticated && sessionData.user?.id) {
+              userId = sessionData.user.id;
+              console.log('Using authenticated user ID:', userId);
+            } else {
+              console.warn('No authenticated user found, using localStorage ID');
+              // Fall back to localStorage ID if not authenticated
+              userId = localStorage.getItem('finance_user_id');
+              if (!userId) {
+                userId = crypto.randomUUID();
+                localStorage.setItem('finance_user_id', userId);
+                console.log('Generated new user ID:', userId);
+              } else {
+                console.log('Using existing localStorage user ID:', userId);
+              }
+            }
+          } else {
+            console.error('Failed to fetch session, using localStorage ID');
+            // Fall back to localStorage ID if session API fails
+            userId = localStorage.getItem('finance_user_id') || crypto.randomUUID();
+            localStorage.setItem('finance_user_id', userId);
+          }
+        } catch (error) {
+          console.error('Error fetching session:', error);
+          // Fall back to localStorage ID if there's an error
+          userId = localStorage.getItem('finance_user_id') || crypto.randomUUID();
+          localStorage.setItem('finance_user_id', userId);
+        }
+        
+        // Get items from localStorage
+        let localStorageItems = [];
+        const storedItems = localStorage.getItem('watchlist');
+        if (storedItems) {
+          try {
+            const parsedItems = JSON.parse(storedItems);
+            if (Array.isArray(parsedItems) && parsedItems.length > 0) {
+              localStorageItems = parsedItems;
+              console.log('Found items in localStorage:', localStorageItems.length);
+            }
+          } catch (e) {
+            console.error('Error parsing localStorage items:', e);
+          }
+        }
+        
+        // Prepare the stored items to pass to the API
+        let storedItemsHeader = '';
+        if (localStorageItems.length > 0) {
+          try {
+            // Limit the size of the header by only including essential fields
+            const essentialItems = localStorageItems.map((item: { id: string; ticker: string; name: string }) => ({
+              id: item.id,
+              ticker: item.ticker,
+              name: item.name
+            }));
+            storedItemsHeader = JSON.stringify(essentialItems);
+          } catch (e) {
+            console.error('Error stringifying localStorage items:', e);
+          }
+        }
+        
+        // Try to fetch the watchlist items from API
         const response = await fetch('/api/watchlist/items', {
           method: 'GET',
-          credentials: 'include', // Important for sending cookies
+          credentials: 'include',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache',
+            'X-User-ID': userId,
+            'X-Stored-Items': storedItemsHeader
           }
         });
         
+        // Process API response or fall back to localStorage
+        let apiItems = [];
+        
         if (!response.ok) {
-          // If the response is not OK, check if it's an authentication error
-          if (response.status === 401 || response.status === 403) {
-            console.warn("Authentication required to view watchlist");
+          console.warn(`API request failed with status ${response.status}`);
+          // If API fails, we'll just use localStorage items
+        } else {
+          try {
+            // Parse the response
+            const data = await response.json();
             
-            // Add a small delay before retrying
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            // Try again one more time
-            const retryResponse = await fetch('/api/watchlist/items', {
-              method: 'GET',
-              credentials: 'include',
-              headers: {
-                'Content-Type': 'application/json',
-                'Cache-Control': 'no-cache'
-              }
-            });
-            
-            if (!retryResponse.ok) {
-              // If retry also fails, try to handle authentication error by refreshing session
-              const authRecovered = await handleAuthError();
-              
-              if (!authRecovered) {
-                // If authentication recovery failed, show error message
-                setError("Please sign in to view your watchlist");
-                setLoading(false);
-                return;
-              }
+            if (data.success) {
+              apiItems = data.items || [];
+              console.log('Fetched items from API:', apiItems.length);
             } else {
-              // Retry succeeded, process the response
-              const retryData = await retryResponse.json();
-              if (retryData.success) {
-                const watchlistItems = retryData.items || [];
-                const mappedItems = mapWatchlistItems(watchlistItems);
-                setItems(mappedItems);
-                setLoading(false);
-                return;
-              }
+              console.warn('API returned error:', data.error);
             }
-            
-            // We already tried to recover authentication above
-            // No need to retry again, just show error
-            setError("Failed to authenticate. Please try refreshing the page or sign in again.");
-            setLoading(false);
-            return;
+          } catch (parseError) {
+            console.error('Error parsing API response:', parseError);
           }
+        }
+        
+        // Combine items from API and localStorage
+        let combinedItems = [...apiItems];
+        
+        // Add localStorage items that aren't already in the API response
+        if (localStorageItems.length > 0) {
+          const apiItemIds = new Set(apiItems.map(item => item.id));
+          const uniqueLocalItems = localStorageItems.filter(item => !apiItemIds.has(item.id));
           
-          // For other errors, show a generic error message
-          throw new Error(`Failed to fetch watchlist: ${response.status}`);
+          if (uniqueLocalItems.length > 0) {
+            console.log('Adding unique localStorage items:', uniqueLocalItems.length);
+            combinedItems = [...combinedItems, ...uniqueLocalItems];
+          }
         }
         
-        // Parse the response
-        const data = await response.json();
-        
-        if (!data.success) {
-          throw new Error(data.error || "Failed to fetch watchlist");
+        if (combinedItems.length === 0) {
+          console.log('No watchlist items found');
+          setItems([]);
+        } else {
+          console.log('Total combined items:', combinedItems.length);
+          // Map the items using our helper function
+          const mappedItems = mapWatchlistItems(combinedItems);
+          setItems(mappedItems);
         }
-        
-        const watchlistItems = data.items || [];
-        
-        // If we got an empty array, it's just an empty watchlist (not an auth issue)
-        if (watchlistItems.length === 0) {
-          console.log("User is authenticated but has no watchlist items");
-        }
-        
-        // Map the items using our helper function
-        const mappedItems = mapWatchlistItems(watchlistItems);
-        setItems(mappedItems);
       } catch (error) {
         console.error("Error fetching watchlist items:", error);
+        
         // Provide a user-friendly error message
         setError("Unable to load your watchlist. Please try signing in again.");
       } finally {

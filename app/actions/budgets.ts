@@ -761,3 +761,197 @@ export async function deleteBudget(id: string) {
     throw error
   }
 }
+
+// Add missing budget category functions
+
+/**
+ * Creates a new budget category
+ */
+export async function createBudgetCategory(data: {
+  budget_id: string;
+  category_id: string;
+  amount_allocated: number;
+}) {
+  try {
+    const supabase = await createServerSupabaseClient()
+    
+    if (!supabase) {
+      throw new Error("Failed to create Supabase client")
+    }
+
+    // Get the current user with the secure method
+    const user = await getAuthenticatedUser()
+    
+    if (!user) {
+      throw new Error("Authentication required")
+    }
+
+    // Verify budget belongs to user
+    const { data: budget, error: budgetError } = await supabase
+      .from("budgets")
+      .select("*")
+      .eq("id", data.budget_id)
+      .eq("user_id", user.id)
+      .single()
+
+    if (budgetError || !budget) {
+      console.error("Error verifying budget ownership:", budgetError)
+      throw budgetError || new Error("Budget not found or access denied")
+    }
+
+    // Create the budget category
+    const { data: budgetCategory, error: createError } = await supabase
+      .from("budget_categories")
+      .insert({
+        budget_id: data.budget_id,
+        category_id: data.category_id,
+        amount_allocated: data.amount_allocated
+      })
+      .select("*, categories(*)")
+      .single()
+
+    if (createError) {
+      console.error("Error creating budget category:", createError)
+      throw createError
+    }
+
+    // Revalidate paths
+    revalidatePath(`/budgets/${data.budget_id}`)
+    revalidatePath("/budgets")
+    revalidatePath("/dashboard")
+
+    return budgetCategory
+  } catch (error) {
+    console.error("Error in createBudgetCategory:", error)
+    throw error
+  }
+}
+
+/**
+ * Updates an existing budget category
+ */
+export async function updateBudgetCategory(id: string, data: {
+  amount_allocated: number;
+}) {
+  try {
+    const supabase = await createServerSupabaseClient()
+    
+    if (!supabase) {
+      throw new Error("Failed to create Supabase client")
+    }
+
+    // Get the current user with the secure method
+    const user = await getAuthenticatedUser()
+    
+    if (!user) {
+      throw new Error("Authentication required")
+    }
+
+    // Get the budget category to verify ownership
+    const { data: categoryData, error: categoryError } = await supabase
+      .from("budget_categories")
+      .select("*, budgets!inner(user_id)")
+      .eq("id", id)
+      .single()
+
+    if (categoryError || !categoryData) {
+      console.error("Error fetching budget category:", categoryError)
+      throw categoryError || new Error("Budget category not found")
+    }
+
+    // Verify the budget belongs to the user
+    if (categoryData.budgets.user_id !== user.id) {
+      throw new Error("Unauthorized: This budget does not belong to you")
+    }
+
+    // Update the budget category
+    const { data: updatedCategory, error: updateError } = await supabase
+      .from("budget_categories")
+      .update({
+        amount_allocated: data.amount_allocated,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", id)
+      .select("*, categories(*)")
+      .single()
+
+    if (updateError) {
+      console.error("Error updating budget category:", updateError)
+      throw updateError
+    }
+
+    // Get the budget ID for path revalidation
+    const budgetId = categoryData.budget_id
+
+    // Revalidate paths
+    revalidatePath(`/budgets/${budgetId}`)
+    revalidatePath("/budgets")
+    revalidatePath("/dashboard")
+
+    return updatedCategory
+  } catch (error) {
+    console.error("Error in updateBudgetCategory:", error)
+    throw error
+  }
+}
+
+/**
+ * Deletes a budget category
+ */
+export async function deleteBudgetCategory(id: string) {
+  try {
+    const supabase = await createServerSupabaseClient()
+    
+    if (!supabase) {
+      throw new Error("Failed to create Supabase client")
+    }
+
+    // Get the current user with the secure method
+    const user = await getAuthenticatedUser()
+    
+    if (!user) {
+      throw new Error("Authentication required")
+    }
+
+    // Get the budget category to verify ownership and get budget_id for revalidation
+    const { data: categoryData, error: categoryError } = await supabase
+      .from("budget_categories")
+      .select("*, budgets!inner(user_id)")
+      .eq("id", id)
+      .single()
+
+    if (categoryError || !categoryData) {
+      console.error("Error fetching budget category:", categoryError)
+      throw categoryError || new Error("Budget category not found")
+    }
+
+    // Verify the budget belongs to the user
+    if (categoryData.budgets.user_id !== user.id) {
+      throw new Error("Unauthorized: This budget does not belong to you")
+    }
+
+    // Store the budget ID for path revalidation
+    const budgetId = categoryData.budget_id
+
+    // Delete the budget category
+    const { error: deleteError } = await supabase
+      .from("budget_categories")
+      .delete()
+      .eq("id", id)
+
+    if (deleteError) {
+      console.error("Error deleting budget category:", deleteError)
+      throw deleteError
+    }
+
+    // Revalidate paths
+    revalidatePath(`/budgets/${budgetId}`)
+    revalidatePath("/budgets")
+    revalidatePath("/dashboard")
+
+    return { success: true }
+  } catch (error) {
+    console.error("Error in deleteBudgetCategory:", error)
+    throw error
+  }
+}

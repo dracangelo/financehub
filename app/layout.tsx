@@ -3,6 +3,8 @@ import { Inter } from "next/font/google"
 import { Toaster } from "@/components/ui/toaster"
 import { MainNavigation } from "@/components/layout/main-navigation"
 import { Providers } from "./providers"
+import { ErrorHandler } from "@/components/error/error-handler"
+import { CookieCleaner } from "@/components/error/cookie-cleaner"
 import "./globals.css"
 import {
   Home,
@@ -100,7 +102,11 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
+        {/* Cookie cleaner runs first to fix cookie parsing issues */}
+        <CookieCleaner />
         <Providers>
+          {/* Error handler to capture console errors */}
+          <ErrorHandler />
           <div className="flex flex-col h-screen">
             {/* Main Content */}
             <main className="flex-1 overflow-auto">

@@ -35,8 +35,28 @@ export const metadata = {
 
 export default async function DashboardPage() {
   try {
-    // Get the authenticated user (no redirect here since layout handles that)
+    // Get the authenticated user
     const user = await getAuthenticatedUser()
+    
+    // Handle the case where user might be null
+    // We'll let the layout handle the redirect if needed
+    const userId = user?.id || ''
+    
+    // If no user is found, render a placeholder dashboard
+    // This prevents errors from being thrown by the data fetching functions
+    if (!user || !userId) {
+      return (
+        <DashboardShell>
+          <DashboardHeader heading="Dashboard" text="Your financial overview" />
+          <div className="flex items-center justify-center h-[60vh]">
+            <div className="text-center">
+              <h2 className="text-xl font-semibold mb-2">Loading dashboard...</h2>
+              <p className="text-muted-foreground">Please wait while we prepare your financial data</p>
+            </div>
+          </div>
+        </DashboardShell>
+      )
+    }
 
     // Fetch data for the dashboard
     const [
@@ -67,7 +87,7 @@ export default async function DashboardPage() {
         transactionCount: 0,
         averageTransaction: 0,
       })),
-      getCashflowForecast(user?.id || '').catch(() => ({
+      getCashflowForecast(userId).catch(() => ({
         projectedIncome: 0,
         projectedExpenses: 0,
         netCashflow: 0,
@@ -75,7 +95,7 @@ export default async function DashboardPage() {
         monthlyTrend: [],
         monthOverMonth: { income: 0, expenses: 0 }
       })),
-      getProjectedFinances(user?.id || '').catch(() => ({
+      getProjectedFinances(userId).catch(() => ({
         projectedIncome: 0,
         projectedExpenses: 0,
         netCashflow: 0,

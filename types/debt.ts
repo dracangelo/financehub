@@ -9,6 +9,7 @@ export interface Debt {
   due_date: string | null
   created_at: string
   updated_at: string
+  type?: string // Type of debt (e.g., credit_card, mortgage, personal_loan)
 }
 
 export interface DebtConsolidation {

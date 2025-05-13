@@ -44,180 +44,212 @@ export interface ProjectedExpense {
  * @returns Projected finances including income, expenses, and trends
  */
 export async function getProjectedFinances(userId: string): Promise<ProjectedFinances> {
-  const supabase = await createServerSupabaseClient()
-  if (!supabase) {
-    throw new Error("Failed to create Supabase client")
+  // Default return object with empty/zero values
+  const defaultFinances: ProjectedFinances = {
+    projectedIncome: 0,
+    projectedExpenses: 0,
+    netCashflow: 0,
+    savingsRate: 0,
+    projectedIncomeBreakdown: [],
+    projectedExpensesBreakdown: [],
+    monthlyTrend: []
+  };
+  
+  // Validate userId
+  if (!userId || userId === '') {
+    console.error("No user ID provided to getProjectedFinances");
+    return defaultFinances;
+  }
+  
+  let supabase;
+  try {
+    supabase = await createServerSupabaseClient();
+    if (!supabase) {
+      console.error("Failed to create Supabase client");
+      return defaultFinances;
+    }
+  } catch (error) {
+    console.error("Error creating Supabase client:", error);
+    return defaultFinances;
   }
   
   // Get recurring income sources from the new income schema
   // Only include incomes that are recurring (not one-time) and haven't reached their end date
-  const { data: incomeSources, error: incomeError } = await supabase
-    .from("incomes")
-    .select("*, category:income_categories(id, name), deductions:income_deductions(*), hustles:income_hustles(*)")
-    .eq("user_id", userId)
-    .neq("recurrence", "none") // Exclude one-time payments
-    .or(`end_date.is.null,end_date.gte.${new Date().toISOString()}`) // Only include active incomes
-  
-  if (incomeError) {
-    console.error("Error fetching incomes:", incomeError)
+  let incomeSources: any[] = [];
+  try {
+    const today = new Date().toISOString();
+    const { data, error } = await supabase
+      .from("incomes")
+      .select("*, category:income_categories(id, name), deductions:income_deductions(*), hustles:income_hustles(*)")
+      .eq("user_id", userId)
+      .neq("recurrence", "none") // Exclude one-time payments
+      .or(`end_date.is.null,end_date.gte.${today}`) // Only include active incomes
+    
+    if (error) {
+      console.error("Error fetching incomes:", error);
+    } else {
+      incomeSources = data || [];
+    }
+  } catch (err) {
+    console.error("Exception when fetching incomes:", err);
+    // Continue execution with empty income sources
   }
 
   // Get recurring expenses - these will be auto-populated as projected expenses
-  const { data: recurringExpenses, error: expenseError } = await supabase
-    .from("expenses")
-    .select(`
-      id,
-      merchant,
-      amount,
-      expense_date,
-      recurrence,
-      categories:expense_categories(id, name, parent_id)
-    `)
-    .eq("user_id", userId)
-    .neq("recurrence", "none")
-    .order("expense_date", { ascending: false })
-  if (expenseError) {
-    console.error("Error fetching recurring expenses:", expenseError)
+  let recurringExpenses: any[] = [];
+  try {
+    const { data, error } = await supabase
+      .from("expenses")
+      .select(`
+        id,
+        merchant,
+        amount,
+        expense_date,
+        recurrence,
+        categories:expense_categories(id, name, parent_id)
+      `)
+      .eq("user_id", userId)
+      .neq("recurrence", "none")
+      .order("expense_date", { ascending: false })
+    
+    if (error) {
+      console.error("Error fetching recurring expenses:", error);
+    } else {
+      recurringExpenses = data || [];
+    }
+  } catch (err) {
+    console.error("Exception when fetching recurring expenses:", err);
+    // Continue execution with empty recurring expenses
   }
 
   // Calculate projected monthly income using the monthly_equivalent_amount from the new schema
   const projectedIncomeBreakdown = (incomeSources || []).map(source => {
-    // Calculate total deductions
-    let totalDeductions = 0;
-    if (source.deductions && Array.isArray(source.deductions)) {
-      totalDeductions = source.deductions.reduce((sum: number, deduction: any) => {
-        return sum + (deduction.amount || 0);
-      }, 0);
-    }
-    
-    // Calculate total side hustles
-    let totalHustles = 0;
-    if (source.hustles && Array.isArray(source.hustles)) {
-      totalHustles = source.hustles.reduce((sum: number, hustle: any) => {
-        return sum + (hustle.hustle_amount || 0);
-      }, 0);
-    }
-    
-    // Calculate adjusted amount with deductions and side hustles
-    const adjustedAmount = source.amount - totalDeductions + totalHustles;
-    
-    // Use the monthly_equivalent_amount that's already calculated by the database
-    // If not available, calculate it based on the adjusted amount
-    const monthlyAmount = source.monthly_equivalent_amount || normalizeToMonthlyAmount(adjustedAmount, source.recurrence)
-    const nextPaymentDate = calculateNextPaymentDate(source)
-    
-    return {
-      id: source.id,
-      name: source.source_name,
-      amount: monthlyAmount,
-      sourceType: source.category?.name || 'Income',
-      frequency: source.recurrence,
-      nextPaymentDate,
-      // Add additional fields for UI display
-      totalDeductions,
-      totalHustles,
-      adjustedAmount
+    try {
+      // Calculate total deductions
+      let totalDeductions = 0;
+      if (source.deductions && Array.isArray(source.deductions)) {
+        totalDeductions = source.deductions.reduce((sum: number, deduction: any) => {
+          return sum + (deduction.amount || 0);
+        }, 0);
+      }
+      
+      // Calculate total side hustles
+      let totalHustles = 0;
+      if (source.hustles && Array.isArray(source.hustles)) {
+        totalHustles = source.hustles.reduce((sum: number, hustle: any) => {
+          return sum + (hustle.hustle_amount || 0);
+        }, 0);
+      }
+      
+      // Calculate adjusted amount with deductions and side hustles
+      const adjustedAmount = source.amount - totalDeductions + totalHustles;
+      
+      // Use the monthly_equivalent_amount that's already calculated by the database
+      // If not available, calculate it based on the adjusted amount
+      const monthlyAmount = source.monthly_equivalent_amount || normalizeToMonthlyAmount(adjustedAmount, source.recurrence)
+      const nextPaymentDate = calculateNextPaymentDate(source)
+      
+      return {
+        id: source.id || 'unknown',
+        name: source.source_name || 'Unnamed Income',
+        amount: monthlyAmount || 0,
+        sourceType: source.category?.name || 'Income',
+        frequency: source.recurrence || 'monthly',
+        nextPaymentDate,
+        // Add additional fields for UI display
+        totalDeductions,
+        totalHustles,
+        adjustedAmount
+      }
+    } catch (err) {
+      console.error("Error processing income source:", err);
+      // Return a default object if there's an error processing this income source
+      return {
+        id: source.id || 'error',
+        name: 'Error Processing Income',
+        amount: 0,
+        sourceType: 'Income',
+        frequency: 'monthly',
+        nextPaymentDate: null,
+        totalDeductions: 0,
+        totalHustles: 0,
+        adjustedAmount: 0
+      };
     }
   })
 
   // Calculate projected monthly expenses
   const projectedExpensesBreakdown = (recurringExpenses || []).map(expense => {
-    const frequency = expense.recurrence || 'monthly'
-    
-    // Convert the expense amount to its monthly equivalent based on frequency
-    const monthlyAmount = normalizeToMonthlyAmount(expense.amount, frequency)
-    
-    // Calculate next due date based on recurrence pattern
-    const lastDate = new Date(expense.expense_date)
-    let nextDueDate = null
-    
-    if (frequency !== 'none') {
-      const nextDate = new Date(lastDate)
+    try {
+      // Get the category name from the joined data
+      const category = expense.categories?.name || 'Uncategorized'
       
-      if (frequency === 'weekly') {
-        nextDate.setDate(lastDate.getDate() + 7)
-      } else if (frequency === 'bi_weekly') {
-        nextDate.setDate(lastDate.getDate() + 14)
-      } else if (frequency === 'monthly') {
-        nextDate.setMonth(lastDate.getMonth() + 1)
-      } else if (frequency === 'quarterly') {
-        nextDate.setMonth(lastDate.getMonth() + 3)
-      } else if (frequency === 'semi_annual') {
-        nextDate.setMonth(lastDate.getMonth() + 6)
-      } else if (frequency === 'annual') {
-        nextDate.setFullYear(lastDate.getFullYear() + 1)
+      // Get the monthly equivalent amount based on recurrence pattern
+      const monthlyAmount = normalizeToMonthlyAmount(expense.amount || 0, expense.recurrence || 'monthly')
+      
+      return {
+        id: expense.id || 'unknown',
+        title: expense.merchant || 'Unnamed Expense',
+        amount: monthlyAmount,
+        originalAmount: expense.amount || 0,
+        category,
+        frequency: expense.recurrence || 'monthly',
+        frequencyText: getFrequencyDisplayText(expense.recurrence || 'monthly'),
+        nextDueDate: null // We'll calculate this later if needed
       }
-      
-      nextDueDate = nextDate.toISOString()
-    }
-    
-    // Get category name from the first category if available
-    const categoryName = expense.categories && expense.categories.length > 0 
-      ? expense.categories[0].name 
-      : 'Uncategorized'
-    
-    // Create a descriptive title that includes the frequency information
-    const frequencyText = getFrequencyDisplayText(frequency)
-    const title = expense.merchant || 'Recurring Expense'
-    
-    return {
-      id: expense.id,
-      title: title,
-      originalAmount: expense.amount,
-      amount: monthlyAmount,
-      category: categoryName,
-      frequency: frequency,
-      nextDueDate,
-      frequencyText
+    } catch (err) {
+      console.error("Error processing expense:", err);
+      // Return a default object if there's an error processing this expense
+      return {
+        id: expense.id || 'error',
+        title: 'Error Processing Expense',
+        amount: 0,
+        originalAmount: 0,
+        category: 'Uncategorized',
+        frequency: 'monthly',
+        frequencyText: 'Monthly',
+        nextDueDate: null
+      };
     }
   })
 
   // Calculate total projected income and expenses
-  const projectedIncome = projectedIncomeBreakdown.reduce((sum, source) => sum + source.amount, 0)
-  const projectedExpenses = projectedExpensesBreakdown.reduce((sum, expense) => sum + expense.amount, 0)
+  const projectedIncome = projectedIncomeBreakdown.reduce((sum, income) => sum + (Number(income.amount) || 0), 0)
+  const projectedExpenses = projectedExpensesBreakdown.reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0)
   const netCashflow = projectedIncome - projectedExpenses
   const savingsRate = projectedIncome > 0 ? (netCashflow / projectedIncome) * 100 : 0
-
-  // Get historical data for trends (last 3 months)
-  const threeMonthsAgo = new Date()
-  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
   
-  const { data: historicalExpenses } = await supabase
-    .from("expenses")
-    .select("amount, spent_at, category")
-    .eq("user_id", userId)
-    .gte("spent_at", threeMonthsAgo.toISOString())
-    .order("spent_at", { ascending: true })
-
-  // Group historical transactions by month
-  const monthlyData = (historicalExpenses || []).reduce((acc: any, expense) => {
-    const month = new Date(expense.spent_at).toISOString().slice(0, 7)
-    if (!acc[month]) {
-      acc[month] = { income: 0, expenses: 0 }
+  // Generate monthly trend data for the next 6 months
+  const today = new Date()
+  const monthlyTrend = []
+  
+  try {
+    for (let i = 0; i < 6; i++) {
+      const month = new Date(today.getFullYear(), today.getMonth() + i, 1)
+      const monthName = month.toLocaleString('default', { month: 'short' })
+      
+      // For now, we'll just use the same projected values for each month
+      // In a future enhancement, we could calculate more accurate projections
+      // based on the specific payment dates of each income and expense
+      monthlyTrend.push({
+        month: monthName,
+        income: projectedIncome,
+        expenses: projectedExpenses,
+        net: netCashflow
+      })
     }
-    
-    // Determine if this is income or expense based on category
-    // This is a simplified approach - you may need to adjust based on your category structure
-    const isIncome = expense.category?.toLowerCase().includes('income')
-    
-    if (isIncome) {
-      acc[month].income += expense.amount
-    } else {
-      acc[month].expenses += expense.amount
-    }
-    return acc
-  }, {})
-
-  // Calculate monthly trends
-  const monthlyTrend = Object.entries(monthlyData)
-    .map(([month, data]: [string, any]) => ({
-      month,
-      income: data.income,
-      expenses: data.expenses,
-      net: data.income - data.expenses
-    }))
-    .sort((a, b) => a.month.localeCompare(b.month))
-
+  } catch (err) {
+    console.error("Error generating monthly trend data:", err);
+    // Add at least one month of data to avoid UI errors
+    monthlyTrend.push({
+      month: 'Forecast',
+      income: projectedIncome,
+      expenses: projectedExpenses,
+      net: netCashflow
+    });
+  }
+  
+  // Return the final object with all calculated values
   return {
     projectedIncome,
     projectedExpenses,

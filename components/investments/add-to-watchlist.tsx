@@ -15,8 +15,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-// Using API endpoint instead of server action
-// import { addToWatchlist } from "@/app/actions/watchlist"
+// Using both API endpoint and server action as fallback
+import { addToWatchlist } from "@/app/actions/watchlist"
 import { toast } from "sonner"
 import { Search, Loader2, AlertTriangle, Bell } from "lucide-react"
 
@@ -40,6 +40,15 @@ type StockQuote = {
   pc: number // Previous close price
   d: number // Change
   dp: number // Percent change
+}
+
+// Simple UUID generation function for client-side use
+function generateUUID() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
 }
 
 const SECTORS = [
@@ -88,22 +97,42 @@ export function AddToWatchlist({ open, onOpenChange }: AddToWatchlistProps) {
     setShowSearchResults(false)
   }
   
-  // Get user ID from session
+  // Get authenticated user ID from session API
   const [userId, setUserId] = useState<string | null>(null)
   
   // Fetch user ID on component mount
   useEffect(() => {
     const fetchUserId = async () => {
       try {
-        const response = await fetch('/api/auth/session')
-        if (response.ok) {
-          const data = await response.json()
-          if (data.user?.id) {
-            setUserId(data.user.id)
+        // Try to get the authenticated user ID from the session API
+        const sessionResponse = await fetch('/api/auth/session')
+        if (sessionResponse.ok) {
+          const sessionData = await sessionResponse.json()
+          if (sessionData.authenticated && sessionData.user?.id) {
+            // Use the authenticated user ID
+            setUserId(sessionData.user.id)
+            console.log('Using authenticated user ID for watchlist:', sessionData.user.id)
+            return
           }
         }
+        
+        // Fall back to localStorage ID if not authenticated
+        let storedUserId = localStorage.getItem('finance_user_id')
+        if (!storedUserId) {
+          storedUserId = generateUUID()
+          localStorage.setItem('finance_user_id', storedUserId)
+          console.log('Generated new user ID for watchlist:', storedUserId)
+        } else {
+          console.log('Using existing localStorage user ID for watchlist:', storedUserId)
+        }
+        
+        setUserId(storedUserId)
       } catch (error) {
         console.error('Error fetching user session:', error)
+        // Fall back to localStorage ID if there's an error
+        const fallbackId = localStorage.getItem('finance_user_id') || generateUUID()
+        localStorage.setItem('finance_user_id', fallbackId)
+        setUserId(fallbackId)
       }
     }
     
@@ -114,47 +143,130 @@ export function AddToWatchlist({ open, onOpenChange }: AddToWatchlistProps) {
     event.preventDefault()
     setIsSubmitting(true)
     
-    if (!userId) {
-      toast.error('User authentication required')
+    // Validate required fields
+    if (!tickerValue || !nameValue) {
+      toast.error('Ticker and name are required fields')
       setIsSubmitting(false)
       return
     }
     
     try {
-      // Prepare the data to send to the API
-      const data = {
-        userId,
-        ticker: tickerValue,
-        name: nameValue,
-        price: parseFloat(priceValue) || 0,
-        targetPrice: targetPriceValue ? parseFloat(targetPriceValue) : null,
-        notes: notesValue,
-        sector: sectorValue,
-        priceAlerts: priceAlertEnabled,
-        alertThreshold: alertThresholdValue ? parseFloat(alertThresholdValue) : null
-      }
+      // First try using the server action (most reliable for database storage)
+      const formData = new FormData()
+      formData.append('ticker', tickerValue)
+      formData.append('name', nameValue)
+      formData.append('price', priceValue)
+      formData.append('target_price', targetPriceValue) // Use snake_case to match DB schema
+      formData.append('notes', notesValue)
+      formData.append('sector', sectorValue)
+      formData.append('price_alerts', priceAlertEnabled.toString()) // Use snake_case
+      formData.append('alert_threshold', alertThresholdValue) // Use snake_case
       
-      // Call the API endpoint
-      const response = await fetch('/api/watchlist/add', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(data)
-      })
+      // Call the server action
+      const actionResult = await addToWatchlist(formData)
       
-      const result = await response.json()
-      
-      if (result.success) {
-        toast.success("Investment added to watchlist")
+      if (actionResult?.success) {
+        toast.success("Investment added to watchlist database")
         resetForm()
         onOpenChange(false)
-      } else {
-        toast.error("Failed to add investment: " + (result.error || "Unknown error"))
+        // Refresh the page to show the new item
+        window.location.reload()
+        return
+      }
+      
+      // If server action failed, try the API endpoint
+      console.log('Server action failed, trying API endpoint')
+      
+      // Get the user ID from localStorage
+      const storedUserId = localStorage.getItem('finance_user_id') || userId || generateUUID()
+      
+      // Prepare the data to send to the API
+      const data = {
+        ticker: tickerValue,
+        name: nameValue,
+        price: priceValue ? parseFloat(priceValue) : null,
+        target_price: targetPriceValue ? parseFloat(targetPriceValue) : null,
+        notes: notesValue,
+        sector: sectorValue,
+        price_alerts: priceAlertEnabled,
+        alert_threshold: alertThresholdValue ? parseFloat(alertThresholdValue) : null,
+        userId: storedUserId // Use the consistent user ID
+      }
+      
+      try {
+        const response = await fetch('/api/watchlist/add', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-User-ID': storedUserId
+          },
+          body: JSON.stringify(data)
+        })
+        
+        if (!response.ok) {
+          console.error(`API error: ${response.status} ${response.statusText}`)
+          let errorMessage = `Failed to add ${tickerValue} to watchlist`
+          
+          try {
+            const errorData = await response.json()
+            if (errorData && errorData.error) {
+              errorMessage = errorData.error
+              console.error('API error details:', errorData)
+            }
+          } catch (e) {
+            console.error('Could not parse error response:', e)
+          }
+          
+          toast.error(errorMessage)
+          setIsSubmitting(false)
+          return
+        }
+        
+        const result = await response.json()
+        
+        if (result.success) {
+          // Check if we need to store the item in localStorage
+          if (result.storageMethod === "client" && result.item) {
+            console.log("Storing item in localStorage", result.item)
+            
+            // Get existing watchlist items from localStorage
+            let watchlistItems = []
+            const existingItems = localStorage.getItem('watchlist')
+            
+            if (existingItems) {
+              try {
+                watchlistItems = JSON.parse(existingItems)
+                if (!Array.isArray(watchlistItems)) {
+                  watchlistItems = []
+                }
+              } catch (e) {
+                console.error("Error parsing existing watchlist items", e)
+                watchlistItems = []
+              }
+            }
+            
+            // Add the new item to the watchlist
+            watchlistItems.push(result.item)
+            
+            // Save the updated watchlist to localStorage
+            localStorage.setItem('watchlist', JSON.stringify(watchlistItems))
+          }
+          
+          toast.success(result.message || `${tickerValue} added to watchlist`)
+          resetForm()
+          onOpenChange(false)
+          // Reload the page to show the updated watchlist
+          window.location.reload()
+        } else {
+          toast.error(result.error || `Failed to add ${tickerValue} to watchlist`)
+        }
+      } catch (apiError) {
+        console.error('API request error:', apiError)
+        toast.error(`Network error: Could not connect to the server`)
       }
     } catch (error) {
       toast.error("An unexpected error occurred")
-      console.error(error)
+      console.error("Error in watchlist submission:", error)
     } finally {
       setIsSubmitting(false)
     }

@@ -51,17 +51,46 @@ export async function GET() {
 // POST /api/tax/predictions - Create a new tax impact prediction
 export async function POST(request: Request) {
   try {
-    const user = await getCurrentUser()
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    // Get the current user with better error handling
+    let user;
+    try {
+      user = await getCurrentUser();
+      if (!user) {
+        return NextResponse.json({ error: "Unauthorized", details: "User not authenticated" }, { status: 401 })
+      }
+    } catch (authError: any) {
+      console.error("Authentication error in tax predictions API:", authError)
+      // Handle auth session missing error specifically
+      if (authError.message?.includes("Auth session missing")) {
+        return NextResponse.json({ 
+          error: "Authentication error", 
+          details: "Your session has expired. Please log in again.",
+          code: "AUTH_SESSION_MISSING"
+        }, { status: 401 })
+      }
+      return NextResponse.json({ error: "Authentication error", details: authError.message }, { status: 401 })
     }
 
-    const supabase = await createServerSupabaseClient()
-    if (!supabase) {
-      return NextResponse.json({ error: "Failed to initialize database connection" }, { status: 500 })
+    // Initialize Supabase client with better error handling
+    let supabase;
+    try {
+      supabase = await createServerSupabaseClient()
+      if (!supabase) {
+        return NextResponse.json({ error: "Database error", details: "Failed to initialize database connection" }, { status: 500 })
+      }
+    } catch (dbError: any) {
+      console.error("Database connection error in tax predictions API:", dbError)
+      return NextResponse.json({ error: "Database error", details: dbError.message }, { status: 500 })
     }
     
-    const body = await request.json()
+    // Parse and validate request body
+    let body;
+    try {
+      body = await request.json()
+    } catch (parseError: any) {
+      console.error("Error parsing request body:", parseError)
+      return NextResponse.json({ error: "Invalid request", details: "Could not parse request body" }, { status: 400 })
+    }
 
     // Validate request body
     const result = taxImpactPredictionSchema.safeParse(body)
@@ -91,9 +120,14 @@ export async function POST(request: Request) {
 
     // Return the mock response
     return NextResponse.json(mockResponse)
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error in POST /api/tax/predictions:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    // Provide more detailed error information
+    return NextResponse.json({ 
+      error: "Internal server error", 
+      details: error.message || "An unexpected error occurred",
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    }, { status: 500 })
   }
 }
 

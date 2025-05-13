@@ -52,10 +52,14 @@ interface ProjectedExpensesContentProps {
   onTotalExpenseChange?: (totalExpense: number) => void
 }
 
-function ProjectedExpensesContent({ baseProjectedExpense, monthOverMonth, onTotalExpenseChange }: ProjectedExpensesContentProps) {
+function ProjectedExpensesContent({ baseProjectedExpense = 0, monthOverMonth = 0, onTotalExpenseChange }: ProjectedExpensesContentProps) {
+  // Ensure we have default values for all props
+  const safeBaseProjectedExpense = baseProjectedExpense || 0
+  const safeMonthOverMonth = monthOverMonth || 0
+  
   const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [totalMonthlyExpense, setTotalMonthlyExpense] = useState(baseProjectedExpense)
+  const [totalMonthlyExpense, setTotalMonthlyExpense] = useState(safeBaseProjectedExpense)
   
   useEffect(() => {
     async function loadRecurringExpenses() {
@@ -65,8 +69,8 @@ function ProjectedExpensesContent({ baseProjectedExpense, monthOverMonth, onTota
         setRecurringExpenses(expenses)
         
         // Calculate total monthly expenses (base + recurring monthly equivalents)
-        const recurringTotal = expenses && Array.isArray(expenses) ? expenses.reduce((sum: number, expense: RecurringExpense) => sum + expense.monthlyEquivalent, 0) : 0
-        const newTotalExpense = baseProjectedExpense + recurringTotal
+        const recurringTotal = expenses && Array.isArray(expenses) ? expenses.reduce((sum: number, expense: RecurringExpense) => sum + (expense.monthlyEquivalent || 0), 0) : 0
+        const newTotalExpense = safeBaseProjectedExpense + recurringTotal
         
         // Update local state
         setTotalMonthlyExpense(newTotalExpense)
@@ -101,14 +105,14 @@ function ProjectedExpensesContent({ baseProjectedExpense, monthOverMonth, onTota
         <>
           <div className="text-2xl font-bold text-red-600">-{formatCurrency(totalMonthlyExpense)}</div>
           <div className="mt-2 flex items-center space-x-1 bg-muted/30 p-1.5 rounded">
-            {monthOverMonth <= 0 ? (
+            {safeMonthOverMonth <= 0 ? (
               <ArrowDownRight className="h-3 w-3 text-green-600" />
             ) : (
               <ArrowUpRight className="h-3 w-3 text-red-600" />
             )}
-            <p className={`text-xs ${monthOverMonth <= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {monthOverMonth >= 0 ? '+' : ''}
-              {monthOverMonth}% from last month
+            <p className={`text-xs ${safeMonthOverMonth <= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {safeMonthOverMonth >= 0 ? '+' : ''}
+              {safeMonthOverMonth}% from last month
             </p>
           </div>
           
@@ -120,7 +124,7 @@ function ProjectedExpensesContent({ baseProjectedExpense, monthOverMonth, onTota
               </span>
             </div>
             
-            {recurringExpenses.length === 0 ? (
+            {!recurringExpenses || recurringExpenses.length === 0 ? (
               <p className="text-xs text-muted-foreground text-center py-2">
                 No recurring expenses found
               </p>
@@ -159,30 +163,48 @@ function ProjectedExpensesContent({ baseProjectedExpense, monthOverMonth, onTota
 }
 
 export function DashboardCards({ accountSummary, cashflowSummary }: DashboardCardsProps) {
+  // Ensure we have valid data with default values
+  const safeAccountSummary = accountSummary || {
+    totalBalance: 0,
+    accountCount: 0,
+    currencyBreakdown: {},
+    typeBreakdown: {}
+  }
+  
+  const safeCashflowSummary = cashflowSummary || {
+    projectedIncome: 0,
+    projectedExpenses: 0,
+    netCashflow: 0,
+    monthOverMonth: {
+      income: 0,
+      expenses: 0
+    }
+  }
+  
   // State for tracking the total monthly expenses including recurring expenses
-  const [totalMonthlyExpense, setTotalMonthlyExpense] = useState(cashflowSummary.projectedExpenses)
-  const [netCashflow, setNetCashflow] = useState(cashflowSummary.netCashflow)
-  const [financialStatus, setFinancialStatus] = useState(cashflowSummary.netCashflow >= 0 ? 'Positive' : 'Negative')
+  const [totalMonthlyExpense, setTotalMonthlyExpense] = useState(safeCashflowSummary.projectedExpenses)
+  const [netCashflow, setNetCashflow] = useState(safeCashflowSummary.netCashflow)
+  const [financialStatus, setFinancialStatus] = useState(safeCashflowSummary.netCashflow >= 0 ? 'Positive' : 'Negative')
   
   // Calculate additional metrics
-  const totalAssets = accountSummary.totalBalance;
+  const totalAssets = safeAccountSummary.totalBalance;
   const totalLiabilities = 0; // This would need to be fetched from a liabilities source
   const netWorth = totalAssets - totalLiabilities;
   
   // Calculate budget utilization
-  const budgetUtilization = cashflowSummary.projectedExpenses > 0 
-    ? Math.min(100, Math.round((cashflowSummary.projectedExpenses / cashflowSummary.projectedIncome) * 100)) 
+  const budgetUtilization = safeCashflowSummary.projectedExpenses > 0 
+    ? Math.min(100, Math.round((safeCashflowSummary.projectedExpenses / safeCashflowSummary.projectedIncome) * 100)) 
     : 0;
   
   // Update net cashflow when total monthly expense changes
   useEffect(() => {
     // Calculate the updated net cashflow based on projected income minus total expenses
-    const updatedNetCashflow = cashflowSummary.projectedIncome - totalMonthlyExpense
+    const updatedNetCashflow = safeCashflowSummary.projectedIncome - totalMonthlyExpense
     setNetCashflow(updatedNetCashflow)
     
     // Update financial status based on the new net cashflow
     setFinancialStatus(updatedNetCashflow >= 0 ? 'Positive' : 'Negative')
-  }, [totalMonthlyExpense, cashflowSummary.projectedIncome])
+  }, [totalMonthlyExpense, safeCashflowSummary.projectedIncome])
   
   return (
     <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
@@ -197,20 +219,20 @@ export function DashboardCards({ accountSummary, cashflowSummary }: DashboardCar
           </div>
         </CardHeader>
         <CardContent className="pt-4">
-          <div className="text-2xl font-bold">{formatCurrency(accountSummary.totalBalance)}</div>
+          <div className="text-2xl font-bold">{formatCurrency(safeAccountSummary.totalBalance)}</div>
           <div className="mt-2 flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">Across {accountSummary?.accountCount || 0} accounts</p>
+            <p className="text-xs text-muted-foreground">Across {safeAccountSummary.accountCount || 0} accounts</p>
             <div className="text-xs font-medium text-green-600 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded-full">
               Net Worth: {formatCurrency(netWorth)}
             </div>
           </div>
-          {Object.keys(accountSummary.typeBreakdown).length > 0 && (
+          {Object.keys(safeAccountSummary.typeBreakdown).length > 0 && (
             <div className="mt-4 pt-3 border-t border-dashed">
               <div className="flex justify-between items-center text-xs mb-2">
                 <span className="font-medium">Account Types</span>
               </div>
               <div className="space-y-2">
-                {Object.entries(accountSummary.typeBreakdown).map(([type, amount]) => (
+                {Object.entries(safeAccountSummary.typeBreakdown).map(([type, amount]) => (
                   <div key={type} className="flex items-center justify-between text-xs bg-muted/40 p-1.5 rounded">
                     <span className="capitalize font-medium">{type}</span>
                     <span className="font-semibold">{formatCurrency(amount)}</span>
@@ -233,16 +255,16 @@ export function DashboardCards({ accountSummary, cashflowSummary }: DashboardCar
           </div>
         </CardHeader>
         <CardContent className="pt-4">
-          <div className="text-2xl font-bold text-green-600">+{formatCurrency(cashflowSummary.projectedIncome)}</div>
+          <div className="text-2xl font-bold text-green-600">+{formatCurrency(safeCashflowSummary.projectedIncome)}</div>
           <div className="mt-2 flex items-center space-x-1 bg-muted/30 p-1.5 rounded">
-            {cashflowSummary.monthOverMonth.income >= 0 ? (
+            {safeCashflowSummary.monthOverMonth.income >= 0 ? (
               <ArrowUpRight className="h-3 w-3 text-green-600" />
             ) : (
               <ArrowDownRight className="h-3 w-3 text-red-600" />
             )}
-            <p className={`text-xs ${cashflowSummary.monthOverMonth.income >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {cashflowSummary.monthOverMonth.income >= 0 ? '+' : ''}
-              {cashflowSummary.monthOverMonth.income}% from last month
+            <p className={`text-xs ${safeCashflowSummary.monthOverMonth.income >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {safeCashflowSummary.monthOverMonth.income >= 0 ? '+' : ''}
+              {safeCashflowSummary.monthOverMonth.income}% from last month
             </p>
           </div>
           
@@ -254,11 +276,11 @@ export function DashboardCards({ accountSummary, cashflowSummary }: DashboardCar
             <div className="h-[60px] overflow-y-auto space-y-2 pr-1">
               <div className="flex items-center justify-between text-xs bg-muted/40 p-1.5 rounded">
                 <span className="font-medium">Primary Income</span>
-                <span className="text-green-600 font-semibold">+{formatCurrency(cashflowSummary.projectedIncome * 0.8)}</span>
+                <span className="text-green-600 font-semibold">+{formatCurrency(safeCashflowSummary.projectedIncome * 0.8)}</span>
               </div>
               <div className="flex items-center justify-between text-xs bg-muted/40 p-1.5 rounded">
                 <span className="font-medium">Other Sources</span>
-                <span className="text-green-600 font-semibold">+{formatCurrency(cashflowSummary.projectedIncome * 0.2)}</span>
+                <span className="text-green-600 font-semibold">+{formatCurrency(safeCashflowSummary.projectedIncome * 0.2)}</span>
               </div>
             </div>
           </div>
@@ -277,8 +299,8 @@ export function DashboardCards({ accountSummary, cashflowSummary }: DashboardCar
         </CardHeader>
         <CardContent className="pt-4">
           <ProjectedExpensesContent 
-            baseProjectedExpense={cashflowSummary.projectedExpenses} 
-            monthOverMonth={cashflowSummary.monthOverMonth.expenses}
+            baseProjectedExpense={safeCashflowSummary.projectedExpenses} 
+            monthOverMonth={safeCashflowSummary.monthOverMonth.expenses}
             onTotalExpenseChange={setTotalMonthlyExpense}
           />
         </CardContent>
@@ -301,7 +323,7 @@ export function DashboardCards({ accountSummary, cashflowSummary }: DashboardCar
           <div className="mt-2 flex items-center space-x-1 bg-muted/30 p-1.5 rounded">
             <PiggyBank className="h-3 w-3 text-muted-foreground" />
             <p className="text-xs text-muted-foreground">
-              Savings Rate: {Math.round(cashflowSummary.savingsRate)}%
+              Savings Rate: {Math.round(safeCashflowSummary.savingsRate || 0)}%
             </p>
           </div>
           

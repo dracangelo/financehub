@@ -130,10 +130,16 @@ export function WatchlistTable({ items = [], onAddNew }: WatchlistTableProps) {
   }
   
   // Calculate price difference from target
-  const getPriceDifference = (current: number, target: number | null) => {
-    if (target === null) return null
+  const getPriceDifference = (current: number | null | undefined, target: number | null | undefined) => {
+    // Return null if either value is null, undefined, or not a valid number
+    if (target === null || target === undefined || current === null || current === undefined) return null
+    if (isNaN(target) || isNaN(current) || current === 0) return null
+    
+    // Calculate the percentage difference
     const diff = ((target - current) / current) * 100
-    return diff.toFixed(2)
+    
+    // Make sure diff is a valid number before calling toFixed
+    return !isNaN(diff) ? diff.toFixed(2) : null
   }
   
   return (
@@ -214,8 +220,8 @@ export function WatchlistTable({ items = [], onAddNew }: WatchlistTableProps) {
                 const hasReachedTarget = item.target_price !== null && item.price >= item.target_price
                 
                 // Format the price change percentage
-                const priceChangePercent = item.price_change_percent !== undefined 
-                  ? item.price_change_percent.toFixed(2) 
+                const priceChangePercent = item.price_change_percent !== undefined && item.price_change_percent !== null && !isNaN(item.price_change_percent)
+                  ? Number(item.price_change_percent).toFixed(2) 
                   : null
                 
                 // Determine if the stock is up or down for the day

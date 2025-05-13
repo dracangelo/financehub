@@ -112,13 +112,13 @@ async function createServerSupabaseClient() {
   })
   
   try {
-    // Get all cookies from the request - cookies() is synchronous in server actions
+    // Get all cookies from the request - properly awaited to avoid errors
     const cookieStore = cookies()
     
     // Try all possible cookie formats
     // 1. Try the standard sb-access-token and sb-refresh-token
-    const accessTokenCookie = cookieStore.get('sb-access-token')
-    const refreshTokenCookie = cookieStore.get('sb-refresh-token')
+    const accessTokenCookie = await cookieStore.get('sb-access-token')
+    const refreshTokenCookie = await cookieStore.get('sb-refresh-token')
     const accessToken = accessTokenCookie?.value
     const refreshToken = refreshTokenCookie?.value
     
@@ -261,11 +261,26 @@ export async function addToWatchlist(formData: FormData) {
   const ticker = (formData.get("ticker") as string)?.toUpperCase()
   const name = formData.get("name") as string
   const price = parseFloat(formData.get("price") as string)
-  const targetPrice = formData.get("targetPrice") ? parseFloat(formData.get("targetPrice") as string) : null
+  
+  // Check for both camelCase and snake_case versions of field names
+  const targetPrice = formData.get("targetPrice") 
+    ? parseFloat(formData.get("targetPrice") as string) 
+    : formData.get("target_price") 
+      ? parseFloat(formData.get("target_price") as string) 
+      : null
+  
   const notes = formData.get("notes") as string || ""
   const sector = formData.get("sector") as string || "Uncategorized"
-  const priceAlerts = formData.get("priceAlerts") === "true"
-  const alertThreshold = formData.get("alertThreshold") ? parseFloat(formData.get("alertThreshold") as string) : null
+  
+  // Check for both camelCase and snake_case versions
+  const priceAlerts = formData.get("priceAlerts") === "true" || formData.get("price_alerts") === "true"
+  
+  // Check for both camelCase and snake_case versions
+  const alertThreshold = formData.get("alertThreshold") 
+    ? parseFloat(formData.get("alertThreshold") as string) 
+    : formData.get("alert_threshold") 
+      ? parseFloat(formData.get("alert_threshold") as string) 
+      : null
 
   // Validate required fields
   if (!ticker || !name) {
