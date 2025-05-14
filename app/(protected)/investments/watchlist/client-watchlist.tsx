@@ -1,10 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { WatchlistContent } from "./watchlist-content";
 import { getClientWatchlistItems } from "./watchlist-client-actions";
-
-// Import the WatchlistItem type from watchlist-content
 import { WatchlistItem } from "./watchlist-content";
 
 export function ClientWatchlist() {
@@ -14,28 +12,34 @@ export function ClientWatchlist() {
 
   // Helper function to map API response items to WatchlistItem interface
   function mapWatchlistItems(items: any[]): WatchlistItem[] {
-    return items.map((item: any) => ({
-      id: item.id,
-      ticker: item.ticker,
-      name: item.name,
-      price: item.price || 0,
-      target_price: item.target_price || null,
-      notes: item.notes || "",
-      sector: item.sector || "",
-      created_at: item.created_at || new Date().toISOString(),
-      updated_at: item.updated_at || new Date().toISOString(),
-      // Handle both naming conventions for price alerts
-      price_alerts: Boolean(item.price_alert_enabled || item.price_alerts || false),
-      alert_threshold: item.alert_threshold || null,
-      // Add enhanced fields for real-time data
-      previous_close: item.previous_close || null,
-      price_change: item.price_change || null,
-      price_change_percent: item.price_change_percent || null,
-      day_high: item.day_high || null,
-      day_low: item.day_low || null,
-      last_updated: item.last_updated || new Date().toISOString(),
-      alert_triggered: Boolean(item.alert_triggered || false)
-    }));
+    console.log('Mapping watchlist items, raw data sample:', items.length > 0 ? items[0] : 'No items');
+    return items.map((item: any) => {
+      // Handle the field name mismatch between price_alerts and price_alert_enabled
+      const hasPriceAlerts = Boolean(item.price_alert_enabled !== undefined ? item.price_alert_enabled : item.price_alerts || false);
+      
+      return {
+        id: item.id,
+        ticker: item.ticker,
+        name: item.name,
+        price: item.price || 0,
+        target_price: item.target_price || null,
+        notes: item.notes || "",
+        sector: item.sector || "",
+        created_at: item.created_at || new Date().toISOString(),
+        updated_at: item.updated_at || new Date().toISOString(),
+        // Use the resolved price alerts value
+        price_alerts: hasPriceAlerts,
+        alert_threshold: item.alert_threshold || null,
+        // Add enhanced fields for real-time data
+        previous_close: item.previous_close || null,
+        price_change: item.price_change || null,
+        price_change_percent: item.price_change_percent || null,
+        day_high: item.day_high || null,
+        day_low: item.day_low || null,
+        last_updated: item.last_updated || new Date().toISOString(),
+        alert_triggered: Boolean(item.alert_triggered || false)
+      };
+    });
   }
   
   // Handle authentication errors by redirecting to sign-in
@@ -71,10 +75,23 @@ export function ClientWatchlist() {
     }
   }
   
+  // Use a ref to track if the component is mounted
+  const isMounted = useRef(true);
+  
+  // Clean up the ref when component unmounts
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+  
   useEffect(() => {
     async function fetchWatchlistItems() {
+      if (!isMounted.current) return;
+      
       try {
         console.log('Fetching watchlist items...');
+        setLoading(true);
         
         // Fetch the authenticated user ID from the session API
         let userId;
@@ -103,9 +120,9 @@ export function ClientWatchlist() {
             userId = localStorage.getItem('finance_user_id') || crypto.randomUUID();
             localStorage.setItem('finance_user_id', userId);
           }
-        } catch (error) {
-          console.error('Error fetching session:', error);
-          // Fall back to localStorage ID if there's an error
+        } catch (sessionError) {
+          console.error('Error fetching session:', sessionError);
+          // Fall back to localStorage ID if session API throws
           userId = localStorage.getItem('finance_user_id') || crypto.randomUUID();
           localStorage.setItem('finance_user_id', userId);
         }
@@ -141,7 +158,8 @@ export function ClientWatchlist() {
           }
         }
         
-        // Try to fetch the watchlist items from API
+        // Fetch items from the API
+        console.log('Fetching items from API...');
         const response = await fetch('/api/watchlist/items', {
           method: 'GET',
           credentials: 'include',
@@ -149,7 +167,11 @@ export function ClientWatchlist() {
             'Content-Type': 'application/json',
             'Cache-Control': 'no-cache',
             'X-User-ID': userId,
-            'X-Stored-Items': storedItemsHeader
+            'X-Stored-Items': storedItemsHeader,
+            'X-Client-ID': userId,
+            'X-Auth-User-ID': userId,
+            // Add a client-id cookie in the header for non-authenticated users
+            'Cookie': `client-id=${userId}`
           }
         });
         
@@ -167,6 +189,17 @@ export function ClientWatchlist() {
             if (data.success) {
               apiItems = data.items || [];
               console.log('Fetched items from API:', apiItems.length);
+              
+              // If we got items from the API, update localStorage to match
+              if (apiItems.length > 0) {
+                try {
+                  // Store the API items in localStorage for offline access
+                  localStorage.setItem('watchlist_items', JSON.stringify(apiItems));
+                  console.log('Updated localStorage with API items');
+                } catch (storageError) {
+                  console.error('Error updating localStorage:', storageError);
+                }
+              }
             } else {
               console.warn('API returned error:', data.error);
             }
@@ -180,8 +213,8 @@ export function ClientWatchlist() {
         
         // Add localStorage items that aren't already in the API response
         if (localStorageItems.length > 0) {
-          const apiItemIds = new Set(apiItems.map(item => item.id));
-          const uniqueLocalItems = localStorageItems.filter(item => !apiItemIds.has(item.id));
+          const apiItemIds = new Set(apiItems.map((item: any) => item.id));
+          const uniqueLocalItems = localStorageItems.filter((item: any) => !apiItemIds.has(item.id));
           
           if (uniqueLocalItems.length > 0) {
             console.log('Adding unique localStorage items:', uniqueLocalItems.length);

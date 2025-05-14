@@ -13,78 +13,107 @@ export const getAuthenticatedUser = cache(async () => {
       return null
     }
     
-    // Use getUser for secure authentication by contacting the Supabase Auth server
-    const { data, error } = await supabase.auth.getUser()
-    
-    if (error) {
-      // Don't throw an error for auth session missing - this is expected for unauthenticated users
-      if (error.message.includes("Auth session missing")) {
+    try {
+      // Use getUser for secure authentication by contacting the Supabase Auth server
+      const { data, error } = await supabase.auth.getUser()
+      
+      if (error) {
+        // Don't throw an error for auth session missing - this is expected for unauthenticated users
+        if (error.message.includes("Auth session missing")) {
+          return null
+        }
+        
+        // Handle expired tokens gracefully
+        if (error.message.includes("invalid JWT") || 
+            error.message.includes("token is expired") || 
+            error.message.includes("token has invalid claims")) {
+          console.log("Token expired or invalid, treating as unauthenticated")
+          return null
+        }
+        
+        console.error("Authentication error:", error.message)
         return null
       }
-      console.error("Authentication error:", error.message)
-      return null
-    }
-    
-    // If we have a user, ensure they exist in the public.users table
-    if (data && data.user && data.user.email) {
-      // Check if user exists in the public.users table
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('id')
-        .eq('id', data.user.id)
-        .maybeSingle()
       
-      if (userError) {
-        console.error("Error checking if user exists:", userError.message)
-      } else if (!userData) {
-        // If user doesn't exist in the public.users table, create a new record
-        // Generate a username based on email
-        const emailPrefix = data.user.email.split('@')[0]
-        const username = `${emailPrefix}${Math.floor(Math.random() * 1000)}`
-        
-        // Create a new user record
-        const { error: insertError } = await supabase
-          .from('users')
-          .insert({
-            id: data.user.id,
-            username,
-            email: data.user.email,
-            is_email_verified: data.user.email_confirmed_at ? true : false,
-            mfa_enabled: false,
-            is_biometrics_enabled: false,
-            suspicious_login_flag: false,
-            session_timeout_minutes: 30,
-            emergency_access_enabled: false,
-            has_consented: false,
-            privacy_level: 'standard',
-            local_data_only: false,
-            allow_data_analysis: true,
-            data_retention_policy: '1y',
-            locale: 'en-US',
-            currency_code: 'USD',
-            timezone: 'UTC',
-            theme: 'system',
-            date_format: 'YYYY-MM-DD',
-            notification_preferences: {},
-            onboarding_completed: false,
-            user_role: 'user',
-            permission_scope: {},
-            marketing_opt_in: false,
-            last_login_at: new Date().toISOString(),
-            last_active_at: new Date().toISOString()
-          })
-        
-        if (insertError) {
-          console.error("Error creating user record:", insertError.message)
+      // If we have a user, ensure they exist in the public.users table
+      if (data && data.user && data.user.email) {
+        try {
+          // Check if user exists in the public.users table
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('id')
+            .eq('id', data.user.id)
+            .maybeSingle()
+          
+          if (userError) {
+            console.error("Error checking if user exists:", userError.message)
+          } else if (!userData) {
+            // If user doesn't exist in the public.users table, create a new record
+            // Generate a username based on email
+            const emailPrefix = data.user.email.split('@')[0]
+            const username = `${emailPrefix}${Math.floor(Math.random() * 1000)}`
+            
+            // Create a new user record
+            const { error: insertError } = await supabase
+              .from('users')
+              .insert({
+                id: data.user.id,
+                username,
+                email: data.user.email,
+                is_email_verified: data.user.email_confirmed_at ? true : false,
+                mfa_enabled: false,
+                is_biometrics_enabled: false,
+                suspicious_login_flag: false,
+                session_timeout_minutes: 30,
+                emergency_access_enabled: false,
+                has_consented: false,
+                privacy_level: 'standard',
+                local_data_only: false,
+                allow_data_analysis: true,
+                data_retention_policy: '1y',
+                locale: 'en-US',
+                currency_code: 'USD',
+                timezone: 'UTC',
+                theme: 'system',
+                date_format: 'YYYY-MM-DD',
+                notification_preferences: {},
+                onboarding_completed: false,
+                user_role: 'user',
+                permission_scope: {},
+                marketing_opt_in: false,
+                last_login_at: new Date().toISOString(),
+                last_active_at: new Date().toISOString()
+              })
+            
+            if (insertError) {
+              console.error("Error creating user record:", insertError.message)
+            }
+          }
+        } catch (dbError) {
+          // If there's an error with the database operations, log it but still return the user
+          console.error("Database error in getAuthenticatedUser:", dbError)
         }
+        
+        return data.user
       }
       
-      return data.user
+      // No valid user data
+      return null
+    } catch (authError) {
+      // Catch any JWT or token-related errors and handle them gracefully
+      if (authError instanceof Error && 
+          (authError.message.includes("invalid JWT") || 
+           authError.message.includes("token is expired") || 
+           authError.message.includes("token has invalid claims"))) {
+        console.log("Caught token error, treating as unauthenticated:", authError.message)
+        return null
+      }
+      
+      // Re-throw other errors
+      throw authError
     }
-    
-    // No session found
-    return null
   } catch (error) {
+    // Catch any unexpected errors
     console.error("Error getting authenticated user:", error)
     return null
   }

@@ -113,12 +113,12 @@ async function createServerSupabaseClient() {
   
   try {
     // Get all cookies from the request - properly awaited to avoid errors
-    const cookieStore = cookies()
+    const cookieStore = await cookies()
     
     // Try all possible cookie formats
     // 1. Try the standard sb-access-token and sb-refresh-token
-    const accessTokenCookie = await cookieStore.get('sb-access-token')
-    const refreshTokenCookie = await cookieStore.get('sb-refresh-token')
+    const accessTokenCookie = cookieStore.get('sb-access-token')
+    const refreshTokenCookie = cookieStore.get('sb-refresh-token')
     const accessToken = accessTokenCookie?.value
     const refreshToken = refreshTokenCookie?.value
     
@@ -137,7 +137,7 @@ async function createServerSupabaseClient() {
     }
     
     // 2. Try the supabase-auth-token cookie (array format)
-    const supabaseAuthCookie = cookieStore.get('supabase-auth-token')
+    const supabaseAuthCookie = await cookieStore.get('supabase-auth-token')
     if (supabaseAuthCookie?.value) {
       try {
         // Parse the cookie value to extract the session data
@@ -157,6 +157,23 @@ async function createServerSupabaseClient() {
               console.warn('Error setting session with array format:', arraySessionError)
             }
           }
+        }
+      } catch (parseError) {
+        console.warn('Error parsing auth cookie:', parseError)
+      }
+    }
+    
+    // 2. Try the sb-auth-cookie
+    const sbAuthCookie = cookieStore.get('sb-auth-cookie')
+    if (sbAuthCookie?.value) {
+      try {
+        const authData = JSON.parse(sbAuthCookie.value)
+        if (authData?.access_token && authData?.refresh_token) {
+          await supabase.auth.setSession({
+            access_token: authData.access_token,
+            refresh_token: authData.refresh_token
+          })
+          return supabase
         }
       } catch (parseError) {
         console.warn('Error parsing auth cookie:', parseError)
@@ -402,7 +419,7 @@ export async function addToWatchlist(formData: FormData) {
       target_price: targetPrice,
       notes,
       sector,
-      price_alerts: priceAlerts, // Use consistent column naming
+      price_alert_enabled: priceAlerts, // Match database column name
       alert_threshold: alertThreshold,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { WatchlistTable } from "@/components/investments/watchlist-table"
 import { AddToWatchlist } from "@/components/investments/add-to-watchlist"
 import { Input } from "@/components/ui/input"
@@ -25,7 +25,7 @@ export type WatchlistItem = {
   sector: string
   created_at: string
   updated_at: string
-  price_alerts: boolean
+  price_alert_enabled: boolean
   alert_threshold: number | null
   previous_close?: number
   price_change?: number
@@ -39,10 +39,10 @@ type WatchlistContentProps = {
   initialItems: WatchlistItem[]
 }
 
-export function WatchlistContent({ initialItems }: WatchlistContentProps) {
+export function WatchlistContent({ initialItems = [] }: WatchlistContentProps) {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [items, setItems] = useState<WatchlistItem[]>(initialItems)
-  const [filteredItems, setFilteredItems] = useState<WatchlistItem[]>(initialItems)
+  const [filteredItems, setFilteredItems] = useState<WatchlistItem[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedSector, setSelectedSector] = useState<string>('all')
   const [selectedPerformance, setSelectedPerformance] = useState<string>('all')
@@ -50,6 +50,10 @@ export function WatchlistContent({ initialItems }: WatchlistContentProps) {
   const [showOnlyAlerts, setShowOnlyAlerts] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [activeTab, setActiveTab] = useState('all')
+
+  // Use a ref to keep track of the previous items length to prevent state resets
+  const prevItemsRef = useRef<WatchlistItem[]>([])
+  const isInitialRender = useRef(true)
 
   // Get all available sectors from the items
   const sectors = ['all', ...Array.from(new Set(items.filter(item => item.sector).map(item => item.sector)))]
@@ -66,13 +70,40 @@ export function WatchlistContent({ initialItems }: WatchlistContentProps) {
     }
   }, [items])
 
+  // Update items state when initialItems change
+  useEffect(() => {
+    console.log('WatchlistContent received initialItems:', initialItems.length);
+    
+    // Only update items if we have initialItems or this is the initial render
+    if (initialItems.length > 0 || isInitialRender.current) {
+      // Store the current items in the ref for comparison
+      prevItemsRef.current = [...initialItems];
+      
+      // Update the items state
+      setItems(initialItems);
+      
+      // Mark that we've completed the initial render
+      isInitialRender.current = false;
+    }
+  }, [initialItems]); // Only depend on initialItems, not items
+  
+  // Separate effect to handle empty state
+  useEffect(() => {
+    // If items were reset to empty but we had items before, restore from the ref
+    if (items.length === 0 && prevItemsRef.current.length > 0) {
+      console.log('Preventing items from disappearing, restoring from ref:', prevItemsRef.current.length);
+      setItems([...prevItemsRef.current]);
+    }
+  }, [items.length]);
+
   // Filter items based on search query, sector, and performance
   useEffect(() => {
+    console.log('Filtering items, current count:', items.length);
     let filtered = [...items]
 
     // Filter by tab
     if (activeTab === 'alerts') {
-      filtered = filtered.filter(item => item.price_alerts)
+      filtered = filtered.filter(item => item.price_alert_enabled)
     } else if (activeTab === 'targets') {
       filtered = filtered.filter(item => item.target_price !== null)
     } else if (activeTab === 'gainers') {
@@ -111,7 +142,7 @@ export function WatchlistContent({ initialItems }: WatchlistContentProps) {
 
     // Filter by price alerts
     if (showOnlyAlerts) {
-      filtered = filtered.filter(item => item.price_alerts)
+      filtered = filtered.filter(item => item.price_alert_enabled)
     }
 
     setFilteredItems(filtered)
@@ -151,7 +182,7 @@ export function WatchlistContent({ initialItems }: WatchlistContentProps) {
           sector: item.sector || "",
           created_at: item.created_at || new Date().toISOString(),
           updated_at: item.updated_at || new Date().toISOString(),
-          price_alerts: Boolean(item.price_alert_enabled || item.price_alerts || false),
+          price_alert_enabled: Boolean(item.price_alert_enabled || false),
           alert_threshold: item.alert_threshold || null,
           previous_close: item.previous_close || null,
           price_change: item.price_change || null,
@@ -168,7 +199,7 @@ export function WatchlistContent({ initialItems }: WatchlistContentProps) {
         
         // Check for price alerts
         const alertItems = updatedItems.filter((item: WatchlistItem) => 
-          item.price_alerts && 
+          item.price_alert_enabled && 
           item.alert_threshold !== null && 
           ((item.price >= item.alert_threshold) || 
            (item.previous_close && item.previous_close < item.alert_threshold && item.price >= item.alert_threshold))
@@ -202,19 +233,17 @@ export function WatchlistContent({ initialItems }: WatchlistContentProps) {
     }
   }
 
-  // Auto-refresh prices every 5 minutes
+  // Auto-refresh prices every 30 minutes (reduced frequency to prevent excessive refreshing)
   useEffect(() => {
-    // Only refresh if we have items
-    if (items.length > 0) {
-      // Initial refresh
-      refreshPrices()
+    // Only refresh if we have items and this is not an initial render
+    if (items.length > 0 && !isInitialRender.current) {
+      // Set up interval for auto-refresh - no initial refresh to prevent constant refreshing
+      const intervalId = setInterval(refreshPrices, 30 * 60 * 1000) // 30 minutes
       
-      // Set up interval for auto-refresh
-      const intervalId = setInterval(refreshPrices, 5 * 60 * 1000) // 5 minutes
-      
-      return () => clearInterval(intervalId) // Clean up on unmount
+      // Clean up on unmount
+      return () => clearInterval(intervalId)
     }
-  }, [items.length]) // Re-run when items length changes
+  }, []) // Only run once on component mount
 
   return (
     <div className="space-y-6">
