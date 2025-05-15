@@ -31,6 +31,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { createExpense, updateExpense, createSplitExpense } from "@/app/actions/expenses";
+import { getSplitExpensesByExpenseId, updateSplitExpense, deleteSplitExpense } from "@/app/actions/split-expenses";
 import { uploadReceipt } from "@/lib/receipt-utils";
 import { getUsersForSplitExpense } from "@/lib/split-expense-utils";
 import { Expense, ExpenseCategory, RecurrenceFrequency } from "@/types/expense";
@@ -148,42 +149,40 @@ export function ExpenseForm({
     }
   }, [users]);
 
-  // Update form values when expense data changes (useful for editing)
+  // Populate form with expense data if editing
   useEffect(() => {
     if (expense && isEditing) {
+      console.log("Initializing form with expense data:", expense);
+      
+      // Check if the expense has splits data directly from the API response
+      const hasSplits = expense.splits && Array.isArray(expense.splits) && expense.splits.length > 0;
+      const splitData = hasSplits ? expense.splits[0] : null;
+      
+      // Set the form values from the expense data
       form.reset({
         merchant: expense.merchant || "",
         amount: expense.amount || 0,
         currency: expense.currency || "USD",
-        category_ids: expense.categories?.map(cat => cat.id) || [],
+        category_ids: expense.category_ids || [],
         budget_item_id: expense.budget_item_id || null,
-        expense_date: new Date(expense.expense_date),
-        location_name: expense.location_name || "",
-        latitude: expense.latitude || null,
-        longitude: expense.longitude || null,
+        expense_date: expense.expense_date ? new Date(expense.expense_date) : new Date(),
+        location_name: expense.location_name || null,
         recurrence: expense.recurrence || "none",
         is_impulse: expense.is_impulse || false,
-        notes: expense.notes || "",
+        notes: expense.notes || null,
         receipt_image: null,
         warranty_expiration_date: expense.warranty_expiration_date ? new Date(expense.warranty_expiration_date) : null,
-        split_with_user: expense.splits?.[0]?.shared_with_user || "",
-        split_amount: expense.splits?.[0]?.amount || null,
-        split_note: expense.splits?.[0]?.note || null,
+        // Use split data from the expense.splits array if available
+        split_with_user: splitData ? splitData.shared_with_name : (expense.split_with_user || ""),
+        split_amount: splitData ? splitData.amount : (expense.split_amount || null),
+        split_note: splitData ? splitData.note : (expense.split_note || ""),
+        latitude: expense.latitude || null,
+        longitude: expense.longitude || null,
       });
 
-      // Set location if available
-      if (expense.latitude && expense.longitude) {
-        setLocationEnabled(true);
-        setLocationSearchQuery(expense.location_name || "");
-      }
-
-      // Set receipt preview if available
-      if (expense.receipt_url) {
-        setReceiptPreview(expense.receipt_url);
-      }
-
-      // Set split options if available
-      if (expense.splits && expense.splits.length > 0) {
+      // Set split options if there's split data
+      if ((splitData && splitData.shared_with_name) || expense.split_with_user) {
+        console.log("Enabling split options based on existing data");
         setShowSplitOptions(true);
       }
     }
@@ -326,16 +325,14 @@ export function ExpenseForm({
         budget_item_id: data.budget_item_id === 'none' ? null : data.budget_item_id,
         expense_date: data.expense_date,
         location_name: data.location_name || null,
+        latitude: data.latitude,
+        longitude: data.longitude,
         recurrence: data.recurrence || 'none',
         is_impulse: data.is_impulse || false,
         notes: data.notes || null,
         warranty_expiration_date: data.warranty_expiration_date || null,
       };
       
-      // Store the latitude and longitude values in the form state as well
-      form.setValue('latitude', data.latitude);
-      form.setValue('longitude', data.longitude);
-
       let expenseId;
 
       // Create or update the expense
@@ -373,23 +370,77 @@ export function ExpenseForm({
         }
       }
 
-      // Handle split expense creation if applicable
-      if (showSplitOptions && data.split_with_user && data.split_amount && expenseId) {
+      // Handle split expense management
+      if (expenseId) {
         try {
-          // Create a split expense record
-          await createSplitExpense({
-            expense_id: expenseId,
-            shared_with_user: data.split_with_user,
-            amount: Number(data.split_amount),
-            note: data.split_note || null
-          });
-          
-          console.log("Split expense created successfully");
+          if (isEditing) {
+            // Check for existing split expenses from the expense object directly
+            // This avoids making an additional server call that might fail
+            let existingSplits = [];
+            
+            if (expense?.splits && Array.isArray(expense.splits)) {
+              existingSplits = expense.splits;
+              console.log("Using splits data from expense object:", existingSplits);
+            } else {
+              // Only try the server action as a fallback
+              try {
+                existingSplits = await getSplitExpensesByExpenseId(expenseId);
+                console.log("Retrieved splits from server action:", existingSplits);
+              } catch (fetchError) {
+                console.error("Error fetching split expenses:", fetchError);
+                // Continue with empty splits array if fetch fails
+              }
+            }
+            
+            if (showSplitOptions && data.split_with_user && data.split_amount) {
+              // If there are existing splits, update the first one instead of creating a new one
+              if (existingSplits && existingSplits.length > 0) {
+                await updateSplitExpense(existingSplits[0].id, {
+                  shared_with_name: data.split_with_user,
+                  amount: Number(data.split_amount),
+                  status: existingSplits[0].status
+                });
+                console.log("Split expense updated successfully");
+                
+                // Delete any additional split expenses (duplicates)
+                if (existingSplits.length > 1) {
+                  for (let i = 1; i < existingSplits.length; i++) {
+                    await deleteSplitExpense(existingSplits[i].id);
+                  }
+                  console.log("Removed duplicate split expenses");
+                }
+              } else {
+                // No existing splits, create a new one
+                await createSplitExpense({
+                  expense_id: expenseId,
+                  shared_with_user: data.split_with_user,
+                  amount: Number(data.split_amount),
+                  note: data.split_note || null
+                });
+                console.log("Split expense created successfully");
+              }
+            } else if (!showSplitOptions && existingSplits && existingSplits.length > 0) {
+              // Split options turned off but splits exist - remove them
+              for (const split of existingSplits) {
+                await deleteSplitExpense(split.id);
+              }
+              console.log("Split expenses removed as split option was disabled");
+            }
+          } else if (showSplitOptions && data.split_with_user && data.split_amount) {
+            // New expense with split
+            await createSplitExpense({
+              expense_id: expenseId,
+              shared_with_user: data.split_with_user,
+              amount: Number(data.split_amount),
+              note: data.split_note || null
+            });
+            console.log("Split expense created successfully");
+          }
         } catch (splitError) {
-          console.error("Error creating split expense:", splitError);
+          console.error("Error managing split expense:", splitError);
           toast({
             title: "Split Expense Failed",
-            description: "The expense was saved, but we couldn't create the split record.",
+            description: "The expense was saved, but we couldn't manage the split record.",
             variant: "destructive",
           });
         }
@@ -416,7 +467,7 @@ export function ExpenseForm({
       });
       setIsSubmitting(false);
     }
-  };
+  }
 
   return (
     <Form {...form}>
@@ -902,6 +953,7 @@ export function ExpenseForm({
                     placeholder="Any additional details about this expense..."
                     className="min-h-[100px]"
                     {...field}
+                    value={field.value || ""}
                   />
                 </FormControl>
                 <FormMessage />
