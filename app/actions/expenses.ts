@@ -422,47 +422,117 @@ export async function updateExpense(id: string, expenseData: {
     // Update category links if provided
     if (category_ids && category_ids.length > 0) {
       try {
-        // First, verify that the categories exist
-        const { data: validCategories, error: categoryCheckError } = await supabase
-          .from("expense_categories")
-          .select("id")
-          .in("id", category_ids)
-        
-        if (categoryCheckError) {
-          console.error("Error checking categories:", categoryCheckError)
-          // Continue with the update, just don't update categories
-        } else {
-          // Get only the valid category IDs that exist in the database
-          const validCategoryIds = validCategories.map(cat => cat.id)
-          
-          if (validCategoryIds.length > 0) {
-            // Delete existing category links
-            await supabase
-              .from("expense_category_links")
-              .delete()
-              .eq("expense_id", id)
+        // First, ensure all categories exist in the expense_categories table
+        for (const categoryId of category_ids) {
+          // Check if category exists
+          let { data: existingCategory } = await supabase
+            .from("expense_categories")
+            .select("id")
+            .eq("id", categoryId)
+            .single();
 
-            // Insert new category links, but only for valid categories
-            const categoryLinks = validCategoryIds.map(categoryId => ({
-              expense_id: id,
-              category_id: categoryId
-            }))
-
-            const { error: categoryLinkError } = await supabase
-              .from("expense_category_links")
-              .insert(categoryLinks)
-
-            if (categoryLinkError) {
-              console.error("Error linking categories to expense:", categoryLinkError)
-            } else {
-              console.log(`Successfully linked ${validCategoryIds.length} categories to expense`)
+          // If category doesn't exist, create it with a default name based on the ID
+          if (!existingCategory) {
+            console.log(`Creating missing category with ID: ${categoryId}`);
+            const categoryName = `Category ${categoryId.substring(categoryId.length - 2)}`;
+            
+            try {
+              const { error: createError } = await supabase
+                .from("expense_categories")
+                .insert({
+                  id: categoryId,
+                  name: categoryName,
+                  description: `Auto-created category for ID ${categoryId}`,
+                  color: '#' + Math.floor(Math.random()*16777215).toString(16) // Random color
+                });
+                
+              if (!createError) {
+                console.log(`Successfully created category: ${categoryName} with ID: ${categoryId}`);
+                
+                // Verify the category was created by checking again
+                // This helps ensure the category is fully created before we try to link it
+                let retries = 3;
+                while (retries > 0) {
+                  const { data: verifyCategory } = await supabase
+                    .from("expense_categories")
+                    .select("id")
+                    .eq("id", categoryId)
+                    .single();
+                    
+                  if (verifyCategory) {
+                    console.log(`Verified category ${categoryId} exists in database`);
+                    break;
+                  }
+                  
+                  // Wait a short time before retrying
+                  console.log(`Waiting for category ${categoryId} to be available... (${retries} retries left)`);
+                  await new Promise(resolve => setTimeout(resolve, 500));
+                  retries--;
+                }
+              } else {
+                console.error(`Error creating category ${categoryId}:`, createError);
+              }
+            } catch (createError) {
+              console.error(`Error creating category ${categoryId}:`, createError);
+              // Continue anyway, the insert might fail if another process created it concurrently
             }
+          }
+        }
+
+        // Delete existing category links
+        const { error: deleteError } = await supabase
+          .from("expense_category_links")
+          .delete()
+          .eq("expense_id", id);
+          
+        if (deleteError) {
+          console.error("Error deleting existing category links:", deleteError);
+        }
+
+        // Try to insert new category links with retries
+        const categoryLinks = category_ids.map(categoryId => ({
+          expense_id: id,
+          category_id: categoryId
+        }));
+
+        let linkSuccess = false;
+        let retryCount = 3;
+        
+        while (!linkSuccess && retryCount > 0) {
+          const { error: categoryLinkError } = await supabase
+            .from("expense_category_links")
+            .insert(categoryLinks);
+
+          if (categoryLinkError) {
+            console.error(`Error linking categories to expense (retry ${4-retryCount}/3):`, categoryLinkError);
+            // Wait before retrying
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            retryCount--;
           } else {
-            console.warn("None of the provided category IDs exist in the database")
+            console.log(`Successfully linked ${category_ids.length} categories to expense`);
+            linkSuccess = true;
+          }
+        }
+        
+        if (!linkSuccess) {
+          console.error("Failed to link categories after multiple retries");
+          
+          // As a last resort, try inserting categories one by one
+          console.log("Attempting to link categories individually...");
+          for (const link of categoryLinks) {
+            const { error: singleLinkError } = await supabase
+              .from("expense_category_links")
+              .insert([link]);
+              
+            if (singleLinkError) {
+              console.error(`Failed to link category ${link.category_id}:`, singleLinkError);
+            } else {
+              console.log(`Successfully linked category ${link.category_id}`);
+            }
           }
         }
       } catch (error) {
-        console.error("Error in category linking process:", error)
+        console.error("Error in category linking process:", error);
         // Continue with the update, just don't update categories
       }
     }
