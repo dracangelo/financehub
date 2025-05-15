@@ -368,11 +368,10 @@ export function AddToWatchlist({ open, onOpenChange }: AddToWatchlistProps) {
       const data = {
         ticker: tickerValue,
         name: nameValue,
-        // Use the price from the form input, or default to 0 if not available
-        price: priceValue ? parseFloat(priceValue) : 0,
+        price: priceValue ? parseFloat(priceValue) : null,
         targetPrice: targetPriceValue ? parseFloat(targetPriceValue) : null,
         notes: notesValue,
-        sector: sectorValue || "Uncategorized", // Ensure sector is never empty
+        sector: sectorValue,
         // Use price_alert_enabled to match the database schema
         price_alert_enabled: priceAlertEnabled,
         alertThreshold: alertThresholdValue ? parseFloat(alertThresholdValue) : null,

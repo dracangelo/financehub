@@ -5,6 +5,7 @@ import { MainNavigation } from "@/components/layout/main-navigation"
 import { Providers } from "./providers"
 import { ErrorHandler } from "@/components/error/error-handler"
 import { CookieCleaner } from "@/components/error/cookie-cleaner"
+import { ClientIdManager } from "@/components/client-id-manager"
 import "./globals.css"
 import {
   Home,
@@ -104,6 +105,7 @@ export default function RootLayout({
       <body className={inter.className}>
         {/* Cookie cleaner runs first to fix cookie parsing issues */}
         <CookieCleaner />
+        <ClientIdManager />
         <Providers>
           {/* Error handler to capture console errors */}
           <ErrorHandler />

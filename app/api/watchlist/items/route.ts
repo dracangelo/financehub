@@ -83,100 +83,99 @@ export async function GET(request: NextRequest) {
     // For debugging - log cookies
     console.log('Cookie header:', request.headers.get('cookie'));
     
-    // Try to get the authenticated user ID
-    let userId: string = 'default-user';
+    // Try to get the user ID with a clear priority order
+    // 1. Client ID from cookie (highest priority)
+    // 2. Client ID from header
+    // 3. Authenticated user ID from cookie
+    // 4. Authenticated user ID from Supabase auth
+    // 5. Default UUID (lowest priority)
     
-    // First check for user ID in cookies
-    const cookieHeader = request.headers.get('cookie');
-    const authUserIdMatch = cookieHeader?.match(/x-auth-user-id=([^;]+)/);
+    // Start with a valid UUID format for the default user ID to avoid database errors
+    let userId: string = '00000000-0000-0000-0000-000000000000';
     
-    if (authUserIdMatch && authUserIdMatch[1]) {
-      userId = authUserIdMatch[1];
-      console.log('Using authenticated user ID from cookie:', userId);
-    } else {
-      // Try to get the user from the auth session
-      try {
-        const { data, error } = await supabase.auth.getUser();
-        
-        if (!error && data?.user) {
-          userId = data.user.id;
-          console.log('Using authenticated user ID:', userId);
-        } else {
-          // Try to get the session
-          const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    // Get all possible headers and cookies
+    const cookieHeader = request.headers.get('cookie') || '';
+    const clientIdHeader = request.headers.get('x-client-id');
+    const userIdHeader = request.headers.get('x-user-id');
+    
+    // Extract client ID from cookie if present
+    const clientIdMatch = cookieHeader.match(/client-id=([^;]+)/);
+    
+    // Priority 1: Client ID from cookie
+    if (clientIdMatch && clientIdMatch[1]) {
+      userId = clientIdMatch[1];
+      console.log('Using client ID from cookie:', userId);
+    } 
+    // Priority 2: Client ID from header
+    else if (clientIdHeader) {
+      userId = clientIdHeader;
+      console.log('Using client ID from header:', userId);
+    }
+    // Priority 3: Authenticated user ID from cookie
+    else {
+      const authUserIdMatch = cookieHeader.match(/x-auth-user-id=([^;]+)/);
+      if (authUserIdMatch && authUserIdMatch[1]) {
+        userId = authUserIdMatch[1];
+        console.log('Using authenticated user ID from cookie:', userId);
+      }
+      // Priority 4: Try to get the user from Supabase auth
+      else {
+        try {
+          // Try to get the user using getUser
+          const { data, error } = await supabase.auth.getUser();
           
-          if (!sessionError && sessionData?.session?.user) {
-            userId = sessionData.session.user.id;
-            console.log('Using session user ID:', userId);
+          if (!error && data?.user) {
+            userId = data.user.id;
+            console.log('Using authenticated user ID from Supabase:', userId);
           } else {
-            // Check for sb-access-token cookie directly
-            const sbAccessTokenMatch = cookieHeader?.match(/sb-access-token=([^;]+)/);
-            if (sbAccessTokenMatch && sbAccessTokenMatch[1]) {
-              try {
-                // Decode the JWT to extract the user information
-                const tokenParts = sbAccessTokenMatch[1].split('.');
-                if (tokenParts.length === 3) {
-                  const payload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString());
-                  if (payload.sub) {
-                    userId = payload.sub;
-                    console.log('Using user ID from JWT token:', userId);
-                  }
-                }
-              } catch (jwtError) {
-                console.error('Error extracting user from JWT:', jwtError);
-              }
-            }
-            
-            // Fall back to the user ID from the header if we still don't have a user ID
-            if (!userId) {
-              const userIdHeader = request.headers.get('x-user-id');
+            // Try to get the session as a fallback
+            try {
+              const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
               
-              if (userIdHeader) {
-                userId = userIdHeader;
-                console.log('Using user ID from header:', userId);
-              } else {
-                // Generate a persistent user ID if none exists
-                const clientIdCookie = cookieHeader?.match(/client-id=([^;]+)/);
-                if (clientIdCookie && clientIdCookie[1]) {
-                  userId = clientIdCookie[1];
-                  console.log('Using client ID from cookie:', userId);
-                } else {
-                  // No user ID available, use a default but with a warning
-                  userId = 'default-user';
-                  console.log('No user ID available, using default - consider implementing persistent client ID');
-                }
+              if (!sessionError && sessionData?.session?.user) {
+                userId = sessionData.session.user.id;
+                console.log('Using session user ID from Supabase:', userId);
               }
+            } catch (sessionError) {
+              console.error('Error getting session:', sessionError);
             }
           }
-        }
-      } catch (error) {
-        console.error('Error getting authenticated user:', error);
-        
-        // Fall back to the user ID from the header
-        const userIdHeader = request.headers.get('x-user-id');
-        
-        if (userIdHeader) {
-          userId = userIdHeader;
-          console.log('Using user ID from header (after auth error):', userId);
-        } else {
-          // Check for client-id cookie as last resort
-          const clientIdCookie = cookieHeader?.match(/client-id=([^;]+)/);
-          if (clientIdCookie && clientIdCookie[1]) {
-            userId = clientIdCookie[1];
-            console.log('Using client ID from cookie (after auth error):', userId);
-          } else {
-            // No user ID available, use a default
-            userId = 'default-user';
-            console.log('No user ID available, using default (after auth error)');
-          }
+        } catch (authError) {
+          console.error('Error during authentication check:', authError);
         }
       }
     }
+    
+    // Log the final user ID being used
+    console.log('Fetching watchlist items from database for user:', userId);
     
     // Get items from both the database and localStorage
     let databaseItems = [];
     let storedItems = [];
     let userItems = [];
+    
+    // First, ensure the database schema is properly set up
+    try {
+      console.log("Ensuring database schema is properly set up...");
+      // Use absolute URL or relative URL depending on environment
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
+                     (request.headers.get('origin') || 'http://localhost:3000');
+      const setupResponse = await fetch(`${baseUrl}/api/database/setup`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!setupResponse.ok) {
+        console.warn("Database setup failed, but will continue with client-side storage:", await setupResponse.text());
+      } else {
+        console.log("Database setup completed successfully");
+      }
+    } catch (setupError) {
+      console.error("Error setting up database schema:", setupError);
+      // Continue anyway, we'll use client-side storage as fallback
+    }
     
     // 1. First try to get items from the database
     try {
@@ -200,7 +199,7 @@ export async function GET(request: NextRequest) {
     
     // 2. Check if we have any stored items in the request headers
     const storedItemsHeader = request.headers.get('x-stored-items');
-    const clientIdHeader = request.headers.get('x-client-id');
+    // clientIdHeader is already declared above
     
     if (storedItemsHeader) {
       try {
@@ -251,11 +250,12 @@ export async function GET(request: NextRequest) {
     
     // Update the items with real-time data for display
     const updatedItems = userItems.map((item: any) => {
-      // Generate real-time price data for the ticker
-      const currentPrice = item.price || 100; // Use existing price or default
-      const previousClose = currentPrice * 0.99; // Slight difference for demo
-      const priceChange = currentPrice - previousClose;
-      const priceChangePercent = (priceChange / previousClose) * 100;
+      // Use the actual price from the database or form submission
+      const currentPrice = item.price;
+      // Only calculate these values if we have a valid price
+      const previousClose = currentPrice ? currentPrice * 0.99 : 0; // Slight difference for demo
+      const priceChange = currentPrice ? currentPrice - previousClose : 0;
+      const priceChangePercent = currentPrice && previousClose ? (priceChange / previousClose) * 100 : 0;
       
       // Handle the field name mismatch between price_alerts and price_alert_enabled
       // Ensure we're consistently using price_alert_enabled in the API response
@@ -269,11 +269,12 @@ export async function GET(request: NextRequest) {
         user_id: item.user_id || userId,
         ticker: item.ticker,
         name: item.name,
-        // Add real price data
-        price: currentPrice,
-        previous_close: previousClose,
-        price_change: priceChange,
-        price_change_percent: priceChangePercent,
+        // Preserve the original price from the database/form
+        price: item.price || 0,
+        // Add market data as additional fields, not replacing the original price
+        previous_close: previousClose || 0,
+        price_change: priceChange || 0,
+        price_change_percent: priceChangePercent || 0,
         target_price: item.target_price || null,
         notes: item.notes || "",
         sector: item.sector || "Uncategorized",

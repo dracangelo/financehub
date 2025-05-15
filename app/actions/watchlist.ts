@@ -289,8 +289,11 @@ export async function addToWatchlist(formData: FormData) {
   const notes = formData.get("notes") as string || ""
   const sector = formData.get("sector") as string || "Uncategorized"
   
-  // Check for both camelCase and snake_case versions
-  const priceAlerts = formData.get("priceAlerts") === "true" || formData.get("price_alerts") === "true"
+  // Check for all possible field name variations
+  const priceAlertEnabled = formData.get("priceAlertEnabled") === "true" || 
+    formData.get("price_alert_enabled") === "true" || 
+    formData.get("priceAlerts") === "true" || 
+    formData.get("price_alerts") === "true"
   
   // Check for both camelCase and snake_case versions
   const alertThreshold = formData.get("alertThreshold") 
@@ -383,7 +386,7 @@ export async function addToWatchlist(formData: FormData) {
                   target_price numeric,
                   notes text,
                   sector text,
-                  price_alerts boolean DEFAULT false,
+                  price_alert_enabled boolean DEFAULT false,
                   alert_threshold numeric,
                   created_at timestamptz NOT NULL DEFAULT now(),
                   updated_at timestamptz NOT NULL DEFAULT now()
@@ -419,7 +422,7 @@ export async function addToWatchlist(formData: FormData) {
       target_price: targetPrice,
       notes,
       sector,
-      price_alert_enabled: priceAlerts, // Match database column name
+      price_alert_enabled: priceAlertEnabled, // Match database column name
       alert_threshold: alertThreshold,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
@@ -726,7 +729,7 @@ export async function removeFromWatchlist(id: string) {
                   target_price numeric,
                   notes text,
                   sector text,
-                  price_alerts boolean DEFAULT false,
+                  price_alert_enabled boolean DEFAULT false,
                   alert_threshold numeric,
                   created_at timestamptz NOT NULL DEFAULT now(),
                   updated_at timestamptz NOT NULL DEFAULT now()
