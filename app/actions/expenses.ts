@@ -56,7 +56,7 @@ export async function getExpenses(locationSearch?: LocationSearchParams) {
     }
     
     // Execute the query
-    const { data, error } = await query
+    const { data: expenseData, error } = await query
       .order("expense_date", { ascending: false })
       .limit(100)
 
@@ -65,7 +65,16 @@ export async function getExpenses(locationSearch?: LocationSearchParams) {
       return []
     }
 
-    return data || [];
+    // Process the data to ensure consistent date field usage
+    const processedData = (expenseData || []).map(expense => ({
+      ...expense,
+      // Add spent_at field using expense_date for compatibility with components
+      spent_at: expense.expense_date,
+      // Normalize the date field for the calendar and timeline
+      date: expense.expense_date
+    }))
+
+    return processedData;
   } catch (error) {
     console.error("Unexpected error in getExpenses:", error)
     return []
@@ -637,8 +646,8 @@ export async function getExpensesByPeriod(period: "current" | "day" | "week" | "
       startDate = lastYear.toISOString().split("T")[0]
     }
 
-    // Query expenses directly with date range
-    const { data, error } = await supabase
+    // Query expenses directly with date range - use expense_date field
+    const { data: expenseData, error: expenseError } = await supabase
       .from("expenses")
       .select(`
         *,
@@ -647,39 +656,23 @@ export async function getExpensesByPeriod(period: "current" | "day" | "week" | "
       `)
       .eq("user_id", user.id)
       .gte("expense_date", startDate)
-      .lte("expense_date", now.toISOString())
       .order("expense_date", { ascending: false })
 
-    if (error) {
-      console.error("Error fetching expenses by period:", error)
+    if (expenseError) {
+      console.error("Error fetching expenses by period:", expenseError)
       return []
     }
 
-    // Fetch related data
-    const expensesWithRelations = await Promise.all(
-      data.map(async (expense) => {
-        const [accountData, categoryData] = await Promise.all([
-          supabase
-            .from('accounts')
-            .select('id, name, type, institution')
-            .eq('id', expense.account_id)
-            .single(),
-          supabase
-            .from('categories')
-            .select('id, name, color, icon, is_income')
-            .eq('id', expense.category_id)
-            .single()
-        ])
+    // Process the data to ensure consistent date field usage
+    const processedData = expenseData.map(expense => ({
+      ...expense,
+      // Add spent_at field using expense_date for compatibility with components
+      spent_at: expense.expense_date,
+      // Normalize the date field for the calendar and timeline
+      date: expense.expense_date
+    }))
 
-        return {
-          ...expense,
-          account: accountData.data,
-          category: categoryData.data
-        }
-      })
-    )
-
-    return expensesWithRelations
+    return processedData
   } catch (error) {
     console.error("Unexpected error in getExpensesByPeriod:", error)
     return []

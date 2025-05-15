@@ -8,7 +8,8 @@ const publicPaths = [
   '/register',
   '/verify',
   '/forgot-password',
-  '/reset-password'
+  '/reset-password',
+  '/debt-management' // Added debt-management to public paths
 ]
 
 export async function middleware(request: NextRequest) {

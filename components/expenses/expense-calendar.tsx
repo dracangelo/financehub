@@ -207,50 +207,84 @@ export function ExpenseCalendar() {
                 <div key={index} className="aspect-square">
                   {day ? (
                     <TooltipProvider>
-                      <Tooltip delayDuration={300}>
+                      <Tooltip>
                         <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            className={cn(
-                              "w-full h-full rounded-md flex flex-col items-center justify-start p-1",
-                              selectedDate && day.toDateString() === selectedDate.toDateString() ? "bg-primary/10" : "",
-                              isToday(day) ? "border border-primary" : ""
-                            )}
-                            onClick={() => setSelectedDate(day)}
-                            style={{
-                              backgroundColor: hasExpenses(day) ? getSpendingColor(getTotalForDate(day)) : ""
-                            }}
-                          >
-                            <span className="text-sm">{day.getDate()}</span>
+                          <div className="w-full h-full flex flex-col items-center justify-center">
+                            <span>{day.getDate()}</span>
                             {hasExpenses(day) && (
-                              <div className="mt-1">
-                                <Badge variant="outline" className="text-xs">
-                                  {formatCurrency(getTotalForDate(day))}
-                                </Badge>
-                              </div>
-                            )}
-                          </Button>
+  <>
+    <div className="flex flex-col items-center w-full mb-1">
+      {expensesByDate[day.toDateString()]
+        .sort((a, b) => b.amount - a.amount)
+        .slice(0, 3) // Show up to 3 for compactness
+        .map((expense) => (
+          <div
+            key={expense.id}
+            className="w-full flex justify-between items-center text-[10px] leading-tight truncate gap-1"
+            title={`${expense.description || expense.merchant || 'Expense'}: ${formatCurrency(expense.amount)}`}
+          >
+            <span className="truncate max-w-[56px] font-medium" style={{ fontSize: '10px' }}>
+              {expense.description?.length ? expense.description : expense.merchant || 'Expense'}
+            </span>
+            <span className="text-muted-foreground" style={{ fontSize: '10px' }}>
+              {formatCurrency(expense.amount)}
+            </span>
+          </div>
+        ))}
+      {expensesByDate[day.toDateString()].length > 3 && (
+        <span className="text-[10px] text-muted-foreground">+{expensesByDate[day.toDateString()].length - 3} more</span>
+      )}
+    </div>
+    <Badge
+      className="px-1.5 py-0 h-auto text-[10px]"
+      style={{ backgroundColor: getSpendingColor(getTotalForDate(day)) }}
+    >
+      {formatCurrency(getTotalForDate(day))}
+    </Badge>
+  </>
+)}
+                          </div>
                         </TooltipTrigger>
-                        <TooltipContent side="bottom" className="p-0 w-64">
+                        <TooltipContent side="right" className="p-0 bg-transparent border-0 shadow-none max-w-xs">
                           {hasExpenses(day) ? (
-                            <Card className="border-0 shadow-none">
+                            <Card className="border-0 shadow-lg w-80">
                               <CardHeader className="p-3 pb-1">
                                 <CardTitle className="text-sm flex items-center gap-1">
                                   <Calendar className="h-4 w-4" />
                                   {day.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
                                 </CardTitle>
-                                <CardDescription>
-                                  Total: {formatCurrency(getTotalForDate(day))}
+                                <CardDescription className="flex justify-between items-center">
+                                  <span>Total:</span> 
+                                  <Badge variant="secondary">{formatCurrency(getTotalForDate(day))}</Badge>
                                 </CardDescription>
                               </CardHeader>
-                              <CardContent className="p-3 pt-0 max-h-48 overflow-y-auto">
-                                <div className="space-y-1">
-                                  {expensesByDate[day.toDateString()].map((expense) => (
-                                    <div key={expense.id} className="flex justify-between text-xs py-1 border-b border-border/40 last:border-0">
+                              <CardContent className="p-3 pt-0 max-h-60 overflow-y-auto">
+                                <div className="space-y-2">
+                                  {expensesByDate[day.toDateString()]
+                                    .sort((a, b) => b.amount - a.amount)
+                                    .map((expense) => (
+                                    <div 
+                                      key={expense.id} 
+                                      className="flex justify-between text-xs py-2 px-2 border-b border-border/40 last:border-0 hover:bg-accent/50 rounded-sm transition-colors"
+                                    >
                                       <div>
                                         <p className="font-medium">{expense.description}</p>
                                         {expense.category && (
-                                          <p className="text-muted-foreground">{expense.category}</p>
+                                          <div className="flex items-center gap-1 mt-0.5">
+                                            <div 
+                                              className="w-2 h-2 rounded-full" 
+                                              style={{ 
+                                                backgroundColor: typeof expense.category === 'string' 
+                                                  ? '#888888' 
+                                                  : (expense.category.color || '#888888')
+                                              }}
+                                            ></div>
+                                            <p className="text-muted-foreground">
+                                              {typeof expense.category === 'string' 
+                                                ? expense.category 
+                                                : (expense.category.name || 'Uncategorized')}
+                                            </p>
+                                          </div>
                                         )}
                                       </div>
                                       <p className="font-medium">{formatCurrency(expense.amount)}</p>
@@ -260,7 +294,7 @@ export function ExpenseCalendar() {
                               </CardContent>
                             </Card>
                           ) : (
-                            <Card className="border-0 shadow-none">
+                            <Card className="border-0 shadow-lg">
                               <CardContent className="p-3">
                                 <p className="text-sm text-muted-foreground">No expenses on this day</p>
                               </CardContent>
@@ -278,31 +312,54 @@ export function ExpenseCalendar() {
 
             {selectedDate && (
               <Card>
-                <CardContent className="p-4">
-                  <h3 className="font-medium mb-2">
+                <CardHeader className="p-4 pb-2">
+                  <CardTitle className="flex items-center gap-2">
+                    <Calendar className="h-5 w-5" />
                     {selectedDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
-                  </h3>
+                  </CardTitle>
+                  <CardDescription className="flex justify-between items-center">
+                    <span>Total expenses:</span> 
+                    <Badge variant="secondary" className="font-medium">
+                      {formatCurrency(selectedDateExpenses.reduce((total, expense) => total + expense.amount, 0))}
+                    </Badge>
+                  </CardDescription>
+                </CardHeader>
 
+                <CardContent className="p-4 pt-0">
                   {selectedDateExpenses.length === 0 ? (
                     <p className="text-muted-foreground text-sm">No expenses for this date</p>
                   ) : (
                     <div className="space-y-2">
-                      {selectedDateExpenses.map((expense) => (
-                        <div key={expense.id} className="flex justify-between items-center py-2 border-b last:border-0">
+                      {selectedDateExpenses
+                        .sort((a, b) => b.amount - a.amount)
+                        .map((expense) => (
+                        <div 
+                          key={expense.id} 
+                          className="flex justify-between items-center py-2 px-2 border-b last:border-0 hover:bg-accent/50 rounded-sm transition-colors"
+                        >
                           <div>
                             <p className="font-medium">{expense.description}</p>
-                            <p className="text-sm text-muted-foreground">{expense.category}</p>
+                            {expense.category && (
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <div 
+                                  className="w-2 h-2 rounded-full" 
+                                  style={{ 
+                                    backgroundColor: typeof expense.category === 'string' 
+                                      ? '#888888' 
+                                      : (expense.category.color || '#888888')
+                                  }}
+                                ></div>
+                                <p className="text-sm text-muted-foreground">
+                                  {typeof expense.category === 'string' 
+                                    ? expense.category 
+                                    : (expense.category.name || 'Uncategorized')}
+                                </p>
+                              </div>
+                            )}
                           </div>
                           <p className="font-medium">{formatCurrency(expense.amount)}</p>
                         </div>
                       ))}
-
-                      <div className="flex justify-between items-center pt-2">
-                        <p className="font-medium">Total</p>
-                        <p className="font-medium">
-                          {formatCurrency(selectedDateExpenses.reduce((total, expense) => total + expense.amount, 0))}
-                        </p>
-                      </div>
                     </div>
                   )}
                 </CardContent>

@@ -24,11 +24,17 @@ export async function getDebts() {
     
     if (!userId) {
       console.error("getDebts: User not authenticated")
-      throw new Error("User not authenticated")
+      // Return empty array instead of throwing an error
+      return []
     }
     
     console.log("getDebts: Fetching debts for user", userId)
     const supabase = await createServerSupabaseClient()
+    
+    if (!supabase) {
+      console.error("getDebts: Failed to create Supabase client")
+      return []
+    }
 
     const { data, error } = await supabase
       .from("debts")
@@ -38,14 +44,16 @@ export async function getDebts() {
 
     if (error) {
       console.error("Error fetching debts:", error)
-      throw new Error("Failed to fetch debts")
+      // Return empty array instead of throwing an error
+      return []
     }
 
     console.log(`getDebts: Found ${data?.length || 0} debts`)
     return data || []
   } catch (error) {
     console.error("Unexpected error in getDebts:", error)
-    throw error
+    // Return empty array instead of throwing an error
+    return []
   }
 }
 
@@ -57,11 +65,17 @@ export async function getDebtById(id: string) {
     
     if (!userId) {
       console.error("getDebtById: User not authenticated")
-      throw new Error("User not authenticated")
+      // Return null instead of throwing an error
+      return null
     }
     
     console.log(`getDebtById: Fetching debt ${id} for user ${userId}`)
     const supabase = await createServerSupabaseClient()
+    
+    if (!supabase) {
+      console.error("getDebtById: Failed to create Supabase client")
+      return null
+    }
 
     // First try with exact user match
     const { data, error } = await supabase
@@ -73,13 +87,13 @@ export async function getDebtById(id: string) {
 
     if (error) {
       console.error("Error fetching debt:", error)
-      throw new Error("Failed to fetch debt")
+      return null
     }
 
     return data
   } catch (error) {
     console.error("Error in getDebtById:", error)
-    throw error
+    return null
   }
 }
 
