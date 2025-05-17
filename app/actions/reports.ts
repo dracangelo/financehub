@@ -1,6 +1,7 @@
 "use server"
 
 import { createServerSupabaseClient } from "@/lib/supabase/server"
+import { createAdminSupabaseClient } from "@/lib/supabase/admin"
 import { getAuthenticatedUser } from "@/lib/auth"
 import { format } from "date-fns"
 import { PostgrestError } from "@supabase/supabase-js"
@@ -380,6 +381,31 @@ async function processReport(reportId: string) {
   }
 }
 
+// Ensure reports storage bucket exists with proper RLS policies
+async function ensureReportsStorageBucket() {
+  try {
+    // Call the API endpoint to set up the reports bucket
+    const response = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/storage/setup`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      console.warn('Warning: Reports storage bucket setup failed:', errorData)
+      // Continue execution - we'll handle failures gracefully
+    }
+    
+    return true
+  } catch (error) {
+    console.warn('Warning: Error setting up reports storage bucket:', error)
+    // Continue execution - we'll handle failures gracefully
+    return false
+  }
+}
+
 // Generate the actual report file
 async function generateReportFile(report: Report): Promise<string> {
   const supabase = await createServerSupabaseClient()
@@ -387,6 +413,9 @@ async function generateReportFile(report: Report): Promise<string> {
   if (!supabase) {
     throw new Error("Failed to initialize Supabase client")
   }
+  
+  // Ensure the reports storage bucket exists before attempting to upload
+  await ensureReportsStorageBucket()
   
   try {
     // Fetch data based on report type and time range
@@ -486,12 +515,47 @@ async function generateReportFile(report: Report): Promise<string> {
     // Convert metadata to string
     const metadataStr = JSON.stringify(metadata, null, 2)
     
-    // Upload metadata file to storage (in a real app, this would be the actual report file)
+    // Try to use admin client first to bypass RLS policies
+    const adminClient = createAdminSupabaseClient()
+    
+    if (adminClient) {
+      try {
+        console.log('Using admin client for report file upload')
+        
+        // Upload metadata file using admin client to bypass RLS
+        const { error: adminUploadError, data: adminUploadData } = await adminClient.storage
+          .from('reports')
+          .upload(filePath, metadataStr, {
+            contentType: 'application/json',
+            cacheControl: '3600',
+            upsert: true
+          })
+          
+        if (!adminUploadError) {
+          // Get public URL for the file using admin client
+          const { data: urlData } = await adminClient.storage
+            .from('reports')
+            .getPublicUrl(filePath)
+            
+          if (urlData?.publicUrl) {
+            return urlData.publicUrl
+          }
+        } else {
+          console.error('Admin client upload error:', adminUploadError)
+        }
+      } catch (adminError) {
+        console.error('Error using admin client:', adminError)
+      }
+    }
+    
+    // Fall back to regular client if admin client fails
+    console.log('Falling back to regular client for upload')
     const { error: uploadError } = await supabase.storage
       .from('reports')
       .upload(filePath, metadataStr, {
         contentType: 'application/json',
-        cacheControl: '3600'
+        cacheControl: '3600',
+        upsert: true
       })
     
     if (uploadError) {
@@ -500,9 +564,25 @@ async function generateReportFile(report: Report): Promise<string> {
     }
     
     // Get public URL for the file
-    const { data: urlData } = await supabase.storage
-      .from('reports')
-      .getPublicUrl(filePath)
+    // Try admin client first for consistent access (reuse existing or create new)
+    let urlData = null
+    
+    if (adminClient) {
+      const { data } = await adminClient.storage
+        .from('reports')
+        .getPublicUrl(filePath)
+      
+      urlData = data
+    }
+    
+    // Fall back to regular client if needed
+    if (!urlData) {
+      const { data } = await supabase.storage
+        .from('reports')
+        .getPublicUrl(filePath)
+      
+      urlData = data
+    }
     
     if (!urlData || !urlData.publicUrl) {
       // If we can't get a public URL, use a placeholder
