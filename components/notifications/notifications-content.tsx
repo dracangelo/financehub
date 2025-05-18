@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Bell, CheckCircle, Trash2, ExternalLink } from "lucide-react"
+import { Bell, CheckCircle, Trash2, ExternalLink, RefreshCw } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -14,6 +14,7 @@ import {
   deleteNotification 
 } from "@/app/actions/notifications"
 import { Notification } from "@/types/notification"
+import { useAuthRefresh } from "@/components/auth/auth-refresh-provider"
 
 export function NotificationsContent() {
   const [notifications, setNotifications] = useState<Notification[]>([])
@@ -21,16 +22,53 @@ export function NotificationsContent() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
+  const { refreshToken, isRefreshing } = useAuthRefresh()
+
+  // Use the auth refresh hook instead of a local function
 
   // Fetch notifications
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true)
+  const fetchData = async () => {
+    setLoading(true)
+    try {
+      // First, ensure the database structure is set up
+      try {
+        await fetch(`/api/database/notifications-setup`)
+      } catch (setupError) {
+        console.error("Error setting up notification database structure:", setupError)
+      }
+
+      // Then try to seed some sample notifications if none exist
+      try {
+        await fetch(`/api/notifications/seed`)
+      } catch (seedError) {
+        console.error("Error seeding sample notifications:", seedError)
+      }
+      
+      // Try to get notifications
       try {
         const { notifications, error } = await getNotifications()
         
         if (error) {
-          setError(error)
+          // Check if it's an auth error
+          if (error.includes('JWT') || error.includes('token is expired') || error.includes('auth')) {
+            // Try to refresh the token
+            const refreshed = await refreshToken()
+            if (refreshed) {
+              // Try again after token refresh
+              const retryResult = await getNotifications()
+              if (!retryResult.error) {
+                setNotifications(retryResult.notifications)
+                setUnreadCount(retryResult.notifications.filter(n => !n.is_read).length)
+                setError(null)
+                setLoading(false)
+                return
+              }
+            }
+            // If we get here, refresh didn't help
+            setError("Authentication error. Please refresh the page and try again.")
+          } else {
+            setError(error)
+          }
           setNotifications([])
         } else {
           setNotifications(notifications)
@@ -39,13 +77,32 @@ export function NotificationsContent() {
         }
       } catch (err) {
         console.error("Error fetching notifications:", err)
-        setError("Failed to load notifications")
+        // Try to refresh the token in case it's an auth error
+        await refreshToken()
+        setError("Failed to load notifications. Please try refreshing the page.")
         setNotifications([])
-      } finally {
-        setLoading(false)
       }
+    } catch (err) {
+      console.error("Unexpected error:", err)
+      setError("An unexpected error occurred")
+      setNotifications([])
+    } finally {
+      setLoading(false)
     }
+  }
 
+  // Refresh notifications
+  const handleRefresh = async () => {
+    const success = await refreshToken()
+    if (success) {
+      toast.success("Session refreshed successfully")
+      fetchData()
+    } else {
+      toast.error("Failed to refresh session")
+    }
+  }
+
+  useEffect(() => {
     fetchData()
   }, [])
 
@@ -135,16 +192,21 @@ export function NotificationsContent() {
 
   if (error) {
     return (
-      <Card className="w-full">
-        <CardContent className="p-6">
-          <div className="flex flex-col items-center justify-center text-center p-4 gap-4">
-            <Bell className="h-16 w-16 text-destructive opacity-20" />
-            <h3 className="text-lg font-medium">Failed to Load Notifications</h3>
-            <p className="text-muted-foreground">{error}</p>
-            <Button onClick={() => window.location.reload()}>Try Again</Button>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="p-8 text-center">
+        <div className="mb-4 text-4xl">😕</div>
+        <h3 className="text-lg font-medium mb-2">Failed to load notifications</h3>
+        <p className="text-muted-foreground mb-4">{error}</p>
+        <div className="flex justify-center gap-3">
+          <Button onClick={() => fetchData()}>Try Again</Button>
+          <Button 
+            variant="outline" 
+            onClick={handleRefresh}
+            className="flex items-center gap-2"
+          >
+            <RefreshCw className="h-4 w-4" /> Refresh Session
+          </Button>
+        </div>
+      </div>
     )
   }
 
@@ -215,7 +277,7 @@ export function NotificationsContent() {
                       </div>
                     </div>
                     <div className="flex gap-1">
-                      {!notification.read && (
+                      {!notification.is_read && (
                         <Button
                           variant="ghost"
                           size="icon"

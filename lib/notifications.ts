@@ -1,48 +1,72 @@
 "use server"
 
-import { createNotification, getNotificationTypes } from "@/app/actions/notifications"
-import { createClient } from "@/lib/supabase/server"
-import { cookies } from "next/headers"
+import { createNotification } from "@/app/actions/notifications"
+import { createServerSupabaseClient } from "@/lib/supabase/server"
+import { createAdminSupabaseClient } from "@/lib/supabase/admin"
 
 /**
  * Utility function to create notifications for various events in the application
  */
 export async function notify({
   type,
-  message
+  message,
+  link
 }: {
   type: string;
   message: string;
+  link?: string;
 }) {
-  const cookieStore = cookies()
-  const supabase = createClient(cookieStore)
-  
   try {
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    // First, ensure the database structure is set up
+    try {
+      await fetch(`/api/database/notifications-setup`)
+    } catch (setupError) {
+      console.error("Error setting up notification database structure:", setupError)
+    }
+
+    const supabase = await createServerSupabaseClient()
+    
+    if (!supabase) {
+      console.error("Failed to create Supabase client")
+      return { success: false, error: "Database connection error" }
+    }
+    
+    // Get current user
+    const { data, error: userError } = await supabase.auth.getUser()
+    const user = data?.user
     
     if (userError || !user) {
       console.error("Error getting user:", userError)
       return { success: false, error: "User not authenticated" }
     }
     
-    // Get notification types
-    const { types, error: typesError } = await getNotificationTypes()
+    // Create admin client to bypass RLS
+    const adminClient = await createAdminSupabaseClient()
     
-    if (typesError || types.length === 0) {
-      console.error("Error getting notification types:", typesError)
-      return { success: false, error: "Failed to get notification types" }
+    if (!adminClient) {
+      console.error("Failed to create admin client")
+      return { success: false, error: "Could not create notification" }
+    }
+
+    // Create notification directly using admin client
+    const { data: notification, error } = await adminClient
+      .from("user_notifications")
+      .insert({
+        user_id: user.id,
+        notification_type: type,
+        message,
+        link,
+        is_read: false
+      })
+      .select()
+      .single()
+    
+    if (error) {
+      console.error("Error creating notification:", error)
+      return { success: false, error: error.message }
     }
     
-    // Find the notification type ID based on the type name
-    const notificationType = types.find(t => t.name === type) || types[0]
-    
-    const result = await createNotification({
-      userId: user.id,
-      notificationTypeId: notificationType.id,
-      message
-    })
-    
-    return { success: !!result.notification, error: result.error }
+    return { success: true, notification }
   } catch (error) {
     console.error("Error creating notification:", error)
     return { success: false, error: "Failed to create notification" }
@@ -66,8 +90,9 @@ export async function notifyWatchlistAlert({
   isAboveTarget: boolean;
 }) {
   return notify({
-    type: "General Alert",
-    message: `${companyName} (${ticker}) is now ${isAboveTarget ? "above" : "below"} your target price of $${targetPrice.toFixed(2)} at $${currentPrice.toFixed(2)}.`
+    type: "Watchlist Alert",
+    message: `${companyName} (${ticker}) is now ${isAboveTarget ? "above" : "below"} your target price of $${targetPrice.toFixed(2)} at $${currentPrice.toFixed(2)}.`,
+    link: "/watchlist"
   })
 }
 
@@ -88,10 +113,11 @@ export async function notifyBudgetAlert({
   isOverBudget: boolean;
 }) {
   return notify({
-    type: "General Alert",
+    type: "Budget Alert",
     message: isOverBudget
       ? `You've spent $${spentAmount.toFixed(2)} on ${category}, which is $${(spentAmount - budgetAmount).toFixed(2)} over your budget of $${budgetAmount.toFixed(2)}.`
-      : `You've spent $${spentAmount.toFixed(2)} on ${category}, which is ${percentage}% of your budget of $${budgetAmount.toFixed(2)}.`
+      : `You've spent $${spentAmount.toFixed(2)} on ${category}, which is ${percentage}% of your budget of $${budgetAmount.toFixed(2)}.`,
+    link: "/budgets"
   })
 }
 
@@ -112,10 +138,11 @@ export async function notifyExpenseReminder({
   daysUntilDue?: number;
 }) {
   return notify({
-    type: "Reminder",
+    type: "Expense Reminder",
     message: isDue
       ? `Your payment of $${amount.toFixed(2)} for ${expenseName} is due today.`
-      : `Your payment of $${amount.toFixed(2)} for ${expenseName} is due in ${daysUntilDue} days on ${new Date(dueDate).toLocaleDateString()}.`
+      : `Your payment of $${amount.toFixed(2)} for ${expenseName} is due in ${daysUntilDue} days on ${new Date(dueDate).toLocaleDateString()}.`,
+    link: "/expenses"
   })
 }
 
@@ -136,10 +163,11 @@ export async function notifyBillReminder({
   daysUntilDue?: number;
 }) {
   return notify({
-    type: "Reminder",
+    type: "Bill Reminder",
     message: isDue
       ? `Your bill of $${amount.toFixed(2)} for ${billName} is due today.`
-      : `Your bill of $${amount.toFixed(2)} for ${billName} is due in ${daysUntilDue} days on ${new Date(dueDate).toLocaleDateString()}.`
+      : `Your bill of $${amount.toFixed(2)} for ${billName} is due in ${daysUntilDue} days on ${new Date(dueDate).toLocaleDateString()}.`,
+    link: "/bills"
   })
 }
 
@@ -161,13 +189,15 @@ export async function notifyInvestmentUpdate({
 }) {
   if (type === "dividend") {
     return notify({
-      type: "General Alert",
-      message: `You've received a dividend payment of $${amount.toFixed(2)} from ${investmentName}.`
+      type: "Investment Update",
+      message: `You've received a dividend payment of $${amount.toFixed(2)} from ${investmentName}.`,
+      link: "/investments"
     })
   } else {
     return notify({
-      type: "General Alert",
-      message: `Your investment in ${investmentName} has ${isPositive ? "increased" : "decreased"} by ${percentageChange}% (${isPositive ? "+" : "-"}$${amount.toFixed(2)}).`
+      type: "Investment Update",
+      message: `Your investment in ${investmentName} has ${isPositive ? "increased" : "decreased"} by ${percentageChange}% (${isPositive ? "+" : "-"}$${amount.toFixed(2)}).`,
+      link: "/investments"
     })
   }
 }

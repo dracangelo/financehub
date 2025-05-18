@@ -5,6 +5,7 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { Notification, NotificationPreferences, NotificationType } from "@/types/notification"
+import { refreshSession } from "@/lib/supabase/auth-refresh"
 
 // Interface for creating notifications
 interface CreateNotificationParams {
@@ -50,7 +51,16 @@ export async function getNotificationTypes() {
 
 // Get user's notifications
 export async function getNotifications() {
+  // First refresh the auth session to prevent JWT expiration errors
+  await refreshSession();
   try {
+    // First, ensure the database structure is set up
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ""}/api/database/notifications-setup`)
+    } catch (setupError) {
+      console.error("Error setting up notification database structure:", setupError)
+    }
+
     const supabase = await createServerSupabaseClient()
     
     if (!supabase) {
@@ -69,8 +79,9 @@ export async function getNotifications() {
     
     // Get notifications with type information
     const { data: notifications, error } = await supabase
-      .from("user_notification_history")
+      .from("user_notifications")
       .select("*")
+      .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(50)
     
@@ -86,6 +97,7 @@ export async function getNotifications() {
       notification_type_id: notification.notification_type,
       notification_type: notification.notification_type,
       message: notification.message,
+      link: notification.link,
       is_read: notification.is_read,
       created_at: notification.created_at,
       updated_at: notification.updated_at
@@ -100,6 +112,8 @@ export async function getNotifications() {
 
 // Get user's unread notifications
 export async function getUnreadNotifications() {
+  // First refresh the auth session to prevent JWT expiration errors
+  await refreshSession();
   try {
     const supabase = await createServerSupabaseClient()
     
@@ -159,19 +173,26 @@ export async function createNotification(params: CreateNotificationParams) {
     }
 
     // Create admin client to bypass RLS
-    const adminClient = createAdminSupabaseClient()
+    const adminClient = await createAdminSupabaseClient()
     
     if (!adminClient) {
       console.error("Failed to create admin client")
       return { success: false, error: "Could not create notification" }
     }
 
+    // First, ensure the database structure is set up
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ""}/api/database/notifications-setup`)
+    } catch (setupError) {
+      console.error("Error setting up notification database structure:", setupError)
+    }
+
     // Create notification using admin client
     const { data, error } = await adminClient
-      .from("notifications")
+      .from("user_notifications")
       .insert({
         user_id: params.userId,
-        notification_type_id: params.notificationTypeId,
+        notification_type: params.notificationTypeId,
         message: params.message,
         is_read: false
       })
@@ -193,6 +214,8 @@ export async function createNotification(params: CreateNotificationParams) {
 
 // Mark a notification as read
 export async function markNotificationAsRead(id: string) {
+  // First refresh the auth session to prevent JWT expiration errors
+  await refreshSession();
   try {
     const supabase = await createServerSupabaseClient()
     
@@ -210,11 +233,11 @@ export async function markNotificationAsRead(id: string) {
       return { success: false, error: "User not authenticated" }
     }
     
-    // Update notification
+    // Mark notification as read
     const { error } = await supabase
-      .from("notifications")
-      .update({ is_read: true })
-      .eq("id", id)
+      .from("user_notifications")
+      .update({ is_read: true, updated_at: new Date().toISOString() })
+      .eq("notification_id", id)
       .eq("user_id", user.id)
     
     if (error) {
@@ -232,6 +255,8 @@ export async function markNotificationAsRead(id: string) {
 
 // Mark all notifications as read
 export async function markAllNotificationsAsRead() {
+  // First refresh the auth session to prevent JWT expiration errors
+  await refreshSession();
   try {
     const supabase = await createServerSupabaseClient()
     
@@ -251,8 +276,8 @@ export async function markAllNotificationsAsRead() {
     
     // Update all notifications
     const { error } = await supabase
-      .from("notifications")
-      .update({ is_read: true })
+      .from("user_notifications")
+      .update({ is_read: true, updated_at: new Date().toISOString() })
       .eq("user_id", user.id)
       .eq("is_read", false)
     
@@ -271,6 +296,8 @@ export async function markAllNotificationsAsRead() {
 
 // Delete a notification
 export async function deleteNotification(id: string) {
+  // First refresh the auth session to prevent JWT expiration errors
+  await refreshSession();
   try {
     const supabase = await createServerSupabaseClient()
     
@@ -290,9 +317,9 @@ export async function deleteNotification(id: string) {
     
     // Delete notification
     const { error } = await supabase
-      .from("notifications")
+      .from("user_notifications")
       .delete()
-      .eq("id", id)
+      .eq("notification_id", id)
       .eq("user_id", user.id)
     
     if (error) {
@@ -310,6 +337,8 @@ export async function deleteNotification(id: string) {
 
 // Get user's notification preferences
 export async function getNotificationPreferences() {
+  // First refresh the auth session to prevent JWT expiration errors
+  await refreshSession();
   try {
     const supabase = await createServerSupabaseClient()
     
@@ -388,6 +417,8 @@ export async function getNotificationPreferences() {
 
 // Update user's notification preferences
 export async function updateNotificationPreferences(preferences: Partial<NotificationPreferences>) {
+  // First refresh the auth session to prevent JWT expiration errors
+  await refreshSession();
   try {
     const supabase = await createServerSupabaseClient()
     

@@ -8,10 +8,10 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { toast } from "sonner"
 import { 
-  NotificationPreferences, 
   getNotificationPreferences, 
   updateNotificationPreferences 
 } from "@/app/actions/notifications"
+import { NotificationPreferences } from "@/types/notification"
 import { Bell, Mail, Smartphone, AlertTriangle } from "lucide-react"
 
 export function NotificationPreferencesForm() {
@@ -25,6 +25,13 @@ export function NotificationPreferencesForm() {
     const fetchData = async () => {
       setLoading(true)
       try {
+        // First, ensure the database structure is set up
+        try {
+          await fetch(`/api/database/notifications-setup`)
+        } catch (setupError) {
+          console.error("Error setting up notification database structure:", setupError)
+        }
+        
         const { preferences, error } = await getNotificationPreferences()
         
         if (error) {
