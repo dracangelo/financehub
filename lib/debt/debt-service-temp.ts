@@ -161,46 +161,19 @@ export class DebtService {
         
         if (error) {
           console.error('Database error:', error)
+          // For database errors, log and return empty array
           console.error('Database error:', error.message)
-          
-          // Try to get debts from localStorage
-          return this.getLocalDebts(userId)
+          return []
         }
         
-        // Merge database debts with any local debts
-        const dbDebts = data || []
-        const localDebts = this.getLocalDebts(userId)
-        
-        // Combine both sources, removing duplicates by ID
-        const allDebts = [...dbDebts]
-        for (const localDebt of localDebts) {
-          if (!allDebts.some(debt => debt.id === localDebt.id)) {
-            allDebts.push(localDebt)
-          }
-        }
-        
-        console.log(`getDebts: Found ${allDebts.length} total debts (${dbDebts.length} from DB, ${localDebts.length} local)`)
-        return allDebts
+        console.log(`getDebts: Found ${data?.length || 0} debts`)
+        return data || []
       } catch (dbError) {
         console.error('Database error in getDebts:', dbError)
-        // Try to get debts from localStorage
-        return this.getLocalDebts(userId)
+        return []
       }
     } catch (error) {
       console.error('Error in getDebts:', error)
-      return []
-    }
-  }
-  
-  // Helper method to get debts from localStorage
-  private getLocalDebts(userId: string): Debt[] {
-    try {
-      if (typeof window === 'undefined') return []
-      
-      const localDebts = JSON.parse(localStorage.getItem('client-debts') || '[]') as Debt[]
-      return localDebts.filter(debt => debt.user_id === userId)
-    } catch (error) {
-      console.error('Error getting local debts:', error)
       return []
     }
   }
@@ -255,21 +228,19 @@ export class DebtService {
         })
         
         if (error) {
-          console.warn('Warning: RPC method failed, trying direct insert as fallback:', error.message)
-          // If RPC fails, try direct insert - don't log as error since we have a fallback
+          console.error('Error creating debt with RPC:', error)
+          // If RPC fails, try direct insert
           return this.attemptDirectInsert(debt, userId)
         }
         
         console.log('Debt created successfully with RPC:', data)
         return data
       } catch (rpcError) {
-        console.warn('Warning: RPC method threw exception, trying direct insert as fallback:', 
-          rpcError instanceof Error ? rpcError.message : String(rpcError))
-        // If RPC fails with exception, try direct insert - don't log as error since we have a fallback
+        console.error('Error creating debt with RPC:', rpcError)
+        // If RPC fails with exception, try direct insert
         return this.attemptDirectInsert(debt, userId)
       }
     } catch (error) {
-      // Only log as error if all methods have failed
       console.error('Error in createDebt:', error)
       throw new Error(`Failed to create debt: ${error instanceof Error ? error.message : String(error)}`)
     }
@@ -279,23 +250,12 @@ export class DebtService {
   private async attemptDirectInsert(debt: Omit<Debt, 'id' | 'user_id' | 'created_at' | 'updated_at'>, userId: string): Promise<Debt> {
     try {
       console.log('Attempting direct insert:', debt)
-      
-      // Check if the user is authenticated
-      const session = await this.supabase.auth.getSession()
-      const authUserId = session?.data?.session?.user?.id
-      
-      // If the user is authenticated, use their auth ID, otherwise use the provided userId
-      // This helps with row-level security policies
-      const effectiveUserId = authUserId || userId
-      
-      console.log(`Using user ID for insert: ${effectiveUserId}`)
-      
       const { data, error } = await this.supabase
         .from('debts')
         .insert({
-          user_id: effectiveUserId,
+          user_id: userId,
           name: debt.name,
-          type: debt.type || 'personal_loan',
+          type: debt.type,
           current_balance: debt.current_balance,
           interest_rate: debt.interest_rate,
           minimum_payment: debt.minimum_payment,
@@ -307,82 +267,15 @@ export class DebtService {
         .single()
       
       if (error) {
-        console.warn('Warning: Direct insert failed, trying client-side fallback:', error.message)
-        
-        // If we get a row-level security policy error or any other error, try to create a client-side debt object
-        // This ensures we always have a fallback that works
-        console.log('Creating client-side debt object as final fallback')
-        
-        // Generate a client-side UUID for the debt
-        const clientSideId = crypto.randomUUID ? crypto.randomUUID() : 'temp-' + Date.now()
-        
-        // Return a client-side debt object
-        const clientSideDebt: Debt = {
-          id: clientSideId,
-          user_id: effectiveUserId,
-          name: debt.name,
-          type: debt.type || 'personal_loan',
-          current_balance: debt.current_balance,
-          interest_rate: debt.interest_rate,
-          minimum_payment: debt.minimum_payment,
-          loan_term: debt.loan_term || null,
-          due_date: debt.due_date || null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }
-        
-        // Store in localStorage for persistence
-        try {
-          const existingDebts = JSON.parse(localStorage.getItem('client-debts') || '[]')
-          existingDebts.push(clientSideDebt)
-          localStorage.setItem('client-debts', JSON.stringify(existingDebts))
-          console.log('Successfully stored debt in localStorage as fallback')
-        } catch (storageError) {
-          console.warn('Warning: Error storing debt in localStorage:', storageError)
-          // Continue anyway, the debt object will still be returned for this session
-        }
-        
-        return clientSideDebt
+        console.error('Error in direct insert:', error)
+        throw new Error(`Failed to create debt: ${error.message}`)
       }
       
       console.log('Debt created successfully with direct insert:', data)
       return data
     } catch (error) {
-      // Try one last client-side fallback before giving up
-      try {
-        console.warn('Warning: Exception in direct insert, trying client-side fallback:', 
-          error instanceof Error ? error.message : String(error))
-        
-        // Generate a client-side UUID for the debt
-        const clientSideId = crypto.randomUUID ? crypto.randomUUID() : 'temp-' + Date.now()
-        
-        // Create a client-side debt object as last resort
-        const clientSideDebt: Debt = {
-          id: clientSideId,
-          user_id: userId,
-          name: debt.name,
-          type: debt.type || 'personal_loan',
-          current_balance: debt.current_balance,
-          interest_rate: debt.interest_rate,
-          minimum_payment: debt.minimum_payment,
-          loan_term: debt.loan_term || null,
-          due_date: debt.due_date || null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }
-        
-        // Store in localStorage for persistence
-        const existingDebts = JSON.parse(localStorage.getItem('client-debts') || '[]')
-        existingDebts.push(clientSideDebt)
-        localStorage.setItem('client-debts', JSON.stringify(existingDebts))
-        console.log('Successfully created client-side debt as final fallback')
-        
-        return clientSideDebt
-      } catch (fallbackError) {
-        // Only now do we truly give up and log a real error
-        console.error('Error in direct insert and all fallbacks failed:', error)
-        throw new Error(`Failed to create debt: ${error instanceof Error ? error.message : String(error)}`)
-      }
+      console.error('Error in direct insert:', error)
+      throw new Error(`Failed to create debt: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 

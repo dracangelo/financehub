@@ -5,7 +5,7 @@ export interface Debt {
   current_balance: number
   interest_rate: number
   minimum_payment: number
-  loan_term: number
+  loan_term?: number | null
   due_date: string | null
   created_at: string
   updated_at: string
@@ -17,7 +17,7 @@ export interface DebtConsolidation {
   user_id: string
   total_debt_balance: number
   interest_rate: number
-  loan_term: number
+  loan_term?: number | null
   monthly_payment: number
   created_at: string
   updated_at: string

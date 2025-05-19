@@ -11,7 +11,10 @@ import { Badge } from "@/components/ui/badge"
 import { formatCurrency } from "@/lib/utils"
 import { Plus, CreditCard, Home, Car, GraduationCap, Edit, Trash2, Briefcase, Stethoscope } from "lucide-react"
 import { DebtDialog } from "@/components/debt/debt-dialog"
-import { Debt } from "@/types/debt"
+// Import the UI Debt type from actions instead of the database Debt type
+import { Debt as UIDebt } from "@/app/actions/debts"
+// Also import the database Debt type for service operations
+import { Debt as DBDebt } from "@/types/debt"
 import { DebtService } from "@/lib/debt/debt-service"
 import { useToast } from "@/components/ui/use-toast"
 import { Loader2 } from "lucide-react"
@@ -19,8 +22,8 @@ import { useAuth } from "@/components/auth/auth-provider"
 
 export function DebtList() {
   const [open, setOpen] = useState(false)
-  const [selectedDebt, setSelectedDebt] = useState<Debt | null>(null)
-  const [debts, setDebts] = useState<Debt[]>([])
+  const [selectedDebt, setSelectedDebt] = useState<UIDebt | null>(null)
+  const [debts, setDebts] = useState<UIDebt[]>([])
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState<string | null>(null)
   const router = useRouter()
@@ -49,8 +52,22 @@ export function DebtList() {
       
       // Try to get debts even if we don't have a user ID from context
       // The DebtService will try to get the user ID from the session
-      const fetchedDebts = await debtService.getDebts()
-      setDebts(fetchedDebts)
+      const fetchedDBDebts = await debtService.getDebts()
+      
+      // Convert DB debts to UI debts format
+      const convertedDebts: UIDebt[] = fetchedDBDebts.map(dbDebt => ({
+        id: dbDebt.id,
+        name: dbDebt.name,
+        type: dbDebt.type?.replace('_', '-') || 'personal',
+        principal: dbDebt.current_balance,
+        interest_rate: dbDebt.interest_rate,
+        minimum_payment: dbDebt.minimum_payment,
+        term_months: dbDebt.loan_term,
+        due_date: dbDebt.due_date || undefined,
+        start_date: undefined
+      }))
+      
+      setDebts(convertedDebts)
     } catch (error) {
       console.error("Error fetching debts:", error)
       
@@ -97,13 +114,31 @@ export function DebtList() {
   const formatDebtType = (type: string) => {
     return type.replace('_', ' ').replace('-', ' ')
   }
+  
+  // Function to map UI debt types to database debt types
+  const mapUITypeToDBType = (uiType: string | undefined): string => {
+    if (!uiType) return 'personal_loan'; // Default to personal_loan if type is undefined
+    
+    // Map from UI format (with hyphens) to DB format (with underscores)
+    const typeMap: Record<string, string> = {
+      'credit-card': 'credit_card',
+      'auto': 'auto_loan',
+      'student': 'student_loan',
+      'personal': 'personal_loan',
+      'medical': 'medical_debt',
+      'mortgage': 'mortgage',
+      'other': 'other'
+    }
+    
+    return typeMap[uiType] || 'personal_loan' // Default to personal_loan if type not found
+  }
 
   const handleAddDebt = () => {
     setSelectedDebt(null)
     setOpen(true)
   }
 
-  const handleEditDebt = (debt: Debt) => {
+  const handleEditDebt = (debt: UIDebt) => {
     setSelectedDebt(debt)
     setOpen(true)
   }
@@ -154,7 +189,7 @@ export function DebtList() {
     }
   }
 
-  const handleSaveDebt = async (debt: Debt) => {
+  const handleSaveDebt = async (debt: UIDebt) => {
     try {
       const debtService = new DebtService()
       
@@ -165,23 +200,25 @@ export function DebtList() {
       }
       
       if (selectedDebt) {
-        // Update existing debt
+        // Update existing debt - map UI fields to DB fields
         await debtService.updateDebt(debt.id, {
           name: debt.name,
-          current_balance: debt.current_balance,
+          type: mapUITypeToDBType(debt.type),
+          current_balance: debt.principal,
           interest_rate: debt.interest_rate,
           minimum_payment: debt.minimum_payment,
-          loan_term: debt.loan_term
+          loan_term: debt.term_months || 0
         })
       } else {
-        // Create new debt
+        // Create new debt - map UI fields to DB fields
         await debtService.createDebt({
           name: debt.name,
-          current_balance: debt.current_balance,
+          type: mapUITypeToDBType(debt.type), // Map UI type format to DB format
+          current_balance: debt.principal, // Map principal from UI to current_balance for DB
           interest_rate: debt.interest_rate,
           minimum_payment: debt.minimum_payment,
-          loan_term: debt.loan_term,
-          due_date: debt.due_date
+          loan_term: debt.term_months || 0, // Map term_months from UI to loan_term for DB
+          due_date: debt.due_date || null
         })
       }
       
@@ -270,7 +307,7 @@ export function DebtList() {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>{formatCurrency(debt.current_balance)}</TableCell>
+                    <TableCell>{formatCurrency(debt.principal)}</TableCell>
                     <TableCell>{debt.interest_rate}%</TableCell>
                     <TableCell>{formatCurrency(debt.minimum_payment)}</TableCell>
                     <TableCell className="text-right">
@@ -300,7 +337,7 @@ export function DebtList() {
           <div className="flex w-full items-center justify-between">
             <div className="text-sm text-muted-foreground">Total Debts: {debts.length}</div>
             <div className="font-medium">
-              Total Balance: {formatCurrency(debts.reduce((sum, debt) => sum + debt.current_balance, 0))}
+              Total Balance: {formatCurrency(debts.reduce((sum, debt) => sum + debt.principal, 0))}
             </div>
           </div>
         </CardFooter>
