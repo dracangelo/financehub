@@ -10,6 +10,7 @@ export interface Debt {
   created_at: string
   updated_at: string
   type?: string // Type of debt (e.g., credit_card, mortgage, personal_loan)
+  isLocal?: boolean // Flag to indicate if debt is stored locally
 }
 
 export interface DebtConsolidation {

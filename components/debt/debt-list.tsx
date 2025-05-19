@@ -62,9 +62,11 @@ export function DebtList() {
         principal: dbDebt.current_balance,
         interest_rate: dbDebt.interest_rate,
         minimum_payment: dbDebt.minimum_payment,
-        term_months: dbDebt.loan_term,
+        term_months: dbDebt.loan_term === null ? undefined : dbDebt.loan_term,
         due_date: dbDebt.due_date || undefined,
-        start_date: undefined
+        start_date: undefined,
+        // Add a flag to indicate if this debt was stored locally
+        isLocal: !dbDebt.id.startsWith('db-')
       }))
       
       setDebts(convertedDebts)
@@ -265,10 +267,51 @@ export function DebtList() {
               <CardTitle>My Debts</CardTitle>
               <CardDescription>Manage and track all your debts in one place</CardDescription>
             </div>
-            <Button onClick={handleAddDebt}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Debt
-            </Button>
+            <div className="flex space-x-2">
+              {/* Only show sync button if there are local debts */}
+              {debts.some(debt => (debt as any).isLocal) && (
+                <Button 
+                  onClick={async () => {
+                    setLoading(true)
+                    try {
+                      const debtService = new DebtService()
+                      const success = await debtService.forceSync()
+                      if (success) {
+                        toast({
+                          title: "Success",
+                          description: "Successfully synced debts to database",
+                          variant: "default",
+                        })
+                        await fetchDebts() // Refresh the debt list
+                      } else {
+                        toast({
+                          title: "Warning",
+                          description: "Failed to sync some debts to database",
+                          variant: "destructive",
+                        })
+                      }
+                    } catch (error) {
+                      console.error('Error syncing debts:', error)
+                      toast({
+                        title: "Error",
+                        description: "Error syncing debts to database",
+                        variant: "destructive",
+                      })
+                    } finally {
+                      setLoading(false)
+                    }
+                  }} 
+                  variant="outline"
+                >
+                  <Loader2 className="mr-2 h-4 w-4" />
+                  Sync to DB
+                </Button>
+              )}
+              <Button onClick={handleAddDebt}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Debt
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>

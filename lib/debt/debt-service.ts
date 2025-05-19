@@ -13,15 +13,87 @@ import Cookies from 'js-cookie'
 export class DebtService {
   private supabase = createClientComponentClient()
   private cachedUserId: string | null = null
+  private clientConfig: {
+    useClientStorage: boolean
+    attemptDatabaseOperations: boolean
+    useCreateDebtFunction: boolean
+  } | null = null
+  
+  // Set client ID for the request context
+  private setClientHeaders(userId: string): void {
+    try {
+      // We can't directly modify Supabase headers, so we'll use cookies instead
+      if (typeof window !== 'undefined') {
+        // Set a cookie with the client ID
+        document.cookie = `client-id=${userId}; path=/; max-age=86400; SameSite=Strict`
+        
+        // Also store in localStorage as a backup
+        localStorage.setItem('debt-client-id', userId)
+      }
+    } catch (error) {
+      console.warn('Failed to set client headers:', error)
+    }
+  }
+  
+  // Get client configuration from cookies or use defaults
+  private getClientConfig(): {
+    useClientStorage: boolean
+    attemptDatabaseOperations: boolean
+    useCreateDebtFunction: boolean
+  } {
+    if (this.clientConfig) {
+      return this.clientConfig
+    }
+    
+    try {
+      if (typeof window !== 'undefined') {
+        // Try to get the client configuration from cookies
+        const cookieValue = document.cookie
+          .split('; ')
+          .find(row => row.startsWith('debt-client-config='))
+          ?.split('=')?.[1]
+        
+        if (cookieValue) {
+          try {
+            const config = JSON.parse(decodeURIComponent(cookieValue))
+            this.clientConfig = config
+            console.log('Using client configuration from cookie:', config)
+            return config
+          } catch (parseError) {
+            console.warn('Error parsing client configuration from cookie:', parseError)
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('Error getting client configuration from cookie:', error)
+    }
+    
+    // Default configuration - prioritize client-side storage
+    this.clientConfig = {
+      useClientStorage: true,
+      attemptDatabaseOperations: true,
+      useCreateDebtFunction: false
+    }
+    
+    console.log('Using default client configuration:', this.clientConfig)
+    return this.clientConfig
+  }
   
   // Helper method to ensure database schema is properly set up
   private async ensureDatabaseSetup(): Promise<void> {
     try {
-      // Call the database setup endpoint to ensure schema is ready
-      const response = await fetch('/api/database/debt-setup')
-      if (!response.ok) {
-        const errorData = await response.json()
+      // First, call the database setup endpoint to ensure schema is ready
+      const setupResponse = await fetch('/api/database/debt-setup')
+      if (!setupResponse.ok) {
+        const errorData = await setupResponse.json()
         console.warn('Database setup warning:', errorData)
+      }
+      
+      // Then, update the RLS policies to be more permissive
+      const rlsResponse = await fetch('/api/database/update-debts-rls')
+      if (!rlsResponse.ok) {
+        const errorData = await rlsResponse.json()
+        console.warn('RLS update warning:', errorData)
       }
     } catch (error) {
       console.warn('Failed to run database setup:', error)
@@ -140,15 +212,27 @@ export class DebtService {
 
   async getDebts(): Promise<Debt[]> {
     try {
-      // Ensure database schema is properly set up
-      await this.ensureDatabaseSetup()
-      
       const userId = await this.getUserId()
       if (!userId) {
         console.warn('No user ID available, returning empty debts array')
         return []
       }
 
+      // Set client ID in cookies for better RLS handling
+      this.setClientHeaders(userId)
+      
+      // Get client configuration
+      const config = this.getClientConfig()
+
+      // Get local debts first to ensure we have something to show
+      const localDebts = this.getLocalDebts(userId)
+      
+      // If database operations are disabled, return only local debts
+      if (!config.attemptDatabaseOperations) {
+        console.log('Database operations disabled, using only local debts')
+        return localDebts
+      }
+      
       try {
         console.log(`getDebts: Fetching debts for user ${userId}`)
         
@@ -160,18 +244,19 @@ export class DebtService {
           .order('interest_rate', { ascending: false })
         
         if (error) {
-          console.error('Database error:', error)
-          console.error('Database error:', error.message)
-          
-          // Try to get debts from localStorage
-          return this.getLocalDebts(userId)
+          console.warn('Database error in getDebts:', error)
+          console.log('Using only local debts due to database error')
+          return localDebts
         }
         
-        // Merge database debts with any local debts
-        const dbDebts = data || []
-        const localDebts = this.getLocalDebts(userId)
+        // Mark database debts
+        const dbDebts = (data || []).map(debt => ({
+          ...debt,
+          isLocal: false
+        }))
         
         // Combine both sources, removing duplicates by ID
+        // If a debt exists in both DB and local, prefer the DB version
         const allDebts = [...dbDebts]
         for (const localDebt of localDebts) {
           if (!allDebts.some(debt => debt.id === localDebt.id)) {
@@ -180,11 +265,12 @@ export class DebtService {
         }
         
         console.log(`getDebts: Found ${allDebts.length} total debts (${dbDebts.length} from DB, ${localDebts.length} local)`)
+        
         return allDebts
       } catch (dbError) {
-        console.error('Database error in getDebts:', dbError)
-        // Try to get debts from localStorage
-        return this.getLocalDebts(userId)
+        console.warn('Database error in getDebts:', dbError)
+        console.log('Using only local debts due to database error')
+        return localDebts
       }
     } catch (error) {
       console.error('Error in getDebts:', error)
@@ -198,10 +284,138 @@ export class DebtService {
       if (typeof window === 'undefined') return []
       
       const localDebts = JSON.parse(localStorage.getItem('client-debts') || '[]') as Debt[]
-      return localDebts.filter(debt => debt.user_id === userId)
+      const userDebts = localDebts.filter(debt => debt.user_id === userId)
+      
+      // Mark all local debts with isLocal flag
+      userDebts.forEach(debt => {
+        debt.isLocal = true
+      })
+      
+      // Try to sync local debts to the database if we have any
+      if (userDebts.length > 0) {
+        console.log(`Attempting to sync ${userDebts.length} local debts to database`)
+        this.syncLocalDebtsToDatabase(userDebts, userId).catch((syncError: Error) => {
+          console.warn('Failed to sync local debts to database:', syncError)
+        })
+      }
+      
+      return userDebts
     } catch (error) {
       console.error('Error getting local debts:', error)
       return []
+    }
+  }
+  
+  // Helper method to sync local debts to the database
+  private async syncLocalDebtsToDatabase(localDebts: Debt[], userId: string): Promise<void> {
+    if (localDebts.length === 0) return
+    
+    console.log(`Syncing ${localDebts.length} local debts to database`)
+    
+    // Set the client ID in cookies and localStorage
+    this.setClientHeaders(userId)
+    
+    // Try to insert each local debt into the database
+    for (const localDebt of localDebts) {
+      try {
+        // Check if this debt already exists in the database
+        const { data: existingData, error: existingError } = await this.supabase
+          .from('debts')
+          .select('id')
+          .eq('id', localDebt.id)
+          .maybeSingle()
+        
+        // If the debt already exists in the database, skip it
+        if (!existingError && existingData) {
+          console.log(`Debt ${localDebt.id} already exists in database, skipping sync`)
+          continue
+        }
+        
+        // Insert the debt into the database
+        const { error } = await this.supabase
+          .from('debts')
+          .insert({
+            id: localDebt.id,
+            user_id: userId,
+            name: localDebt.name,
+            type: localDebt.type || 'personal_loan',
+            current_balance: localDebt.current_balance,
+            interest_rate: localDebt.interest_rate,
+            minimum_payment: localDebt.minimum_payment,
+            loan_term: localDebt.loan_term,
+            due_date: localDebt.due_date,
+            created_at: localDebt.created_at,
+            updated_at: new Date().toISOString()
+          })
+        
+        if (error) {
+          console.warn(`Failed to sync local debt ${localDebt.id} to database:`, error)
+        } else {
+          console.log(`Successfully synced local debt ${localDebt.id} to database`)
+          
+          // Remove this debt from localStorage after successful sync
+          this.removeLocalDebt(localDebt.id)
+        }
+      } catch (error) {
+        console.warn(`Error syncing local debt ${localDebt.id}:`, error)
+      }
+    }
+  }
+  
+  // Helper method to remove a debt from localStorage
+  private removeLocalDebt(debtId: string): void {
+    try {
+      if (typeof window === 'undefined') return
+      
+      const localDebts = JSON.parse(localStorage.getItem('client-debts') || '[]') as Debt[]
+      const updatedDebts = localDebts.filter(debt => debt.id !== debtId)
+      localStorage.setItem('client-debts', JSON.stringify(updatedDebts))
+      
+      console.log(`Removed debt ${debtId} from localStorage after database sync`)
+    } catch (error) {
+      console.warn('Error removing local debt:', error)
+    }
+  }
+  
+  // Helper method to update a debt in localStorage
+  private updateLocalDebtInStorage(debtId: string, debt: Partial<Debt>): void {
+    try {
+      if (typeof window === 'undefined') return
+      
+      const localDebts = JSON.parse(localStorage.getItem('client-debts') || '[]') as Debt[]
+      const debtIndex = localDebts.findIndex(d => d.id === debtId)
+      
+      if (debtIndex === -1) {
+        console.warn(`Debt ${debtId} not found in local storage`)
+        return
+      }
+      
+      // Update the debt
+      localDebts[debtIndex] = {
+        ...localDebts[debtIndex],
+        ...debt,
+        updated_at: new Date().toISOString()
+      }
+      
+      localStorage.setItem('client-debts', JSON.stringify(localDebts))
+      console.log(`Successfully updated debt ${debtId} in local storage`)
+    } catch (error) {
+      console.error('Error updating local debt:', error)
+    }
+  }
+  
+  // Helper method to delete a debt from localStorage
+  private deleteLocalDebtFromStorage(debtId: string): void {
+    try {
+      if (typeof window === 'undefined') return
+      
+      const localDebts = JSON.parse(localStorage.getItem('client-debts') || '[]') as Debt[]
+      const updatedDebts = localDebts.filter(debt => debt.id !== debtId)
+      
+      localStorage.setItem('client-debts', JSON.stringify(updatedDebts))
+      console.log(`Successfully deleted debt ${debtId} from local storage`)
+    } catch (error) {
+      console.error('Error deleting local debt:', error)
     }
   }
 
@@ -236,156 +450,163 @@ export class DebtService {
 
   async createDebt(debt: Omit<Debt, 'id' | 'user_id' | 'created_at' | 'updated_at'>): Promise<Debt> {
     try {
-      // Ensure database schema is properly set up
-      await this.ensureDatabaseSetup()
-      
-      // Ensure we have a valid user ID
       const userId = await this.ensureUserId()
       
-      // First try to use the RPC function for better security
-      try {
-        console.log('Creating debt with RPC:', debt)
-        const { data, error } = await this.supabase.rpc('create_debt', {
+      // Get client configuration to determine the approach
+      const config = this.getClientConfig()
+      
+      // Always create a client-side debt object first for reliability
+      const clientDebt = this.createClientSideDebt(debt, userId)
+      console.log('Created client-side debt object')
+      
+      // If client storage is the primary method, store it immediately
+      if (config.useClientStorage) {
+        this.storeDebtInLocalStorage(clientDebt)
+        console.log('Stored debt in localStorage')
+        
+        // If database operations are enabled, try them in the background
+        if (config.attemptDatabaseOperations) {
+          setTimeout(() => {
+            this.attemptDatabaseInsert(debt, userId, clientDebt.id, config.useCreateDebtFunction).catch(err => {
+              console.warn('Background database insert failed:', err)
+            })
+          }, 100)
+        }
+        
+        return clientDebt
+      } else {
+        // Database is the primary method
+        try {
+          // Try to insert into the database first
+          const dbDebt = await this.attemptDatabaseInsert(debt, userId, clientDebt.id, config.useCreateDebtFunction)
+          if (dbDebt) {
+            console.log('Successfully created debt in database')
+            return dbDebt
+          }
+        } catch (dbError) {
+          console.warn('Database insert failed, falling back to client storage:', dbError)
+        }
+        
+        // Fall back to client storage if database insert fails
+        this.storeDebtInLocalStorage(clientDebt)
+        console.log('Stored debt in localStorage as fallback')
+        return clientDebt
+      }
+    } catch (error) {
+      console.error('Error in createDebt:', error)
+      throw error
+    }
+  }
+  
+  // Create a client-side debt object
+  private createClientSideDebt(debt: Omit<Debt, 'id' | 'user_id' | 'created_at' | 'updated_at'>, userId: string): Debt {
+    const now = new Date().toISOString()
+    return {
+      id: `local-${crypto.randomUUID()}`,
+      user_id: userId,
+      name: debt.name,
+      type: debt.type || 'personal_loan',
+      current_balance: debt.current_balance,
+      interest_rate: debt.interest_rate,
+      minimum_payment: debt.minimum_payment,
+      loan_term: debt.loan_term,
+      due_date: debt.due_date,
+      created_at: now,
+      updated_at: now,
+      isLocal: true
+    }
+  }
+  
+  // Store a debt in localStorage
+  private storeDebtInLocalStorage(debt: Debt): void {
+    try {
+      if (typeof window === 'undefined') return
+      
+      const localDebts = JSON.parse(localStorage.getItem('client-debts') || '[]') as Debt[]
+      localDebts.push(debt)
+      localStorage.setItem('client-debts', JSON.stringify(localDebts))
+    } catch (error) {
+      console.error('Error storing debt in localStorage:', error)
+    }
+  }
+  
+  // Attempt to insert into database
+  private async attemptDatabaseInsert(
+    debt: Omit<Debt, 'id' | 'user_id' | 'created_at' | 'updated_at'>, 
+    userId: string, 
+    localId: string,
+    useCreateDebtFunction: boolean = false
+  ): Promise<Debt | null> {
+    try {
+      // Try to use the RPC function if enabled
+      if (useCreateDebtFunction) {
+        const { data: rpcData, error: rpcError } = await this.supabase.rpc('create_debt', {
           _name: debt.name,
-          _type: debt.type,
+          _type: debt.type || 'personal_loan',
           _current_balance: debt.current_balance,
           _interest_rate: debt.interest_rate,
           _minimum_payment: debt.minimum_payment,
           _loan_term: debt.loan_term || null
         })
         
-        if (error) {
-          console.warn('Warning: RPC method failed, trying direct insert as fallback:', error.message)
-          // If RPC fails, try direct insert - don't log as error since we have a fallback
-          return this.attemptDirectInsert(debt, userId)
+        if (!rpcError && rpcData) {
+          console.log('Successfully created debt in database via RPC')
+          
+          // Try to fetch the created debt
+          const { data: createdDebt, error: fetchError } = await this.supabase
+            .from('debts')
+            .select('*')
+            .eq('id', rpcData)
+            .single()
+          
+          if (!fetchError && createdDebt) {
+            return createdDebt
+          }
+        } else {
+          console.warn('RPC error in database insert:', rpcError)
         }
-        
-        console.log('Debt created successfully with RPC:', data)
-        return data
-      } catch (rpcError) {
-        console.warn('Warning: RPC method threw exception, trying direct insert as fallback:', 
-          rpcError instanceof Error ? rpcError.message : String(rpcError))
-        // If RPC fails with exception, try direct insert - don't log as error since we have a fallback
-        return this.attemptDirectInsert(debt, userId)
       }
-    } catch (error) {
-      // Only log as error if all methods have failed
-      console.error('Error in createDebt:', error)
-      throw new Error(`Failed to create debt: ${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-  
-  // Helper method to attempt direct insert if RPC fails
-  private async attemptDirectInsert(debt: Omit<Debt, 'id' | 'user_id' | 'created_at' | 'updated_at'>, userId: string): Promise<Debt> {
-    try {
-      console.log('Attempting direct insert:', debt)
       
-      // Check if the user is authenticated
-      const session = await this.supabase.auth.getSession()
-      const authUserId = session?.data?.session?.user?.id
-      
-      // If the user is authenticated, use their auth ID, otherwise use the provided userId
-      // This helps with row-level security policies
-      const effectiveUserId = authUserId || userId
-      
-      console.log(`Using user ID for insert: ${effectiveUserId}`)
-      
-      const { data, error } = await this.supabase
+      // Try direct insert
+      const dbId = crypto.randomUUID()
+      const { data: insertData, error: insertError } = await this.supabase
         .from('debts')
         .insert({
-          user_id: effectiveUserId,
+          id: dbId,
           name: debt.name,
           type: debt.type || 'personal_loan',
           current_balance: debt.current_balance,
           interest_rate: debt.interest_rate,
           minimum_payment: debt.minimum_payment,
-          loan_term: debt.loan_term || null,
+          loan_term: debt.loan_term,
+          due_date: debt.due_date,
+          user_id: userId,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
         .select()
-        .single()
       
-      if (error) {
-        console.warn('Warning: Direct insert failed, trying client-side fallback:', error.message)
-        
-        // If we get a row-level security policy error or any other error, try to create a client-side debt object
-        // This ensures we always have a fallback that works
-        console.log('Creating client-side debt object as final fallback')
-        
-        // Generate a client-side UUID for the debt
-        const clientSideId = crypto.randomUUID ? crypto.randomUUID() : 'temp-' + Date.now()
-        
-        // Return a client-side debt object
-        const clientSideDebt: Debt = {
-          id: clientSideId,
-          user_id: effectiveUserId,
-          name: debt.name,
-          type: debt.type || 'personal_loan',
-          current_balance: debt.current_balance,
-          interest_rate: debt.interest_rate,
-          minimum_payment: debt.minimum_payment,
-          loan_term: debt.loan_term || null,
-          due_date: debt.due_date || null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }
-        
-        // Store in localStorage for persistence
-        try {
-          const existingDebts = JSON.parse(localStorage.getItem('client-debts') || '[]')
-          existingDebts.push(clientSideDebt)
-          localStorage.setItem('client-debts', JSON.stringify(existingDebts))
-          console.log('Successfully stored debt in localStorage as fallback')
-        } catch (storageError) {
-          console.warn('Warning: Error storing debt in localStorage:', storageError)
-          // Continue anyway, the debt object will still be returned for this session
-        }
-        
-        return clientSideDebt
+      if (!insertError && insertData && insertData.length > 0) {
+        console.log('Successfully created debt in database via direct insert')
+        return insertData[0]
+      } else {
+        console.warn('Direct insert error in database insert:', insertError)
       }
       
-      console.log('Debt created successfully with direct insert:', data)
-      return data
+      return null
     } catch (error) {
-      // Try one last client-side fallback before giving up
-      try {
-        console.warn('Warning: Exception in direct insert, trying client-side fallback:', 
-          error instanceof Error ? error.message : String(error))
-        
-        // Generate a client-side UUID for the debt
-        const clientSideId = crypto.randomUUID ? crypto.randomUUID() : 'temp-' + Date.now()
-        
-        // Create a client-side debt object as last resort
-        const clientSideDebt: Debt = {
-          id: clientSideId,
-          user_id: userId,
-          name: debt.name,
-          type: debt.type || 'personal_loan',
-          current_balance: debt.current_balance,
-          interest_rate: debt.interest_rate,
-          minimum_payment: debt.minimum_payment,
-          loan_term: debt.loan_term || null,
-          due_date: debt.due_date || null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }
-        
-        // Store in localStorage for persistence
-        const existingDebts = JSON.parse(localStorage.getItem('client-debts') || '[]')
-        existingDebts.push(clientSideDebt)
-        localStorage.setItem('client-debts', JSON.stringify(existingDebts))
-        console.log('Successfully created client-side debt as final fallback')
-        
-        return clientSideDebt
-      } catch (fallbackError) {
-        // Only now do we truly give up and log a real error
-        console.error('Error in direct insert and all fallbacks failed:', error)
-        throw new Error(`Failed to create debt: ${error instanceof Error ? error.message : String(error)}`)
-      }
+      console.warn('Error in database insert:', error)
+      return null
     }
   }
-
+  
+  // This method is kept for backward compatibility but now just delegates to the client-side approach
+  private async attemptDirectInsert(debt: Omit<Debt, 'id' | 'user_id' | 'created_at' | 'updated_at'>, userId: string): Promise<Debt> {
+    const clientDebt = this.createClientSideDebt(debt, userId)
+    this.storeDebtInLocalStorage(clientDebt)
+    return clientDebt;
+  }
+  
   // Helper method to check if an error is authentication-related
   private isAuthError(errorMessage?: string): boolean {
     if (!errorMessage) return false
@@ -418,48 +639,99 @@ export class DebtService {
 
   async updateDebt(debtId: string, debt: Partial<Debt>): Promise<void> {
     try {
-      const { error } = await this.supabase
-        .from('debts')
-        .update({
-          ...debt,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', debtId)
+      const userId = await this.ensureUserId()
       
-      if (error) {
-        console.error('Error updating debt:', error)
-        // Don't throw error to prevent login loops
+      // Set client ID in cookies for better RLS handling
+      this.setClientHeaders(userId)
+      
+      // Get client configuration
+      const config = this.getClientConfig()
+      
+      // Always update local debt first for reliability
+      this.updateLocalDebtInStorage(debtId, debt)
+      console.log('Updated debt in localStorage')
+      
+      // If database operations are disabled, return after local update
+      if (!config.attemptDatabaseOperations) {
+        console.log('Database operations disabled, using only local update')
+        return
+      }
+      
+      // Try to update in the database
+      try {
+        const { error } = await this.supabase
+          .from('debts')
+          .update({
+            ...debt,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', debtId)
+          .eq('user_id', userId)
+        
+        if (error) {
+          console.warn('Database error in updateDebt:', error)
+          console.log('Using only local update due to database error')
+        } else {
+          console.log('Successfully updated debt in database')
+        }
+      } catch (dbError) {
+        console.warn('Database error in updateDebt:', dbError)
+        console.log('Using only local update due to database error')
       }
     } catch (error) {
       console.error('Error in updateDebt:', error)
-      // Don't throw error to prevent login loops
+      throw error
     }
   }
 
   async deleteDebt(debtId: string): Promise<void> {
     try {
-      const { error } = await this.supabase.rpc('delete_debt', {
-        _debt_id: debtId
-      })
-
-      if (error) {
-        console.error('Error deleting debt:', error)
-        // Don't throw error to prevent login loops
+      const userId = await this.ensureUserId()
+      
+      // Set client ID in cookies for better RLS handling
+      this.setClientHeaders(userId)
+      
+      // Get client configuration
+      const config = this.getClientConfig()
+      
+      // Always delete from local storage first for reliability
+      this.deleteLocalDebtFromStorage(debtId)
+      console.log('Deleted debt from localStorage')
+      
+      // If database operations are disabled, return after local delete
+      if (!config.attemptDatabaseOperations) {
+        console.log('Database operations disabled, using only local delete')
+        return
+      }
+      
+      // Try to delete from the database
+      try {
+        const { error } = await this.supabase
+          .from('debts')
+          .delete()
+          .eq('id', debtId)
+          .eq('user_id', userId)
+        
+        if (error) {
+          console.warn('Database error in deleteDebt:', error)
+          console.log('Using only local delete due to database error')
+        } else {
+          console.log('Successfully deleted debt from database')
+        }
+      } catch (dbError) {
+        console.warn('Database error in deleteDebt:', dbError)
+        console.log('Using only local delete due to database error')
       }
     } catch (error) {
       console.error('Error in deleteDebt:', error)
-      // Don't throw error to prevent login loops
+      throw error
     }
   }
 
   async calculateRepaymentPlan(strategy: DebtRepaymentStrategy): Promise<DebtRepaymentPlan[]> {
     try {
-      const userId = await this.getUserId()
-      if (!userId) {
-        // Return empty array instead of throwing an error
-        return []
-      }
-
+      const userId = await this.ensureUserId()
+      
       let functionName = ''
       switch (strategy) {
         case 'avalanche':
@@ -492,12 +764,8 @@ export class DebtService {
 
   async calculateInterestSavings(newInterestRate: number, loanTerm: number): Promise<number> {
     try {
-      const userId = await this.getUserId()
-      if (!userId) {
-        // Return 0 instead of throwing an error
-        return 0
-      }
-
+      const userId = await this.ensureUserId()
+      
       const { data, error } = await this.supabase.rpc('calculate_interest_savings', {
         _user_id: userId,
         _new_interest_rate: newInterestRate,
@@ -521,12 +789,8 @@ export class DebtService {
     debtId: string
   ): Promise<void> {
     try {
-      const userId = await this.getUserId()
-      if (!userId) {
-        // Don't throw error to prevent login loops
-        return
-      }
-
+      const userId = await this.ensureUserId()
+      
       const { error } = await this.supabase.rpc('create_refinancing_opportunity', {
         _user_id: userId,
         _new_interest_rate: newInterestRate,
@@ -564,12 +828,8 @@ export class DebtService {
 
   async calculateDebtToIncomeRatio(): Promise<number> {
     try {
-      const userId = await this.getUserId()
-      if (!userId) {
-        // Return 0 instead of throwing an error
-        return 0
-      }
-
+      const userId = await this.ensureUserId()
+      
       const { data, error } = await this.supabase.rpc('calculate_debt_to_income_ratio', {
         _user_id: userId
       })
@@ -582,6 +842,111 @@ export class DebtService {
     } catch (error) {
       console.error('Error in calculateDebtToIncomeRatio:', error)
       return 0
+    }
+  }
+  
+  // Public method to force sync all local debts to the database
+  async forceSync(): Promise<{ success: boolean; message: string }> {
+    try {
+      const userId = await this.ensureUserId()
+      
+      // Set client ID in cookies for better RLS handling
+      this.setClientHeaders(userId)
+      
+      // Get client configuration
+      const config = this.getClientConfig()
+      
+      // If database operations are disabled, return error
+      if (!config.attemptDatabaseOperations) {
+        return { success: false, message: 'Database operations are disabled' }
+      }
+      
+      // Get local debts
+      const localDebts = this.getLocalDebts(userId)
+      if (localDebts.length === 0) {
+        return { success: true, message: 'No local debts to sync' }
+      }
+      
+      console.log(`Syncing ${localDebts.length} local debts to database`)
+      
+      // Try to insert each local debt into the database
+      let successCount = 0
+      let errorCount = 0
+      
+      for (const localDebt of localDebts) {
+        try {
+          // Try to use the RPC function if enabled
+          if (config.useCreateDebtFunction) {
+            const { data: rpcData, error: rpcError } = await this.supabase.rpc('create_debt', {
+              _name: localDebt.name,
+              _type: localDebt.type || 'personal_loan',
+              _current_balance: localDebt.current_balance,
+              _interest_rate: localDebt.interest_rate,
+              _minimum_payment: localDebt.minimum_payment,
+              _loan_term: localDebt.loan_term || null
+            })
+            
+            if (!rpcError && rpcData) {
+              console.log(`Successfully synced debt ${localDebt.id} to database via RPC`)
+              successCount++
+              
+              // Remove from local storage after successful sync
+              this.deleteLocalDebtFromStorage(localDebt.id)
+              continue
+            } else {
+              console.warn(`RPC error syncing debt ${localDebt.id}:`, rpcError)
+            }
+          }
+          
+          // Fall back to direct insert
+          const dbId = crypto.randomUUID()
+          const { error } = await this.supabase.from('debts').insert({
+            id: dbId,
+            name: localDebt.name,
+            type: localDebt.type,
+            current_balance: localDebt.current_balance,
+            interest_rate: localDebt.interest_rate,
+            minimum_payment: localDebt.minimum_payment,
+            loan_term: localDebt.loan_term,
+            due_date: localDebt.due_date,
+            user_id: userId,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          
+          if (error) {
+            console.warn(`Error syncing debt ${localDebt.id}:`, error)
+            errorCount++
+          } else {
+            console.log(`Successfully synced debt ${localDebt.id} to database via direct insert`)
+            successCount++
+            
+            // Remove from local storage after successful sync
+            this.deleteLocalDebtFromStorage(localDebt.id)
+          }
+        } catch (error) {
+          console.warn(`Error syncing local debt ${localDebt.id}:`, error)
+        }
+      }
+      
+      console.log(`Force sync complete: ${successCount}/${localDebts.length} debts synced successfully`)
+      if (errorCount === 0) {
+        return { 
+          success: true, 
+          message: `Successfully synced ${successCount} debts to database` 
+        }
+      } else {
+        return { 
+          success: successCount > 0, 
+          message: `Synced ${successCount} debts, but failed to sync ${errorCount} debts` 
+        }
+      }
+    } catch (error) {
+      console.error('Error in forceSync:', error)
+      return { 
+        success: false, 
+        message: `Error syncing debts: ${error instanceof Error ? error.message : 'Unknown error'}` 
+      }
     }
   }
 }

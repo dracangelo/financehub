@@ -69,37 +69,67 @@ export function RepaymentStrategyCalculator() {
 
   // Fetch debts from the database when component mounts
   useEffect(() => {
-    const fetchExistingDebts = async () => {
-      try {
-        setFetchingDebts(true)
-        setFetchError(null)
-        
-        const existingDebts = await getDebts()
-        
-        if (existingDebts && existingDebts.length > 0) {
-          // Map the database debt format to the calculator's format
-          const mappedDebts: Debt[] = existingDebts.map(debt => ({
-            id: debt.id,
-            name: debt.name,
-            balance: debt.principal,
-            interestRate: debt.interest_rate,
-            minimumPayment: debt.minimum_payment || 0
-          }))
-          
-          setDebts(mappedDebts)
-        } else {
-          setFetchError("No debts found. Please add debts in the Debt Management section first.")
-        }
-      } catch (error) {
-        console.error("Error fetching debts:", error)
-        setFetchError("Failed to load your debts. Please try again.")
-      } finally {
-        setFetchingDebts(false)
-      }
-    }
-    
     fetchExistingDebts()
   }, [])
+
+  const fetchExistingDebts = async () => {
+    try {
+      setFetchingDebts(true)
+      setFetchError(null)
+      
+      // Use the DebtService instead of the server action to get debts from both DB and localStorage
+      const { DebtService } = await import('@/lib/debt/debt-service')
+      const debtService = new DebtService()
+      
+      // Get debts from both database and local storage
+      const fetchedDBDebts = await debtService.getDebts()
+      
+      if (fetchedDBDebts && fetchedDBDebts.length > 0) {
+        console.log('RepaymentCalculator: Found', fetchedDBDebts.length, 'debts')
+        
+        // Map the database debt format to the calculator's format
+        const mappedDebts: Debt[] = fetchedDBDebts.map(debt => ({
+          id: debt.id,
+          name: debt.name,
+          balance: debt.current_balance, // Use current_balance from DB format
+          interestRate: debt.interest_rate,
+          minimumPayment: debt.minimum_payment || 0
+        }))
+        
+        setDebts(mappedDebts)
+      } else {
+        // Fallback to server action if debt service doesn't work
+        try {
+          const existingDebts = await getDebts()
+          
+          if (existingDebts && existingDebts.length > 0) {
+            console.log('RepaymentCalculator: Found', existingDebts.length, 'debts from server action')
+            
+            // Map the database debt format to the calculator's format
+            const mappedDebts: Debt[] = existingDebts.map(debt => ({
+              id: debt.id,
+              name: debt.name,
+              balance: debt.principal,
+              interestRate: debt.interest_rate,
+              minimumPayment: debt.minimum_payment || 0
+            }))
+            
+            setDebts(mappedDebts)
+          } else {
+            setFetchError("No debts found. Please add debts in the Debt Management section first.")
+          }
+        } catch (serverError) {
+          console.error("Error fetching debts from server action:", serverError)
+          setFetchError("Failed to load your debts. Please try again.")
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching debts:", error)
+      setFetchError("Failed to load your debts. Please try again.")
+    } finally {
+      setFetchingDebts(false)
+    }
+  }
   
   // Calculate payoff results when strategy, extra payment, or debts change
   useEffect(() => {
