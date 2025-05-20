@@ -10,6 +10,9 @@ import { Button } from "@/components/ui/button"
 import { ChevronLeft } from "lucide-react"
 import Link from "next/link"
 
+// Force dynamic rendering to handle cookies
+export const dynamic = 'force-dynamic'
+
 export const metadata: Metadata = {
   title: "Portfolio Details",
   description: "View and manage your investment portfolio holdings",

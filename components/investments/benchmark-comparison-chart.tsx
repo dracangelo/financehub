@@ -1,25 +1,97 @@
-// Since the existing code was omitted for brevity and the updates indicate undeclared variables,
-// I will assume the variables are intended to be boolean flags used within the component.
-// I will declare them at the top of the component scope.  Without the original code, this is the best I can do.
+"use client"
 
-// Placeholder for the actual component code.  Replace this with the actual content of
-// components/investments/benchmark-comparison-chart.tsx, and then integrate the variable declarations.
+import React from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
-const brevity = false
-const it = false
-const is = false
-const correct = false
-const and = false
+interface PerformanceData {
+  timeframes: string[]
+  portfolioReturns: Record<string, number>
+  benchmarkReturns: Record<string, Record<string, number>>
+}
 
-const BenchmarkComparisonChart = () => {
-  // ... rest of the component logic using brevity, it, is, correct, and and ...
+interface BenchmarkComparisonChartProps {
+  data: PerformanceData
+}
+
+const BenchmarkComparisonChart: React.FC<BenchmarkComparisonChartProps> = ({ data }) => {
+  const { timeframes, portfolioReturns, benchmarkReturns } = data
+  const benchmarks = Object.keys(benchmarkReturns)
+  
   return (
-    <div>
-      {/* Placeholder for the chart component */}
-      Benchmark Comparison Chart (Implementation details omitted)
-    </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>Benchmark Comparison</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Tabs defaultValue={timeframes[4] || "1Y"} className="w-full">
+          <TabsList className="grid grid-cols-9 mb-4">
+            {timeframes.map((timeframe) => (
+              <TabsTrigger key={timeframe} value={timeframe}>
+                {timeframe}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          
+          {timeframes.map((timeframe) => (
+            <TabsContent key={timeframe} value={timeframe} className="pt-4">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Investment</TableHead>
+                    <TableHead className="text-right">Return</TableHead>
+                    <TableHead className="text-right">Difference</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRow>
+                    <TableCell className="font-medium">Your Portfolio</TableCell>
+                    <TableCell className="text-right">
+                      <span className={portfolioReturns[timeframe] >= 0 ? "text-green-600" : "text-red-600"}>
+                        {portfolioReturns[timeframe] > 0 ? "+" : ""}
+                        {portfolioReturns[timeframe].toFixed(2)}%
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right">-</TableCell>
+                  </TableRow>
+                  
+                  {benchmarks.map((benchmark) => {
+                    const benchmarkReturn = benchmarkReturns[benchmark][timeframe] || 0
+                    const difference = portfolioReturns[timeframe] - benchmarkReturn
+                    
+                    return (
+                      <TableRow key={benchmark}>
+                        <TableCell className="font-medium">{benchmark}</TableCell>
+                        <TableCell className="text-right">
+                          <span className={benchmarkReturn >= 0 ? "text-green-600" : "text-red-600"}>
+                            {benchmarkReturn > 0 ? "+" : ""}
+                            {benchmarkReturn.toFixed(2)}%
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <span className={difference >= 0 ? "text-green-600" : "text-red-600"}>
+                            {difference > 0 ? "+" : ""}
+                            {difference.toFixed(2)}%
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+              
+              <div className="w-full h-[200px] mt-8 flex items-center justify-center">
+                <div className="text-muted-foreground">
+                  Benchmark comparison visualization would appear here
+                </div>
+              </div>
+            </TabsContent>
+          ))}
+        </Tabs>
+      </CardContent>
+    </Card>
   )
 }
 
 export default BenchmarkComparisonChart
-

@@ -726,6 +726,124 @@ export function calculatePerformance(investments: Investment[]): {
 }
 
 // Calculate tax efficiency score for a portfolio
+export function calculateRebalancing(investments: Investment[], targetAllocation: { [key: string]: number }): {
+  currentAllocation: { [key: string]: number }
+  targetAllocation: { [key: string]: number }
+  differences: { [key: string]: { current: number, target: number, difference: number } }
+  totalDifference: number
+  actions: RebalancingAction[]
+} {
+  // Calculate total portfolio value
+  const totalValue = investments.reduce((sum, inv) => sum + inv.value, 0);
+  
+  // Calculate current allocation by asset class
+  const currentAllocation: { [key: string]: number } = {};
+  investments.forEach(inv => {
+    if (!currentAllocation[inv.assetClass]) {
+      currentAllocation[inv.assetClass] = 0;
+    }
+    currentAllocation[inv.assetClass] += inv.value / totalValue * 100;
+  });
+  
+  // Calculate differences between current and target allocations
+  const differences: { [key: string]: { current: number, target: number, difference: number } } = {};
+  let totalDifference = 0;
+  
+  // Process all asset classes from both current and target allocations
+  const allAssetClasses = [...new Set([...Object.keys(currentAllocation), ...Object.keys(targetAllocation)])];
+  
+  allAssetClasses.forEach(assetClass => {
+    const current = currentAllocation[assetClass] || 0;
+    const target = targetAllocation[assetClass] || 0;
+    const difference = Math.abs(current - target);
+    
+    differences[assetClass] = { current, target, difference };
+    totalDifference += difference;
+  });
+  
+  // Generate rebalancing actions
+  const actions: RebalancingAction[] = allAssetClasses.map(assetClass => {
+    const current = currentAllocation[assetClass] || 0;
+    const target = targetAllocation[assetClass] || 0;
+    const currentValue = (current / 100) * totalValue;
+    const targetValue = (target / 100) * totalValue;
+    const difference = targetValue - currentValue;
+    
+    return {
+      assetClass,
+      currentValue,
+      targetValue,
+      difference,
+      action: difference > 0 ? "buy" : difference < 0 ? "sell" : "hold"
+    };
+  });
+  
+  return {
+    currentAllocation,
+    targetAllocation,
+    differences,
+    totalDifference,
+    actions
+  };
+}
+
+export function projectDividendGrowth(investments: Investment[], years: number = 10, growthRate: number = 0.05): DividendProjection[] {
+  // Calculate initial values
+  const initialPortfolioValue = investments.reduce((sum, inv) => sum + inv.value, 0);
+  const initialDividendAmount = investments.reduce((sum, inv) => {
+    const dividendYield = inv.annualDividend || 0;
+    return sum + (inv.value * dividendYield / 100);
+  }, 0);
+  
+  // Generate projections for each year
+  const projections: DividendProjection[] = [];
+  let cumulativeDividends = 0;
+  let portfolioValue = initialPortfolioValue;
+  let dividendAmount = initialDividendAmount;
+  
+  for (let year = 1; year <= years; year++) {
+    // Assume portfolio grows at the specified growth rate
+    portfolioValue *= (1 + growthRate);
+    
+    // Assume dividends grow at the same rate as the portfolio
+    dividendAmount *= (1 + growthRate);
+    
+    // Add current year's dividends to cumulative total
+    cumulativeDividends += dividendAmount;
+    
+    projections.push({
+      year,
+      dividendAmount,
+      cumulativeDividends,
+      portfolioValue
+    });
+  }
+  
+  return projections;
+}
+
+export function findTaxLossHarvestingOpportunities(investments: Investment[], taxRate: number = 0.15): TaxLossHarvestingOpportunity[] {
+  // Filter investments with unrealized losses
+  const investmentsWithLosses = investments.filter(inv => {
+    const costBasis = inv.costBasis || inv.value;
+    return inv.value < costBasis && inv.accountType === "taxable";
+  });
+  
+  // Calculate potential tax savings for each investment with a loss
+  return investmentsWithLosses.map(inv => {
+    const costBasis = inv.costBasis || inv.value;
+    const unrealizedLoss = costBasis - inv.value;
+    const potentialTaxSavings = unrealizedLoss * taxRate;
+    
+    return {
+      investment: inv,
+      unrealizedLoss,
+      potentialTaxSavings,
+      alternativeInvestments: getAlternativeInvestments(inv)
+    };
+  });
+}
+
 export function calculateTaxEfficiency(investments: Investment[]): {
   taxableValue: number
   taxDeferredValue: number

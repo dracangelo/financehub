@@ -136,6 +136,17 @@ const investmentTypes = [
   "Real Estate"
 ];
 
+// List of excluded sectors for ESG filtering (used locally)
+const excludedSectorsList = [
+  "Tobacco",
+  "Weapons",
+  "Gambling",
+  "Adult Entertainment",
+  "Fossil Fuels",
+  "Nuclear Power",
+  "Alcohol"
+];
+
 // Define interfaces for investment data
 interface ESGScore {
   environmental: number;
@@ -1970,6 +1981,72 @@ export async function fetchFinancialTopics() {
     console.error('Error fetching financial topics:', error)
     return []
   }
+}
+
+// Fetch ESG categories for investments
+export async function fetchESGCategories(): Promise<{ id: string; name: string; category: string }[]> {
+  // In a real app, this would fetch from a database or API
+  // For now, we'll return mock data
+  return [
+    { id: "environmental", name: "Environmental Impact", category: "environmental" },
+    { id: "social", name: "Social Responsibility", category: "social" },
+    { id: "governance", name: "Corporate Governance", category: "governance" },
+    { id: "climate_change", name: "Climate Change", category: "environmental" },
+    { id: "resource_use", name: "Resource Use", category: "environmental" },
+    { id: "human_rights", name: "Human Rights", category: "social" },
+    { id: "labor_practices", name: "Labor Practices", category: "social" },
+    { id: "corporate_ethics", name: "Corporate Ethics", category: "governance" },
+    { id: "sustainable_products", name: "Sustainable Products", category: "environmental" },
+    { id: "diversity_inclusion", name: "Diversity & Inclusion", category: "social" }
+  ];
+}
+
+// Fetch excluded sectors for ESG screening
+export async function fetchExcludedSectors(): Promise<{ id: string; name: string }[]> {
+  // In a real app, this would fetch from a database or API
+  // For now, we'll return mock data based on common ESG exclusions
+  return [
+    { id: "fossil_fuels", name: "Fossil Fuels" },
+    { id: "weapons", name: "Weapons & Defense" },
+    { id: "tobacco", name: "Tobacco" },
+    { id: "gambling", name: "Gambling" },
+    { id: "adult_entertainment", name: "Adult Entertainment" },
+    { id: "nuclear", name: "Nuclear Power" },
+    { id: "alcohol", name: "Alcohol" },
+    { id: "animal_testing", name: "Animal Testing" },
+    { id: "gmo", name: "GMO Products" },
+    { id: "palm_oil", name: "Palm Oil" }
+  ];
+}
+
+// Find tax loss harvesting opportunities
+export async function findTaxLossHarvestingOpportunities(): Promise<any[]> {
+  const investments = await getMockInvestments();
+  
+  // Filter investments with unrealized losses
+  const investmentsWithLosses = investments.filter(inv => {
+    // Simulate cost basis and current value for demonstration
+    const costBasis = inv.value ? inv.value * 1.1 : 0; // Assume bought at 10% higher
+    return inv.value ? inv.value < costBasis : false;
+  });
+  
+  // Calculate potential tax savings for each investment with a loss
+  return investmentsWithLosses.map(inv => {
+    const costBasis = inv.value ? inv.value * 1.1 : 0;
+    const unrealizedLoss = inv.value ? costBasis - inv.value : 0;
+    const potentialTaxSavings = unrealizedLoss * 0.15; // Assume 15% tax rate
+    
+    return {
+      investment: inv,
+      unrealizedLoss,
+      potentialTaxSavings,
+      alternativeInvestments: [
+        "Vanguard Total Stock Market ETF (VTI)",
+        "iShares Core S&P 500 ETF (IVV)",
+        "Schwab U.S. Broad Market ETF (SCHB)"
+      ]
+    };
+  });
 }
 
 // Helper functions for mock data

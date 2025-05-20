@@ -72,6 +72,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Function to refresh the session
   const refreshSession = async () => {
     try {
+      // Check if we're on a public auth route where auth is not required
+      const isPublicAuthRoute = typeof window !== 'undefined' && [
+        '/login', 
+        '/register', 
+        '/verify', 
+        '/forgot-password',
+        '/reset-password'
+      ].some(route => window.location.pathname.startsWith(route))
+
       const supabase = getClientSupabaseClient()
       if (!supabase) {
         throw new Error("Failed to create Supabase client")
@@ -86,19 +95,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return
         }
       } catch (e) {
-        console.warn("getUser failed, trying refreshSession:", e)
+        // Don't warn about auth errors on public routes
+        if (!isPublicAuthRoute) {
+          console.warn("getUser failed, trying refreshSession:", e)
+        }
       }
 
       // If getUser fails, try to refresh the session
       const { data, error } = await supabase.auth.refreshSession()
       
       if (error) {
-        console.error("Error refreshing session:", error)
+        // Don't log AuthSessionMissingError on public routes
+        if (!isPublicAuthRoute || 
+            !(error && typeof error === 'object' && 'message' in error && 
+              typeof error.message === 'string' && error.message.includes("Auth session missing"))) {
+          console.error("Error refreshing session:", error)
+        }
         
         // Check if it's an AuthSessionMissingError and try to recover
-        if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string' && error.message.includes("Auth session missing")) {
-          console.warn("AuthSessionMissingError detected, attempting recovery...")
-          await recoverFromSessionError()
+        if (error && typeof error === 'object' && 'message' in error && 
+            typeof error.message === 'string' && error.message.includes("Auth session missing")) {
+          // Only attempt recovery if we're not on a public auth route
+          if (!isPublicAuthRoute) {
+            console.warn("AuthSessionMissingError detected, attempting recovery...")
+            await recoverFromSessionError()
+          }
           return
         }
         
@@ -167,6 +188,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        // Check if we're on a public auth route where auth is not required
+        const isPublicAuthRoute = typeof window !== 'undefined' && [
+          '/login', 
+          '/register', 
+          '/verify', 
+          '/forgot-password',
+          '/reset-password'
+        ].some(route => window.location.pathname.startsWith(route))
+
         setIsLoading(true)
         const supabase = getClientSupabaseClient()
         if (!supabase) {
@@ -182,16 +212,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setError(null)
         } else {
           setUser(null)
-          setError(authError instanceof Error ? authError : new Error(String(authError)))
           
-          // If we have an AuthSessionMissingError, try to recover
+          // Only set error if we're not on a public auth route or if it's not an AuthSessionMissingError
+          if (!isPublicAuthRoute || 
+              !(authError && 
+                typeof authError === 'object' && 
+                'message' in authError && 
+                typeof authError.message === 'string' && 
+                authError.message.includes("Auth session missing"))) {
+            setError(authError instanceof Error ? authError : new Error(String(authError)))
+          }
+          
+          // If we have an AuthSessionMissingError, try to recover only if not on a public route
           if (authError && 
               typeof authError === 'object' && 
               'message' in authError && 
               typeof authError.message === 'string' && 
               authError.message.includes("Auth session missing")) {
-            console.warn("Detected AuthSessionMissingError, attempting recovery...")
-            await recoverFromSessionError()
+            
+            if (!isPublicAuthRoute) {
+              console.warn("Detected AuthSessionMissingError, attempting recovery...")
+              await recoverFromSessionError()
+            }
           }
         }
       } catch (err) {

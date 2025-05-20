@@ -67,6 +67,63 @@ export async function getTransactions() {
   }
 }
 
+export async function getTransactionsByAccount(accountId: string) {
+  try {
+    const supabase = await createServerSupabaseClient()
+    
+    if (!supabase) {
+      console.error("Failed to initialize Supabase client")
+      return []
+    }
+
+    const user = await getAuthenticatedUser()
+
+    if (!user) {
+      return []
+    }
+
+    // Query transactions for the specific account
+    const { data, error } = await supabase
+      .from("transactions")
+      .select(`
+        *,
+        account:accounts(id, name, account_type, institution),
+        category:categories(id, name, color, icon)
+      `)
+      .eq("account_id", accountId)
+      .eq("user_id", user.id)
+      .order("transaction_date", { ascending: false })
+
+    if (error) {
+      console.error("Error fetching transactions for account:", error)
+      return []
+    }
+
+    // Transform data to match the expected format in the application
+    const transformedData = data?.map(transaction => {
+      // Transform account data if it exists
+      const accountData = transaction.account ? {
+        ...transaction.account,
+        // Map account_type to type for UI compatibility
+        type: transaction.account.account_type
+      } : null;
+      
+      return {
+        ...transaction,
+        date: transaction.transaction_date,
+        description: transaction.note || '',
+        is_income: transaction.type === 'income',
+        account: accountData
+      };
+    }) || []
+
+    return transformedData
+  } catch (error) {
+    console.error("Unexpected error in getTransactionsByAccount:", error)
+    return []
+  }
+}
+
 export async function getTransactionById(id: string) {
   const supabase = await createServerSupabaseClient()
 

@@ -11,3 +11,16 @@ export * from "./analytics"
 export * from "./test-db"
 export * from "./voice-memos"
 export * from "./tax"
+
+// Mock exports for missing modules
+export const getIncomes = async () => {
+  return [];
+};
+
+export const getMerchantIntelligence = async () => {
+  return { merchants: [], categories: [] };
+};
+
+export const getTimeOfDayAnalysis = async () => {
+  return { morning: 0, afternoon: 0, evening: 0, night: 0 };
+};

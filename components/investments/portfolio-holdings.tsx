@@ -816,7 +816,6 @@ export function PortfolioHoldings({ portfolioId, portfolioName }: PortfolioHoldi
           </form>
         </DialogContent>
       </Dialog>
-      </div>
 
       {/* Edit Holding Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>

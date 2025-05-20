@@ -14,12 +14,32 @@ export default function AuthLayout({
   const pathname = usePathname()
 
   useEffect(() => {
+    // Skip auth check for public auth routes
+    const publicAuthRoutes = [
+      '/login', 
+      '/register', 
+      '/verify', 
+      '/verify/email', 
+      '/forgot-password',
+      '/reset-password'
+    ]
+    
+    // If we're on a public auth route, don't check authentication
+    if (publicAuthRoutes.some(route => pathname.startsWith(route))) {
+      return
+    }
+    
     const checkAuth = async () => {
       try {
         const { data: { user }, error } = await getClientAuthenticatedUser()
         
         if (error) {
-          console.error("Auth error:", error)
+          // Don't log AuthSessionMissingError on public routes
+          if (typeof error === 'object' && 'message' in error && 
+              typeof error.message === 'string' && 
+              !error.message.includes("Auth session missing")) {
+            console.error("Auth error:", error)
+          }
           return
         }
 

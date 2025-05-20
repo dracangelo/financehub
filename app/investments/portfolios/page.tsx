@@ -5,6 +5,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
 import { Shell } from "@/components/shells/shell"
 
+// Force dynamic rendering to handle cookies
+export const dynamic = 'force-dynamic'
+
 export const metadata: Metadata = {
   title: "Investment Portfolios",
   description: "Manage your investment portfolios and track your holdings",

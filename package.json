@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "netlify-build": "npm run prebuild && next build",
+    "prebuild": "node scripts/fix-missing-pages.js",
     "start": "next start",
     "lint": "next lint",
     "update-schema": "node scripts/update-schema.js"
@@ -90,6 +92,7 @@
     "zod": "latest"
   },
   "devDependencies": {
+    "@netlify/next": "^1.4.9",
     "@types/js-cookie": "^3.0.6",
     "@types/leaflet": "^1.9.17",
     "@types/node": "^22",

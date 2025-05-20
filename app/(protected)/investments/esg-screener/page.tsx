@@ -16,6 +16,9 @@ import Link from "next/link"
 import type { Investment } from "@/lib/investments/types"
 import { fetchInvestments, fetchESGCategories, fetchExcludedSectors } from "@/app/actions/investments"
 
+// Force dynamic rendering to handle cookies
+export const dynamic = 'force-dynamic'
+
 export default function ESGScreenerPage() {
   const [portfolio, setPortfolio] = useState<Investment[]>([])
   const [investmentUniverse, setInvestmentUniverse] = useState<Investment[]>([])
