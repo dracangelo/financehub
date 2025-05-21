@@ -80,14 +80,15 @@ export default function SubscriptionDetail({
   
   // Calculate annual cost
   const calculateAnnualCost = () => {
-    const { amount, frequency } = subscription;
-    switch (frequency) {
+    const { amount, recurrence } = subscription;
+    switch (recurrence) {
       case 'weekly': return amount * 52;
       case 'bi_weekly': return amount * 26;
       case 'monthly': return amount * 12;
       case 'quarterly': return amount * 4;
       case 'semi_annual': return amount * 2;
       case 'annual': return amount;
+      case 'yearly': return amount;
       default: return amount;
     }
   };
@@ -104,11 +105,22 @@ export default function SubscriptionDetail({
   
   // Check if renewal date is approaching (within 7 days)
   const isRenewalSoon = () => {
-    const today = new Date();
-    const renewal = parseISO(subscription.next_renewal_date);
-    const diffTime = renewal.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays >= 0 && diffDays <= 7;
+    // Check if next_renewal_date exists in the subscription object
+    if (!subscription.next_renewal_date) {
+      // Calculate next renewal date based on start_date and recurrence
+      return false; // Default to false if we can't determine
+    }
+    
+    try {
+      const today = new Date();
+      const renewal = parseISO(subscription.next_renewal_date);
+      const diffTime = renewal.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      return diffDays >= 0 && diffDays <= 7;
+    } catch (error) {
+      console.error('Error calculating renewal date:', error);
+      return false;
+    }
   };
   
   // Handle delete subscription
@@ -146,7 +158,7 @@ export default function SubscriptionDetail({
         </Button>
         <h1 className="text-2xl font-bold">{subscription.name}</h1>
         {isRenewalSoon() && (
-          <Badge variant="warning" className="ml-2 flex items-center gap-1">
+          <Badge variant="outline" className="ml-2 flex items-center gap-1 bg-yellow-100 text-yellow-800 hover:bg-yellow-200">
             <AlertCircle className="h-3 w-3" />
             Renews Soon
           </Badge>

@@ -179,9 +179,9 @@ export default function SubscriptionForm({
               <FormItem>
                 <FormLabel>Category</FormLabel>
                 <Select
-                  onValueChange={field.onChange}
-                  defaultValue={field.value || ''}
-                  value={field.value || ''}
+                  onValueChange={(value) => field.onChange(value === 'none' ? '' : value)}
+                  defaultValue={field.value || 'none'}
+                  value={field.value || 'none'}
                 >
                   <FormControl>
                     <SelectTrigger>
@@ -189,7 +189,7 @@ export default function SubscriptionForm({
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="none">None</SelectItem>
                     {categories.map((category) => (
                       <SelectItem key={category.id} value={category.id}>
                         {category.name}

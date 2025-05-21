@@ -5,15 +5,15 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function formatCurrency(amount: number | undefined | null): string {
+export function formatCurrency(amount: number | undefined | null, currency: string = 'USD'): string {
   // Handle undefined, null, or NaN values
   if (amount === undefined || amount === null || isNaN(amount)) {
-    return "$0.00";
+    return currency === 'USD' ? "$0.00" : "0.00";
   }
   
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "USD",
+    currency: currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(amount)

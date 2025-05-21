@@ -1,36 +1,246 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FinanceHub: Ultimate Personal Finance Tracker
 
-## Getting Started
 
-First, run the development server:
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## 📊 Overview
+
+FinanceHub is a comprehensive personal finance management application designed to help users take control of their financial life. Built with Next.js, TypeScript, and Supabase, it offers a wide range of features from expense tracking to investment management, all in a secure and user-friendly interface.
+
+## 🌟 Key Features
+
+### User Authentication & Security 🔐
+- Secure email/password authentication via Supabase Auth
+- JWT-based session management with proper expiration and refresh logic
+- Client-side persistent ID management for consistent user identification
+- Multi-layered user ID retrieval system with fallback mechanisms
+
+### Intelligent Dashboard 📈
+- Comprehensive overview of financial metrics
+- Time-based filters for different views (daily, weekly, monthly)
+- Financial health indicators and visualizations
+
+### Financial Management Systems
+
+#### Expense Tracking 📑
+- Advanced expense entry with merchant intelligence and location data
+- Transaction management with receipt upload and warranty tracking
+- Split expense functionality for shared purchases
+- Expense analytics with geo-tagging and time-of-day analysis
+
+#### Income Management 💵
+- Income tracking with support for multiple income types and frequencies
+- Income source categorization (primary, passive, investment, side-hustle)
+- Income analytics with diversification analysis and projections
+
+#### Budgeting 💰
+- Budget creation and management system
+- Support for budget categories and subcategories
+- Budget progress tracking and flexible budget models
+
+#### Bill & Subscription Management 📅
+- Comprehensive bill tracking with recurring payment support
+- Subscription management with ROI calculator
+- Bill calendar view for visualizing upcoming payments
+
+#### Investment Portfolio Management 📈
+- Investment tracking with multi-asset class support
+- Portfolio allocation visualization and rebalancing recommendations
+- Watchlist feature with real-time stock data via Finnhub API
+- Price alerts and notification system for watchlist items
+
+#### Net Worth Tracking 💼
+- Asset and liability management with categorization
+- Historical net worth tracking with trend visualization
+- Detailed breakdown by category with progress visualization
+
+#### Goal-based Financial Planning 🎯
+- Goal creation and tracking with milestone management
+- Progress visualization and priority matrix
+- Goal relationship management for tracking dependencies
+
+#### Tax Management System 📊
+- Tax deduction tracking with category management
+- Tax impact prediction for financial decisions
+- Tax burden comparison and visualization
+- Comprehensive tax analytics dashboard
+
+## 🛠️ Technology Stack
+
+### Frontend
+- **Framework**: Next.js 15.2.4
+- **Language**: TypeScript
+- **UI Components**: 
+  - Radix UI for accessible components
+  - Tailwind CSS for styling
+  - Framer Motion for animations
+- **State Management**: React Context API
+- **Form Handling**: React Hook Form with Zod validation
+- **Data Visualization**: 
+  - Nivo (Bar, Sankey, Treemap)
+  - Recharts
+  - D3.js
+
+### Backend
+- **API Routes**: Next.js API Routes
+- **Database**: Supabase (PostgreSQL)
+- **Authentication**: Supabase Auth
+- **Storage**: Supabase Storage
+- **External APIs**: Finnhub for financial data
+
+### DevOps
+- **Deployment**: Netlify
+- **Version Control**: Git
+- **CI/CD**: Netlify CI/CD pipeline
+
+## 🚀 Getting Started
+
+### Prerequisites
+- Node.js 18.x or higher
+- npm, yarn, or pnpm
+- Supabase account for database and authentication
+- Finnhub API key for investment data
+
+### Environment Setup
+
+1. Clone the repository
+   ```bash
+   git clone https://github.com/yourusername/financehub.git
+   cd financehub
+   ```
+
+2. Install dependencies
+   ```bash
+   npm install
+   # or
+   yarn install
+   # or
+   pnpm install
+   ```
+
+3. Set up environment variables
+   Create a `.env.local` file in the root directory with the following variables:
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+   FINNHUB_API_KEY=your_finnhub_api_key
+   ```
+
+4. Run the development server
+   ```bash
+   npm run dev
+   # or
+   yarn dev
+   # or
+   pnpm dev
+   ```
+
+5. Open [http://localhost:3000](http://localhost:3000) with your browser to see the application
+
+### Database Setup
+
+The application requires a Supabase database with specific tables and schemas. To set up the database:
+
+1. Create a new project in Supabase
+2. Run the migration scripts located in the `supabase/migrations` directory
+3. Alternatively, you can manually create the required tables using the SQL scripts in the `supabase/db` directory
+
+## 📁 Project Structure
+
+```
+├── app/                  # Next.js App Router
+│   ├── (auth)/           # Authentication routes
+│   ├── (protected)/      # Protected routes requiring authentication
+│   ├── api/              # API routes
+│   └── components/       # App-specific components
+├── components/           # Shared components
+│   ├── auth/             # Authentication components
+│   ├── ui/               # UI components
+│   └── ...               # Feature-specific components
+├── contexts/             # React context providers
+├── hooks/                # Custom React hooks
+├── lib/                  # Utility functions and shared logic
+├── public/               # Static assets
+├── styles/               # Global styles
+├── supabase/             # Supabase configuration and migrations
+│   ├── db/               # Database scripts
+│   └── migrations/       # Migration scripts
+├── types/                # TypeScript type definitions
+└── ...                   # Configuration files
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 🔧 Configuration
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Supabase Configuration
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The application uses Supabase for database, authentication, and storage. The configuration is located in:
 
-## Learn More
+- `lib/supabase/client.ts` - Client-side Supabase client
+- `lib/supabase/server.ts` - Server-side Supabase client
+- `supabase/config.toml` - Supabase configuration
 
-To learn more about Next.js, take a look at the following resources:
+### Netlify Configuration
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Deployment configuration for Netlify is defined in `netlify.toml`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 🧪 Testing
 
-## Deploy on Vercel
+To run tests:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm run test
+# or
+yarn test
+# or
+pnpm test
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 🚢 Deployment
+
+### Netlify Deployment
+
+1. Connect your GitHub repository to Netlify
+2. Configure the build settings:
+   - Build command: `npm run netlify-build`
+   - Publish directory: `out`
+3. Add the required environment variables in Netlify's dashboard
+
+## 🛡️ Security Considerations
+
+- The application implements Row Level Security (RLS) in Supabase to ensure data privacy
+- Authentication uses secure JWT tokens with proper expiration
+- API routes include validation to prevent malicious inputs
+- Client-side persistent ID management ensures consistent user identification
+
+## 🔄 Recent Updates
+
+See [CHANGELOG.md](CHANGELOG.md) for a detailed history of changes and updates.
+
+### Notable Recent Fixes
+
+#### Watchlist System Fixes
+- Fixed database error related to missing 'alert_threshold' column
+- Implemented database setup system to ensure all required columns exist
+- Enhanced user ID retrieval logic with clear priority order
+- Fixed field name mismatches in the codebase
+
+## 🤝 Contributing
+
+Contributions are welcome! Please follow these steps:
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/my-feature`
+3. Commit your changes: `git commit -m 'Add my feature'`
+4. Push to the branch: `git push origin feature/my-feature`
+5. Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 📞 Support
+
+If you encounter any issues or have questions, please open an issue on GitHub or contact the development team at support@financehub.example.com.
+
+---
+
+Built with ❤️ by the FinanceHub Team

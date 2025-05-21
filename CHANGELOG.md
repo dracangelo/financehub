@@ -2,6 +2,27 @@
 
 ## Recent Updates (May 2025)
 
+### Watchlist System Fixes
+
+#### Database Schema and API Improvements
+- Fixed database error related to missing 'alert_threshold' column in the watchlist table
+- Implemented database setup system to ensure all required columns exist in the watchlist table
+- Created SQL functions to check for and add missing columns (alert_threshold, price_alert_enabled)
+- Added a dedicated API endpoint (/api/database/refresh) to refresh the PostgREST schema cache
+- Fixed field name mismatch by updating all references from `price_alerts` to `price_alert_enabled`
+
+#### User ID Management
+- Implemented client-side persistent ID management with `ClientIdManager` component
+- Added a `client-id` cookie with long expiration (1 year) for consistent user identification
+- Enhanced user ID retrieval logic with clear priority order:
+  1. Client ID from cookie (highest priority)
+  2. Client ID from header
+  3. Authenticated user ID from cookie
+  4. Authenticated user ID from Supabase auth
+  5. Default UUID (lowest priority)
+- Fixed error by replacing 'default-user' with proper UUID format ('00000000-0000-0000-0000-000000000000')
+- Implemented automatic user ID addition to all API requests via headers
+
 ### Financial Education Integration
 
 #### Educational Content Platform

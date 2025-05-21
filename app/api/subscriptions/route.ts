@@ -1,19 +1,22 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { supabaseAdmin, getCurrentUserId } from "@/lib/supabase"
+import { SubscriptionCategory, SubscriptionRecurrence } from "@/types/subscription"
 
 // Schema for subscription validation
 const subscriptionSchema = z.object({
   name: z.string().min(1, "Name is required"),
+  service_provider: z.string().nullable(),
+  description: z.string().nullable(),
   category: z.string().min(1, "Category is required"),
-  cost: z.number().min(0, "Cost must be a positive number"),
-  billingCycle: z.string().min(1, "Billing cycle is required"),
-  nextBillingDate: z.string().transform(str => new Date(str)),
-  usage: z.number().min(0).max(100),
-  value: z.number().min(0).max(100),
-  paymentMethod: z.string().min(1, "Payment method is required"),
-  autoRenew: z.boolean().default(true),
-  notes: z.string().optional(),
+  amount: z.number().min(0, "Amount must be a positive number"),
+  currency: z.string().default("USD"),
+  recurrence: z.string().min(1, "Recurrence is required"),
+  start_date: z.string().transform(str => new Date(str)),
+  end_date: z.string().nullable().transform(str => str ? new Date(str) : null),
+  is_active: z.boolean().default(true),
+  roi_expected: z.number().nullable(),
+  roi_notes: z.string().nullable()
 })
 
 // GET /api/subscriptions - Get all subscriptions for the current user
@@ -32,7 +35,7 @@ export async function GET() {
       .from('subscriptions')
       .select('*')
       .eq('user_id', userId)
-      .order('next_billing_date', { ascending: true })
+      .order('start_date', { ascending: true })
     
     if (error) {
       console.error("[SUBSCRIPTIONS_GET]", error)
@@ -71,15 +74,17 @@ export async function POST(req: Request) {
     const subscriptionData = {
       user_id: userId,
       name: validatedData.name,
+      service_provider: validatedData.service_provider,
+      description: validatedData.description,
       category: validatedData.category,
-      cost: validatedData.cost,
-      billing_cycle: validatedData.billingCycle,
-      next_billing_date: validatedData.nextBillingDate,
-      usage: validatedData.usage,
-      value: validatedData.value,
-      payment_method: validatedData.paymentMethod,
-      auto_renew: validatedData.autoRenew,
-      notes: validatedData.notes,
+      amount: validatedData.amount,
+      currency: validatedData.currency,
+      recurrence: validatedData.recurrence,
+      start_date: validatedData.start_date,
+      end_date: validatedData.end_date,
+      is_active: validatedData.is_active,
+      roi_expected: validatedData.roi_expected,
+      roi_notes: validatedData.roi_notes,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }
