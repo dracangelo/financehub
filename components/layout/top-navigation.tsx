@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, RefObject } from "react"
+import React, { useState, RefObject, useEffect } from "react"
 import Link from "next/link"
 import { Menu, Search, Bell, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -21,6 +21,8 @@ import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
+import { useUserProfile } from "@/hooks/use-user-profile"
 
 interface TopNavigationProps {
   onMenuToggle: () => void;
@@ -37,6 +39,27 @@ export function TopNavigation({
   const supabase = createClientComponentClient()
   const [searchQuery, setSearchQuery] = useState("")
   const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [user, setUser] = useState<any>(null)
+  const { profile, loading, refreshProfile } = useUserProfile(user)
+  
+  // Force refresh profile on mount to ensure we have the latest data
+  useEffect(() => {
+    if (user) {
+      refreshProfile()
+    }
+  }, [user, refreshProfile])
+  
+  // Fetch the current user
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data } = await supabase.auth.getUser()
+      if (data?.user) {
+        setUser(data.user)
+      }
+    }
+    
+    fetchUser()
+  }, [supabase.auth])
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -149,14 +172,31 @@ export function TopNavigation({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src="/placeholder.svg?height=40&width=40" alt="User avatar" />
-                  <AvatarFallback>GU</AvatarFallback>
-                </Avatar>
+                {loading || !user ? (
+                  <Skeleton className="h-8 w-8 rounded-full" />
+                ) : (
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage 
+                      src={profile?.avatar_url ? `${profile.avatar_url}&t=${Date.now()}` : (user?.user_metadata?.avatar_url || "/placeholder.svg?height=40&width=40")} 
+                      alt="User avatar" 
+                      onError={(e) => {
+                        console.log("Error loading avatar image in TopNav:", e);
+                        // Force refresh profile on image load error
+                        refreshProfile();
+                      }}
+                    />
+                    <AvatarFallback>
+                      {profile?.full_name ? profile.full_name.charAt(0).toUpperCase() :
+                       user?.email ? user.email.charAt(0).toUpperCase() : "U"}
+                    </AvatarFallback>
+                  </Avatar>
+                )}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-56" align="end" forceMount>
-              <DropdownMenuLabel>My Account</DropdownMenuLabel>
+              <DropdownMenuLabel>
+                {profile?.full_name || user?.user_metadata?.full_name || user?.email || "My Account"}
+              </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuItem onClick={() => router.push("/profile")}>
