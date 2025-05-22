@@ -169,9 +169,11 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const id = params.id;
+    // Await params to get the ID
+    const { id } = await params;
     
-    // Use the proper async pattern for cookies
+    // Use the proper async pattern for cookies in Next.js 14
+    // Note: cookies() is not a Promise in Next.js 14, so we don't actually await it
     const cookieStore = cookies();
     const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
     
@@ -183,6 +185,7 @@ export async function DELETE(
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         userId = user.id;
+        console.log(`Authenticated user found: ${userId}`);
       }
     } catch (error) {
       console.error('Error getting user:', error);
@@ -191,153 +194,80 @@ export async function DELETE(
     // If we couldn't get a user ID from auth, try to get from request headers or cookies
     if (userId === '00000000-0000-0000-0000-000000000000') {
       // Check headers
-      const clientId = request.headers.get('client-id');
+      const clientId = request.headers.get('x-client-id') || request.headers.get('client-id');
       if (clientId) {
         userId = clientId;
+        console.log(`Using client ID from header: ${userId}`);
       } else {
-        // Check cookies
-        const clientIdCookie = cookieStore.get('client-id');
-        if (clientIdCookie) {
-          userId = clientIdCookie.value;
+        // Check cookies - use try/catch to handle potential errors
+        try {
+          // In Next.js 14, cookies() is not a Promise
+          const clientIdCookie = cookieStore.get('client-id');
+          if (clientIdCookie) {
+            userId = clientIdCookie.value;
+            console.log(`Using client ID from cookie: ${userId}`);
+          }
+        } catch (cookieError) {
+          console.error('Error getting client ID from cookie:', cookieError);
         }
       }
     }
     
     console.log(`Deleting subscription ${id} for user ${userId}`);
     
-    // Delete the subscription
-    const { error } = await supabase
-      .from('subscriptions')
-      .delete()
-      .eq('id', id)
-      .eq('user_id', userId);
-    
-    if (error) {
-      console.error('Error deleting subscription:', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    try {
+      // Import the admin client to bypass RLS policies
+      const { createAdminSupabaseClient } = await import('@/lib/supabase/admin');
+      const supabaseAdmin = createAdminSupabaseClient();
+      
+      if (!supabaseAdmin) {
+        console.error('Failed to create admin Supabase client');
+        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+      }
+      
+      // First verify the subscription belongs to the user
+      const { data: subscription, error: fetchError } = await supabaseAdmin
+        .from('subscriptions')
+        .select('id, user_id')
+        .eq('id', id)
+        .single();
+      
+      if (fetchError) {
+        console.error('Error fetching subscription:', fetchError);
+        return NextResponse.json({ error: 'Subscription not found' }, { status: 404 });
+      }
+      
+      if (!subscription) {
+        return NextResponse.json({ error: 'Subscription not found' }, { status: 404 });
+      }
+      
+      // Verify ownership if the user is authenticated
+      if (userId !== '00000000-0000-0000-0000-000000000000' && subscription.user_id !== userId) {
+        console.error(`User ${userId} attempted to delete subscription ${id} belonging to user ${subscription.user_id}`);
+        return NextResponse.json({ error: 'You do not have permission to delete this subscription' }, { status: 403 });
+      }
+      
+      // Delete the subscription using admin client to bypass RLS
+      const { error } = await supabaseAdmin
+        .from('subscriptions')
+        .delete()
+        .eq('id', id);
+      
+      if (error) {
+        console.error('Error deleting subscription:', error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      
+      return NextResponse.json({ success: true });
+    } catch (deleteError) {
+      console.error('Error in subscription deletion:', deleteError);
+      return NextResponse.json({ error: 'Failed to delete subscription' }, { status: 500 });
     }
-    
-    return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error in DELETE handler:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-// Helper function to ensure subscriptions table exists
-async function ensureSubscriptionsTableExists() {
-  try {
-    // Check if the table exists
-    const { error } = await supabaseAdmin.from('subscriptions').select('id').limit(1);
-    
-    // If there's an error and it's because the table doesn't exist, create it
-    if (error && error.code === '42P01') {
-      console.log("Creating subscriptions table...");
-      
-      // Create the table
-      await supabaseAdmin.query(`
-        CREATE TABLE IF NOT EXISTS subscriptions (
-          id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-          user_id UUID NOT NULL,
-          name TEXT NOT NULL,
-          service_provider TEXT,
-          description TEXT,
-          category TEXT NOT NULL,
-          amount DECIMAL(10, 2) NOT NULL,
-          currency TEXT DEFAULT 'USD',
-          recurrence TEXT NOT NULL,
-          start_date DATE,
-          end_date DATE,
-          is_active BOOLEAN DEFAULT TRUE,
-          roi_expected DECIMAL(10, 2),
-          roi_actual DECIMAL(10, 2),
-          roi_notes TEXT,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-          updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        );
-      `);
-      
-      // Create RLS policies
-      await supabaseAdmin.query(`
-        ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
-        
-        CREATE POLICY "Users can view their own subscriptions"
-          ON subscriptions FOR SELECT
-          USING (user_id = auth.uid());
-          
-        CREATE POLICY "Users can insert their own subscriptions"
-          ON subscriptions FOR INSERT
-          WITH CHECK (user_id = auth.uid());
-          
-        CREATE POLICY "Users can update their own subscriptions"
-          ON subscriptions FOR UPDATE
-          USING (user_id = auth.uid());
-          
-        CREATE POLICY "Users can delete their own subscriptions"
-          ON subscriptions FOR DELETE
-          USING (user_id = auth.uid());
-      `);
-    }
-  } catch (error) {
-    console.error("Error ensuring subscriptions table exists:", error);
-  }
-}
-
-// Helper function to ensure payments table exists
-async function ensurePaymentsTableExists() {
-  try {
-    // Check if the table exists
-    const { error } = await supabaseAdmin.from('payments').select('id').limit(1);
-    
-    // If there's an error and it's because the table doesn't exist, create it
-    if (error && error.code === '42P01') {
-      console.log("Creating payments table...");
-      
-      // Create the table
-      await supabaseAdmin.query(`
-        CREATE TABLE IF NOT EXISTS payments (
-          id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-          subscription_id UUID REFERENCES subscriptions(id) ON DELETE CASCADE,
-          amount DECIMAL(10, 2) NOT NULL,
-          date DATE NOT NULL,
-          status TEXT DEFAULT 'paid',
-          payment_method TEXT,
-          transaction_id TEXT,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-          updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        );
-      `);
-      
-      // Create RLS policies
-      await supabaseAdmin.query(`
-        ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
-        
-        CREATE POLICY "Users can view payments for their subscriptions"
-          ON payments FOR SELECT
-          USING (subscription_id IN (
-            SELECT id FROM subscriptions WHERE user_id = auth.uid()
-          ));
-          
-        CREATE POLICY "Users can insert payments for their subscriptions"
-          ON payments FOR INSERT
-          WITH CHECK (subscription_id IN (
-            SELECT id FROM subscriptions WHERE user_id = auth.uid()
-          ));
-          
-        CREATE POLICY "Users can update payments for their subscriptions"
-          ON payments FOR UPDATE
-          USING (subscription_id IN (
-            SELECT id FROM subscriptions WHERE user_id = auth.uid()
-          ));
-          
-        CREATE POLICY "Users can delete payments for their subscriptions"
-          ON payments FOR DELETE
-          USING (subscription_id IN (
-            SELECT id FROM subscriptions WHERE user_id = auth.uid()
-          ));
-      `);
-    }
-  } catch (error) {
-    console.error("Error ensuring payments table exists:", error);
-  }
-}
+// Note: Helper functions for table creation have been removed
+// Tables should be created using migrations or database setup scripts

@@ -29,7 +29,6 @@ interface Subscription {
   amount: number
   billing_cycle?: string
   billing_frequency?: string
-  payment_cycle?: string  // Added payment_cycle property
   next_billing_date?: string
   next_payment_date?: string
   status?: string
@@ -53,7 +52,6 @@ interface Subscription {
   service_provider?: string
   currency?: string
   category?: string
-  category_id?: string  // Added category_id property
   recurrence?: string
   next_renewal_date?: string
   is_active?: boolean
@@ -173,31 +171,29 @@ export function SubscriptionsList() {
   }
 
   const getUsageFrequencyBadge = (frequency: string, usageValue?: number) => {
-    console.log('Getting usage badge for:', { frequency, usageValue });
-    
     // If we have a numeric usage value, use that for color coding (1-3: red, 4-6: blue, 7-10: green)
     if (typeof usageValue === 'number') {
       if (usageValue >= 7 && usageValue <= 10) {
         return (
-          <Badge variant="outline" className="bg-green-200 text-green-800 border-green-500 font-medium">
+          <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300 font-medium">
             High Usage ({usageValue}/10)
           </Badge>
         )
       } else if (usageValue >= 4 && usageValue <= 6) {
         return (
-          <Badge variant="outline" className="bg-blue-200 text-blue-800 border-blue-500 font-medium">
+          <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-300 font-medium">
             Medium Usage ({usageValue}/10)
           </Badge>
         )
       } else if (usageValue >= 1 && usageValue <= 3) {
         return (
-          <Badge variant="outline" className="bg-red-200 text-red-800 border-red-500 font-medium">
+          <Badge variant="outline" className="bg-red-100 text-red-800 border-red-300 font-medium">
             Low Usage ({usageValue}/10)
           </Badge>
         )
       } else {
         return (
-          <Badge variant="outline" className="bg-gray-200 text-gray-800 border-gray-500 font-medium">
+          <Badge variant="outline" className="bg-gray-100 text-gray-800 border-gray-300 font-medium">
             No Usage (0/10)
           </Badge>
         )
@@ -208,25 +204,25 @@ export function SubscriptionsList() {
     switch (frequency) {
       case "high":
         return (
-          <Badge variant="outline" className="bg-green-200 text-green-800 border-green-500 font-medium">
+          <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300 font-medium">
             High Usage
           </Badge>
         )
       case "medium":
         return (
-          <Badge variant="outline" className="bg-blue-200 text-blue-800 border-blue-500 font-medium">
+          <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-300 font-medium">
             Medium Usage
           </Badge>
         )
       case "low":
         return (
-          <Badge variant="outline" className="bg-red-200 text-red-800 border-red-500 font-medium">
+          <Badge variant="outline" className="bg-red-100 text-red-800 border-red-300 font-medium">
             Low Usage
           </Badge>
         )
       default:
         return (
-          <Badge variant="outline" className="bg-gray-200 text-gray-800 border-gray-500 font-medium">
+          <Badge variant="outline" className="bg-gray-100 text-gray-800 border-gray-300 font-medium">
             Unknown Usage
           </Badge>
         )
@@ -324,52 +320,26 @@ export function SubscriptionsList() {
               // Determine usage level for card styling
               let usageLevel = "medium";
               let usageValue = subscription.usage_value;
-              let cardBorderColor = "border-blue-500";
-              
-              // Log the subscription data for debugging
-              console.log('Subscription usage data:', {
-                id: subscription.id,
-                name: subscription.name,
-                usage_value: subscription.usage_value,
-                usage_frequency: subscription.usage_frequency,
-                usage_level: subscription.usage_level
-              });
+              let cardBorderColor = "border-blue-200";
               
               if (typeof usageValue === 'number') {
-                console.log(`Numeric usage value detected: ${usageValue}`);
                 if (usageValue >= 7 && usageValue <= 10) {
                   usageLevel = "high";
-                  cardBorderColor = "border-green-500";
+                  cardBorderColor = "border-green-200";
                 } else if (usageValue >= 4 && usageValue <= 6) {
                   usageLevel = "medium";
-                  cardBorderColor = "border-blue-500";
+                  cardBorderColor = "border-blue-200";
                 } else if (usageValue >= 1 && usageValue <= 3) {
                   usageLevel = "low";
-                  cardBorderColor = "border-red-500";
+                  cardBorderColor = "border-red-200";
                 }
               } else if (subscription.usage_frequency) {
-                console.log(`String usage frequency detected: ${subscription.usage_frequency}`);
                 if (subscription.usage_frequency === "high") {
-                  usageLevel = "high";
-                  cardBorderColor = "border-green-500";
+                  cardBorderColor = "border-green-200";
                 } else if (subscription.usage_frequency === "medium") {
-                  usageLevel = "medium";
-                  cardBorderColor = "border-blue-500";
+                  cardBorderColor = "border-blue-200";
                 } else if (subscription.usage_frequency === "low") {
-                  usageLevel = "low";
-                  cardBorderColor = "border-red-500";
-                }
-              } else if (subscription.usage_level) {
-                console.log(`Usage level detected: ${subscription.usage_level}`);
-                if (subscription.usage_level === "high") {
-                  usageLevel = "high";
-                  cardBorderColor = "border-green-500";
-                } else if (subscription.usage_level === "medium") {
-                  usageLevel = "medium";
-                  cardBorderColor = "border-blue-500";
-                } else if (subscription.usage_level === "low") {
-                  usageLevel = "low";
-                  cardBorderColor = "border-red-500";
+                  cardBorderColor = "border-red-200";
                 }
               }
               
@@ -397,33 +367,15 @@ export function SubscriptionsList() {
                       <div>
                         <div className="text-xs font-medium text-muted-foreground mb-1">CATEGORY</div>
                         <Badge variant="outline" className="capitalize">
-                          {subscription.category_id || subscription.category || subscription.categories?.name || subscription.biller?.category || "Other"}
+                          {subscription.categories?.name || subscription.category || subscription.biller?.category || "Other"}
                         </Badge>
                       </div>
                       <div>
                         <div className="text-xs font-medium text-muted-foreground mb-1">BILLING</div>
                         <div className="capitalize text-sm">
-                          {(() => {
-                            // Log the billing cycle data for debugging
-                            console.log('Billing cycle data:', {
-                              id: subscription.id,
-                              name: subscription.name,
-                              billing_cycle: subscription.billing_cycle,
-                              billing_frequency: subscription.billing_frequency,
-                              recurrence: subscription.recurrence,
-                              payment_cycle: subscription.payment_cycle
-                            });
-                            
-                            // Check all possible billing cycle fields
-                            const billingValue = subscription.billing_cycle || 
-                              subscription.billing_frequency || 
-                              subscription.payment_cycle || 
-                              subscription.recurrence || 
-                              "monthly";
-                              
-                            // Format the billing cycle value
-                            return billingValue.replace(/_/g, " ").toLowerCase();
-                          })()}
+                          {subscription.billing_cycle ? subscription.billing_cycle.replace(/_/g, " ") : 
+                           subscription.billing_frequency ? subscription.billing_frequency.replace(/_/g, " ") : 
+                           subscription.recurrence ? subscription.recurrence.replace(/_/g, " ") : "Monthly"}
                         </div>
                       </div>
                       <div>
@@ -441,10 +393,10 @@ export function SubscriptionsList() {
                         <Badge 
                           variant="outline" 
                           className={`${subscription.status === 'cancelled' || subscription.is_active === false ? 
-                            'bg-red-200 text-red-800 border-red-500 font-medium' : 
+                            'bg-red-100 text-red-800 border-red-300' : 
                             subscription.status === 'paused' ? 
-                            'bg-yellow-200 text-yellow-800 border-yellow-500 font-medium' : 
-                            'bg-green-200 text-green-800 border-green-500 font-medium'}`}
+                            'bg-yellow-100 text-yellow-800 border-yellow-300' : 
+                            'bg-green-100 text-green-800 border-green-300'} font-medium`}
                         >
                           {subscription.status || (subscription.is_active ? "Active" : "Inactive")}
                         </Badge>
@@ -453,35 +405,13 @@ export function SubscriptionsList() {
                     
                     <div className="mt-4 flex justify-between items-center">
                       <div>
-                        {(() => {
-                          // Log the subscription usage data for debugging
-                          console.log('Rendering usage badge for:', {
-                            id: subscription.id,
-                            name: subscription.name,
-                            usage_value: subscription.usage_value,
-                            usage_frequency: subscription.usage_frequency,
-                            usage_level: subscription.usage_level
-                          });
-                          
-                          // Determine which usage value to use
-                          let usageFrequency = "medium";
-                          
-                          if (typeof subscription.usage_value === 'number') {
-                            if (subscription.usage_value >= 7 && subscription.usage_value <= 10) {
-                              usageFrequency = "high";
-                            } else if (subscription.usage_value >= 4 && subscription.usage_value <= 6) {
-                              usageFrequency = "medium";
-                            } else if (subscription.usage_value >= 1 && subscription.usage_value <= 3) {
-                              usageFrequency = "low";
-                            }
-                          } else if (subscription.usage_frequency) {
-                            usageFrequency = subscription.usage_frequency;
-                          } else if (subscription.usage_level) {
-                            usageFrequency = subscription.usage_level;
-                          }
-                          
-                          return getUsageFrequencyBadge(usageFrequency, subscription.usage_value);
-                        })()}
+                        {getUsageFrequencyBadge(
+                          subscription.usage_frequency || 
+                          (typeof subscription.usage_value === 'number' ? 
+                            (subscription.usage_value > 6 ? 'high' : subscription.usage_value > 3 ? 'medium' : 'low') : 
+                            subscription.usage_level || "medium"),
+                          subscription.usage_value
+                        )}
                       </div>
                       <div className="flex space-x-2">
                         {subscription.cancellation_url && (

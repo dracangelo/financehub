@@ -13,6 +13,17 @@ export type SubscriptionCategory =
   'housing' | 
   'insurance' | 
   'investments' | 
+  'streaming' | 
+  'gaming' | 
+  'music' | 
+  'news' | 
+  'shopping' | 
+  'fitness' | 
+  'productivity' | 
+  'cloud_storage' | 
+  'communication' | 
+  'finance' | 
+  'security' | 
   'other';
 
 export interface SubscriptionCategoryInfo {
@@ -33,6 +44,7 @@ export interface Subscription {
   amount: number;
   currency: string;
   recurrence: SubscriptionRecurrence;
+  frequency?: SubscriptionRecurrence; // New field for compatibility with form data
   start_date: string;
   end_date: string | null;
   is_active: boolean;
@@ -43,6 +55,14 @@ export interface Subscription {
   updated_at: string;
   next_renewal_date?: string; // Optional property for the next renewal date
   client_side?: boolean; // Flag to indicate if this is a client-side only subscription
+  usage_rating?: number | null; // Usage rating from 0-10
+  vendor?: string | null; // Alternative name for service_provider
+  notes?: string | null; // General notes
+  cancel_url?: string | null; // URL to cancel subscription
+  support_contact?: string | null; // Contact info for support
+  status?: SubscriptionStatus; // Active, paused, or cancelled
+  auto_renew?: boolean; // Whether subscription auto-renews
+  last_renewed_at?: string; // Date of last renewal
 }
 
 export interface SubscriptionFormData {
@@ -67,6 +87,8 @@ export interface SubscriptionUsageLog {
   used_on: string;
   note: string | null;
   created_at: string;
+  subscription_name?: string; // Name of the subscription
+  service_provider?: string | null; // Provider of the subscription
 }
 
 export interface SubscriptionPriceChange {
@@ -100,10 +122,9 @@ export interface ROICalculation {
 export interface PotentialDuplicateSubscription {
   id: string;
   user_id: string;
-  subscription1_id: string;
-  subscription1_name: string;
-  subscription2_id: string;
-  subscription2_name: string;
-  similarity_score: number;
+  category: string;
+  subscriptions: Subscription[];
+  reason: string;
+  recommendation: string;
   created_at: string;
 }

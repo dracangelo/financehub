@@ -2,6 +2,43 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Custom classes for subscription usage ratings */
+.usage-rating-low {
+  background-color: rgba(239, 68, 68, 0.2) !important;
+  border: 2px solid rgba(239, 68, 68, 0.5) !important;
+  color: #000000 !important;
+}
+
+.usage-rating-medium {
+  background-color: rgba(7, 144, 162, 0.2) !important;
+  border: 2px solid #0790A2 !important;
+  color: #000000 !important;
+}
+
+.usage-rating-high {
+  background-color: rgba(7, 162, 19, 0.2) !important;
+  border: 2px solid #07A213 !important;
+  color: #000000 !important;
+}
+
+:is(.dark) .usage-rating-low {
+  background-color: rgba(239, 68, 68, 0.3) !important;
+  border: 2px solid rgba(239, 68, 68, 0.7) !important;
+  color: #ffffff !important;
+}
+
+:is(.dark) .usage-rating-medium {
+  background-color: rgba(7, 144, 162, 0.3) !important;
+  border: 2px solid #0790A2 !important;
+  color: #ffffff !important;
+}
+
+:is(.dark) .usage-rating-high {
+  background-color: rgba(7, 162, 19, 0.3) !important;
+  border: 2px solid #07A213 !important;
+  color: #ffffff !important;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

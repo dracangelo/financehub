@@ -24,11 +24,13 @@ import {
 import {
   Subscription,
   SubscriptionCategory,
+  SubscriptionCategoryInfo,
   SubscriptionUsageLog,
   SubscriptionPriceChange,
 } from '@/types/subscription';
 import { deleteSubscription, logSubscriptionUsage } from '@/app/actions/subscription';
 import { formatCurrency } from '@/lib/utils';
+import { formatFrequency, getUsageRatingColorClass } from '@/lib/subscription-utils';
 import { 
   Table, 
   TableBody, 
@@ -49,7 +51,7 @@ import {
 
 interface SubscriptionDetailProps {
   subscription: Subscription;
-  category?: SubscriptionCategory | null;
+  category?: SubscriptionCategoryInfo | null;
   usageLogs: SubscriptionUsageLog[];
   priceChanges: SubscriptionPriceChange[];
 }
@@ -80,27 +82,34 @@ export default function SubscriptionDetail({
   
   // Calculate annual cost
   const calculateAnnualCost = () => {
-    const { amount, recurrence } = subscription;
-    switch (recurrence) {
+    const { amount, frequency } = subscription;
+    switch (frequency) {
       case 'weekly': return amount * 52;
       case 'bi_weekly': return amount * 26;
       case 'monthly': return amount * 12;
       case 'quarterly': return amount * 4;
       case 'semi_annual': return amount * 2;
       case 'annual': return amount;
-      case 'yearly': return amount;
-      default: return amount;
+      default: return amount * 12; // Default to monthly if frequency is unknown
     }
   };
   
-  // Get status badge color
-  const getStatusBadgeVariant = (status: string) => {
+  // Get status badge variant
+  const getStatusBadgeVariant = (status: string | undefined): "success" | "destructive" | "secondary" | "default" | "outline" => {
+    if (!status) return 'secondary';
+    
     switch (status) {
       case 'active': return 'success';
-      case 'paused': return 'warning';
+      case 'paused': return 'secondary';
       case 'cancelled': return 'destructive';
       default: return 'secondary';
     }
+  };
+  
+  // Use the utility function for color coding
+  const getUsageRatingColor = (rating: number | null | undefined) => {
+    // Get the CSS class from our utility function
+    return getUsageRatingColorClass(rating);
   };
   
   // Check if renewal date is approaching (within 7 days)
@@ -167,7 +176,7 @@ export default function SubscriptionDetail({
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          <Card>
+          <Card className={getUsageRatingColor(subscription.usage_rating)}>
             <CardHeader>
               <CardTitle>Subscription Details</CardTitle>
               <CardDescription>
@@ -177,9 +186,11 @@ export default function SubscriptionDetail({
                 <Badge variant="outline">
                   {category?.name || 'Uncategorized'}
                 </Badge>
-                <Badge variant={getStatusBadgeVariant(subscription.status) as any}>
-                  {subscription.status.charAt(0).toUpperCase() + subscription.status.slice(1)}
-                </Badge>
+                {subscription.status && (
+                  <Badge variant={getStatusBadgeVariant(subscription.status)}>
+                    {subscription.status.charAt(0).toUpperCase() + subscription.status.slice(1)}
+                  </Badge>
+                )}                
               </div>
             </CardHeader>
             <CardContent>
@@ -193,11 +204,11 @@ export default function SubscriptionDetail({
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Billing Frequency</p>
-                    <p>{formatFrequency(subscription.frequency)}</p>
+                    <p>{formatFrequency(subscription.frequency || subscription.recurrence)}</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Next Renewal Date</p>
-                    <p>{format(parseISO(subscription.next_renewal_date), 'MMMM d, yyyy')}</p>
+                    <p>{subscription.next_renewal_date ? format(parseISO(subscription.next_renewal_date), 'MMMM d, yyyy') : 'Not set'}</p>
                   </div>
                   {subscription.last_renewed_at && (
                     <div>

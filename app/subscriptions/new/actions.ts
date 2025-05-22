@@ -11,9 +11,33 @@ export async function createSubscriptionAction(formData: any) {
     console.log('Received form data in server action:', formData);
     
     // Call the database setup endpoint to ensure database is properly configured
-    await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || ''}/api/database/subscription-setup`, {
-      cache: 'no-store'
-    }).catch(err => console.error('Setup endpoint error:', err));
+    // This will create the category column if it doesn't exist and refresh the schema cache
+    try {
+      const setupResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || ''}/api/database/subscription-setup`, {
+        cache: 'no-store'
+      });
+      
+      if (!setupResponse.ok) {
+        console.warn('Database setup endpoint returned non-OK status:', setupResponse.status);
+      } else {
+        const setupData = await setupResponse.json();
+        console.log('Database setup completed:', setupData);
+      }
+      
+      // Also call the general refresh endpoint to ensure the schema cache is updated
+      const refreshResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || ''}/api/database/refresh`, {
+        cache: 'no-store'
+      });
+      
+      if (!refreshResponse.ok) {
+        console.warn('Schema refresh endpoint returned non-OK status:', refreshResponse.status);
+      } else {
+        console.log('Schema refresh completed');
+      }
+    } catch (setupError) {
+      console.error('Error calling setup/refresh endpoints:', setupError);
+      // Continue anyway - we'll try to create the subscription
+    }
     
     // Make sure next_renewal_date is properly formatted
     let formattedData = { ...formData };
@@ -27,6 +51,11 @@ export async function createSubscriptionAction(formData: any) {
         const dateObj = new Date(formData.next_renewal_date);
         formattedData.next_renewal_date = dateObj.toISOString().split('T')[0];
       }
+    }
+    
+    // Ensure category is set to a valid value
+    if (!formattedData.category) {
+      formattedData.category = 'other';
     }
     
     // Create the subscription directly in the database

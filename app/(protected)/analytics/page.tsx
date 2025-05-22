@@ -1,10 +1,12 @@
 import { Suspense } from "react"
-import { BarChart3Icon } from "lucide-react"
+import { BarChart3Icon, CreditCard } from "lucide-react"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { SpendingHeatmap } from "@/components/visualizations/spending-heatmap"
+import { SubscriptionAnalytics } from "@/components/visualizations/subscription-analytics"
 import { supabase } from "@/lib/supabase"
+import { getUserSubscriptions } from "@/app/actions/subscription"
 
 // Mock user ID since authentication is disabled
 const MOCK_USER_ID = "123e4567-e89b-12d3-a456-426614174000"
@@ -20,12 +22,28 @@ export default async function AnalyticsPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-6">
+        <Suspense fallback={<VisualizationSkeleton title="Subscription Analytics" />}>
+          <SubscriptionAnalyticsContent />
+        </Suspense>
+        
         <Suspense fallback={<VisualizationSkeleton title="Spending Heatmap" />}>
           <SpendingHeatmapContent />
         </Suspense>
       </div>
     </div>
   )
+}
+
+async function SubscriptionAnalyticsContent() {
+  // Fetch user subscriptions using the server action
+  try {
+    const subscriptions = await getUserSubscriptions();
+    console.log(`Found ${subscriptions.length} subscriptions for user`);
+    return <SubscriptionAnalytics subscriptions={subscriptions} />
+  } catch (error) {
+    console.error('Error fetching subscriptions:', error);
+    return <SubscriptionAnalytics subscriptions={[]} />
+  }
 }
 
 async function SpendingHeatmapContent() {

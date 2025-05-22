@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { supabaseAdmin, getCurrentUserId } from "@/lib/supabase"
+import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { SubscriptionCategory, SubscriptionRecurrence } from "@/types/subscription"
 
 // Schema for subscription validation
@@ -20,9 +21,31 @@ const subscriptionSchema = z.object({
 })
 
 // GET /api/subscriptions - Get all subscriptions for the current user
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const userId = await getCurrentUserId()
+    // Create a server-side Supabase client that can access the user's session
+    const supabase = await createServerSupabaseClient();
+    let userId: string;
+    
+    // Check if we have a valid Supabase client
+    if (supabase) {
+      // Get the authenticated user ID using the server-side client
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // ALWAYS prioritize the authenticated user ID
+      if (user?.id) {
+        userId = user.id;
+        console.log(`Found authenticated user: ${userId}`);
+      } else {
+        // No authenticated user found, fall back to client ID
+        userId = await getCurrentUserId(request);
+        console.log(`No authenticated user found, using fallback ID: ${userId}`);
+      }
+    } else {
+      // If Supabase client creation failed, fall back to client ID
+      userId = await getCurrentUserId(request);
+      console.log(`Supabase client creation failed, using fallback ID: ${userId}`);
+    }
     
     if (!userId) {
       return new NextResponse("Unauthorized", { status: 401 })

@@ -142,6 +142,7 @@ export async function createServerSupabaseClient(context?: {
       // Dynamic import to avoid breaking Pages Router
       if (typeof window === 'undefined') {
         const { cookies } = await import('next/headers');
+        // Make sure to await cookies() to prevent "cookies() should be awaited" errors
         appRouterCookies = await cookies();
       }
     } catch (e) {
@@ -159,10 +160,25 @@ export async function createServerSupabaseClient(context?: {
             get(name: string) {
               try {
                 if (!appRouterCookies) return undefined;
-                return appRouterCookies.get(name)?.value;
+                const cookieValue = appRouterCookies.get(name)?.value;
+                
+                // Handle base64-encoded cookies
+                if (cookieValue && typeof cookieValue === 'string' && cookieValue.startsWith('base64-')) {
+                  try {
+                    // Remove 'base64-' prefix and decode
+                    const base64Value = cookieValue.substring(7); // Remove 'base64-' prefix
+                    const decodedValue = Buffer.from(base64Value, 'base64').toString('utf-8');
+                    return decodedValue;
+                  } catch (decodeError) {
+                    console.error('Error decoding base64 cookie:', decodeError);
+                    return cookieValue; // Return original value if decoding fails
+                  }
+                }
+                
+                return cookieValue;
               } catch (error) {
-                console.error('Error getting cookie:', error)
-                return undefined
+                console.error('Error getting cookie:', error);
+                return undefined;
               }
             },
             set(name: string, value: string, options: CookieOptions) {

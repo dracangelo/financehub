@@ -20,7 +20,7 @@ interface SubscriptionDetailPageProps {
 }
 
 export default async function SubscriptionDetailPage({ params }: SubscriptionDetailPageProps) {
-  const { id } = params;
+  const { id } = await params;
   
   try {
     // Fetch subscription data
@@ -62,17 +62,20 @@ export default async function SubscriptionDetailPage({ params }: SubscriptionDet
     ]);
     
     // Find the category info for this subscription's category
-    // The subscription.category is a string like 'entertainment', and we need to find the matching category info
-    const categoryInfo = categories.find(cat => cat.name === subscription.category) || null;
+    let categoryInfo = null;
+    if (subscription.category) {
+      // Find the category by name
+      categoryInfo = categories.find(cat => cat.name === subscription.category);
+    }
     
-    // Pass just the category name to the component as it expects SubscriptionCategory type
-    const categoryName = categoryInfo?.name || null;
+    // Create a proper category object to pass to the component
+    const category = categoryInfo || null;
     
     return (
       <div className="container py-6">
         <SubscriptionDetail 
           subscription={subscription}
-          category={categoryName}
+          category={category}
           usageLogs={usageLogs}
           priceChanges={priceChanges}
         />

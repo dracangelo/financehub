@@ -44,7 +44,8 @@ interface ROIData {
   roi_percentage: number
   roi_ratio: number
   break_even_months: number | null
-  status: "positive" | "negative" | "neutral" | "pending"
+  subscription_status: "active" | "paused" | "cancelled" | string
+  roi_status: "positive" | "negative" | "neutral" | "pending" | string
 }
 
 export default function ROICalculatorPage() {
@@ -109,36 +110,65 @@ export default function ROICalculatorPage() {
     }
   }
   
-  // Get status badge
-  const getStatusBadge = (status: string) => {
-    switch (status) {
+  // Get ROI status badge
+  const getROIStatusBadge = (roiStatus: string) => {
+    switch (roiStatus) {
       case "positive":
         return (
           <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-            <TrendingUp className="h-3 w-3 mr-1" />
-            Positive ROI
+            <TrendingUp key="trending-up-icon" className="h-3 w-3 mr-1" />
+            <span key="positive-text">Positive ROI</span>
           </Badge>
         )
       case "negative":
         return (
           <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
-            <TrendingDown className="h-3 w-3 mr-1" />
-            Negative ROI
+            <TrendingDown key="trending-down-icon" className="h-3 w-3 mr-1" />
+            <span key="negative-text">Negative ROI</span>
           </Badge>
         )
       case "neutral":
         return (
           <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
-            <AlertCircle className="h-3 w-3 mr-1" />
-            Break-even
+            <AlertCircle key="alert-circle-icon" className="h-3 w-3 mr-1" />
+            <span key="neutral-text">Break-even</span>
           </Badge>
         )
-      case "pending":
       default:
         return (
           <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">
-            <Clock className="h-3 w-3 mr-1" />
-            Pending
+            <Clock key="clock-icon" className="h-3 w-3 mr-1" />
+            <span key="pending-text">Add More Data To Calculate ROI</span>
+          </Badge>
+        )
+    }
+  }
+  
+  // Get subscription status badge
+  const getSubscriptionStatusBadge = (status: string) => {
+    switch (status) {
+      case "active":
+        return (
+          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+            <span key="active-text">Active</span>
+          </Badge>
+        )
+      case "paused":
+        return (
+          <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
+            <span key="paused-text">Paused</span>
+          </Badge>
+        )
+      case "cancelled":
+        return (
+          <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+            <span key="cancelled-text">Cancelled</span>
+          </Badge>
+        )
+      default:
+        return (
+          <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">
+            <span key="unknown-text">Unknown</span>
           </Badge>
         )
     }
@@ -147,9 +177,11 @@ export default function ROICalculatorPage() {
   // Filter subscriptions based on active tab
   const filteredSubscriptions = subscriptions.filter(sub => {
     if (activeTab === "all") return true
-    if (activeTab === "positive") return sub.status === "positive"
-    if (activeTab === "negative") return sub.status === "negative"
-    if (activeTab === "pending") return sub.status === "pending"
+    if (activeTab === "active") return sub.subscription_status === "active"
+    if (activeTab === "paused") return sub.subscription_status === "paused"
+    if (activeTab === "cancelled") return sub.subscription_status === "cancelled"
+    if (activeTab === "positive") return sub.roi_status === "positive"
+    if (activeTab === "negative") return sub.roi_status === "negative"
     return true
   })
   
@@ -286,9 +318,11 @@ export default function ROICalculatorPage() {
           <Tabs defaultValue="all" className="w-full" onValueChange={setActiveTab}>
             <TabsList className="mb-4">
               <TabsTrigger value="all">All Subscriptions</TabsTrigger>
+              <TabsTrigger value="active">Active</TabsTrigger>
+              <TabsTrigger value="paused">Paused</TabsTrigger>
+              <TabsTrigger value="cancelled">Cancelled</TabsTrigger>
               <TabsTrigger value="positive">Positive ROI</TabsTrigger>
               <TabsTrigger value="negative">Negative ROI</TabsTrigger>
-              <TabsTrigger value="pending">Pending Analysis</TabsTrigger>
             </TabsList>
             
             <TabsContent value={activeTab} className="mt-0">
@@ -305,38 +339,104 @@ export default function ROICalculatorPage() {
                   </AlertDescription>
                 </Alert>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Subscription</TableHead>
-                      <TableHead>Provider</TableHead>
-                      <TableHead>Monthly Cost</TableHead>
-                      <TableHead>ROI</TableHead>
-                      <TableHead>Break-even</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredSubscriptions.map((sub) => (
-                      <TableRow key={sub.id}>
-                        <TableCell className="font-medium">{sub.name}</TableCell>
-                        <TableCell>{sub.service_provider}</TableCell>
-                        <TableCell>{formatCurrency(sub.monthly_cost, sub.currency)}</TableCell>
-                        <TableCell>
-                          {sub.status !== "pending" 
-                            ? formatPercentage(sub.roi_percentage)
-                            : "Pending"}
-                        </TableCell>
-                        <TableCell>
-                          {sub.break_even_months !== null 
-                            ? `${sub.break_even_months.toFixed(1)} months`
-                            : "N/A"}
-                        </TableCell>
-                        <TableCell>{getStatusBadge(sub.status)}</TableCell>
-                      </TableRow>
+                <div className="space-y-6">
+                  {/* Subscription Cards - Show name and provider prominently */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                    {filteredSubscriptions.map((sub, index) => (
+                      <Card 
+                        key={`card-${sub.id || index}`} 
+                        className={`border-l-4 ${getStatusColor(sub.status).replace('bg-', 'border-')}`}
+                      >
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-lg">
+                            {sub.name || 'Unnamed Subscription'}
+                          </CardTitle>
+                          <CardDescription>
+                            {sub.service_provider || 'No provider specified'}
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <div>
+                              <div className="text-muted-foreground">Monthly Cost</div>
+                              <div className="font-medium">{formatCurrency(sub.monthly_cost, sub.currency)}</div>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground">ROI</div>
+                              <div className="font-medium">
+                                {sub.status !== "pending" 
+                                  ? formatPercentage(sub.roi_percentage)
+                                  : "Pending"}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground">Break-even</div>
+                              <div className="font-medium">
+                                {sub.break_even_months !== null 
+                                  ? `${sub.break_even_months.toFixed(1)} months`
+                                  : "N/A"}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground">Subscription Status</div>
+                              <div>{getSubscriptionStatusBadge(sub.subscription_status || 'active')}</div>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground">ROI Status</div>
+                              <div>{getROIStatusBadge(sub.roi_status || 'pending')}</div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
                     ))}
-                  </TableBody>
-                </Table>
+                  </div>
+                  
+                  {/* Detailed Table */}
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead key="th-subscription">Subscription</TableHead>
+                        <TableHead key="th-provider">Provider</TableHead>
+                        <TableHead key="th-cost">Monthly Cost</TableHead>
+                        <TableHead key="th-roi">ROI</TableHead>
+                        <TableHead key="th-breakeven">Break-even</TableHead>
+                        <TableHead key="th-sub-status">Subscription Status</TableHead>
+                        <TableHead key="th-roi-status">ROI Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredSubscriptions.map((sub, index) => (
+                        <TableRow key={`row-${sub.id || index}`}>
+                          <TableCell key={`name-${sub.id || index}`} className="font-medium">
+                            {sub.name || 'Unnamed Subscription'}
+                          </TableCell>
+                          <TableCell key={`provider-${sub.id || index}`}>
+                            {sub.service_provider || 'No provider specified'}
+                          </TableCell>
+                          <TableCell key={`cost-${sub.id || index}`}>
+                            {formatCurrency(sub.monthly_cost, sub.currency)}
+                          </TableCell>
+                          <TableCell key={`roi-${sub.id || index}`}>
+                            {sub.status !== "pending" 
+                              ? formatPercentage(sub.roi_percentage)
+                              : "Pending"}
+                          </TableCell>
+                          <TableCell key={`breakeven-${sub.id || index}`}>
+                            {sub.break_even_months !== null 
+                              ? `${sub.break_even_months.toFixed(1)} months`
+                              : "N/A"}
+                          </TableCell>
+                          <TableCell key={`sub-status-${sub.id || index}`}>
+                            {getSubscriptionStatusBadge(sub.subscription_status || 'active')}
+                          </TableCell>
+                          <TableCell key={`roi-status-${sub.id || index}`}>
+                            {getROIStatusBadge(sub.roi_status || 'pending')}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
             </TabsContent>
           </Tabs>
@@ -352,53 +452,46 @@ export default function ROICalculatorPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-start gap-2">
-            <div className="bg-blue-100 text-blue-800 rounded-full p-1 mt-0.5">
-              <Calculator className="h-4 w-4" />
+          {[
+            {
+              id: "roi-percentage",
+              title: "ROI Percentage",
+              description: "ROI% = ((Actual Return - Total Cost) / Total Cost) × 100"
+            },
+            {
+              id: "roi-ratio",
+              title: "ROI Ratio",
+              description: "ROI Ratio = Actual Return / Total Cost"
+            },
+            {
+              id: "break-even",
+              title: "Break-even Point",
+              description: "Break-even Months = Total Cost / (Expected Monthly Return)"
+            },
+            {
+              id: "monthly-cost",
+              title: "Monthly Cost",
+              description: "Calculated based on the subscription amount and recurrence type (monthly, yearly, etc.)"
+            },
+            {
+              id: "subscription-details",
+              title: "Subscription Details",
+              description: "Each subscription's name and service provider are displayed to help you identify your services easily"
+            }
+          ].map((item) => (
+            <div key={item.id} className="flex items-start gap-2">
+              <div className="bg-blue-100 text-blue-800 rounded-full p-1 mt-0.5">
+                <Calculator key={`calc-icon-${item.id}`} className="h-4 w-4" />
+              </div>
+              <div>
+                <h3 key={`title-${item.id}`} className="font-medium">{item.title}</h3>
+                <p key={`desc-${item.id}`} className="text-sm text-muted-foreground">
+                  {item.description}
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-medium">ROI Percentage</h3>
-              <p className="text-sm text-muted-foreground">
-                ROI% = ((Actual Return - Total Cost) / Total Cost) × 100
-              </p>
-            </div>
-          </div>
-          
-          <div className="flex items-start gap-2">
-            <div className="bg-blue-100 text-blue-800 rounded-full p-1 mt-0.5">
-              <Calculator className="h-4 w-4" />
-            </div>
-            <div>
-              <h3 className="font-medium">ROI Ratio</h3>
-              <p className="text-sm text-muted-foreground">
-                ROI Ratio = Actual Return / Total Cost
-              </p>
-            </div>
-          </div>
-          
-          <div className="flex items-start gap-2">
-            <div className="bg-blue-100 text-blue-800 rounded-full p-1 mt-0.5">
-              <Calculator className="h-4 w-4" />
-            </div>
-            <div>
-              <h3 className="font-medium">Break-even Point</h3>
-              <p className="text-sm text-muted-foreground">
-                Break-even Months = Total Cost / (Expected Monthly Return)
-              </p>
-            </div>
-          </div>
-          
-          <div className="flex items-start gap-2">
-            <div className="bg-blue-100 text-blue-800 rounded-full p-1 mt-0.5">
-              <Calculator className="h-4 w-4" />
-            </div>
-            <div>
-              <h3 className="font-medium">Monthly Cost</h3>
-              <p className="text-sm text-muted-foreground">
-                Calculated based on the subscription amount and recurrence type (monthly, yearly, etc.)
-              </p>
-            </div>
-          </div>
+          ))}
+
         </CardContent>
       </Card>
     </div>

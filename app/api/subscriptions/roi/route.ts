@@ -1,7 +1,28 @@
-import { NextResponse } from "next/server"
-import { z } from "zod"
-import { supabaseAdmin, getCurrentUserId } from "@/lib/supabase"
-import { Subscription, ROICalculation } from "@/types/subscription"
+import { NextRequest, NextResponse } from "next/server"
+import { getCurrentUserId, supabaseAdmin } from "@/lib/supabase"
+import { Subscription } from "@/types/subscription"
+
+// Define ROIData interface
+interface ROIData {
+  id: string
+  name: string
+  service_provider: string
+  amount: number
+  currency: string
+  recurrence: string
+  start_date: string
+  end_date: string | null
+  expected_roi: number | null
+  actual_roi: number | null
+  category: string
+  total_cost: number
+  monthly_cost: number
+  roi_percentage: number
+  roi_ratio: number
+  break_even_months: number | null
+  subscription_status: string
+  roi_status: string
+}
 
 // Calculate ROI for a subscription
 export async function POST(req: Request) {
@@ -55,12 +76,11 @@ export async function GET() {
       return new NextResponse("Unauthorized", { status: 401 })
     }
     
-    // Get all active subscriptions for the user
+    // Get all subscriptions for the user (active, paused, and cancelled)
     const { data: subscriptions, error } = await supabaseAdmin
       .from('subscriptions')
       .select('*')
       .eq('user_id', userId)
-      .eq('is_active', true)
     
     if (error) {
       console.error("[SUBSCRIPTIONS_ROI_GET]", error)
@@ -82,7 +102,7 @@ export async function GET() {
 }
 
 // Helper function to calculate ROI for a subscription
-function calculateROI(subscription: Subscription): ROICalculation {
+function calculateROI(subscription: Subscription): ROIData {
   // Calculate total cost based on subscription duration
   const startDate = new Date(subscription.start_date)
   const endDate = subscription.end_date ? new Date(subscription.end_date) : null
@@ -155,15 +175,41 @@ function calculateROI(subscription: Subscription): ROICalculation {
     breakEvenMonths = expectedReturn / monthlyCost
   }
   
+  // Determine ROI status based on ROI percentage
+  let roiStatus = "pending";
+  
+  // Only calculate ROI status if we have actual usage data
+  if (actualReturn !== null && actualReturn !== 0) {
+    if (roiPercentage > 0) {
+      roiStatus = "positive";
+    } else if (roiPercentage < 0) {
+      roiStatus = "negative";
+    } else {
+      roiStatus = "neutral";
+    }
+  }
+  
+  // Get subscription status (active, paused, cancelled)
+  const subscriptionStatus = subscription.status || "active";
+
   return {
-    subscription_id: subscription.id,
+    id: subscription.id,
+    name: subscription.name,
+    service_provider: subscription.service_provider || subscription.vendor,
+    amount: subscription.amount,
+    currency: subscription.currency || 'USD',
+    recurrence: subscription.recurrence,
+    start_date: subscription.start_date,
+    end_date: subscription.end_date,
+    expected_roi: expectedReturn,
+    actual_roi: actualReturn,
+    category: subscription.category || 'general',
     total_cost: totalCost,
-    expected_return: expectedReturn,
-    actual_return: actualReturn,
+    monthly_cost: monthlyCost,
     roi_percentage: roiPercentage,
     roi_ratio: roiRatio,
-    monthly_cost: monthlyCost,
-    annual_cost: annualCost,
-    break_even_months: breakEvenMonths
-  }
+    break_even_months: breakEvenMonths,
+    subscription_status: subscriptionStatus,
+    roi_status: roiStatus
+  } as ROIData
 }

@@ -55,8 +55,25 @@ export default function SubscriptionAnalytics({ subscriptions, categories }: Sub
   const filteredSubscriptions = useMemo(() => {
     return subscriptions.filter(subscription => {
       // Status filter
-      if (statusFilter !== 'all' && subscription.is_active.toString() !== statusFilter) {
-        return false;
+      if (statusFilter !== 'all') {
+        // Handle the three status types: active, paused, cancelled
+        if (statusFilter === 'active' && subscription.status !== 'active') {
+          return false;
+        }
+        if (statusFilter === 'paused' && subscription.status !== 'paused') {
+          return false;
+        }
+        if (statusFilter === 'cancelled' && subscription.status !== 'cancelled') {
+          return false;
+        }
+        // For backward compatibility with older data
+        if (statusFilter === 'active' && subscription.status === undefined && subscription.is_active) {
+          return true;
+        }
+        if ((statusFilter === 'paused' || statusFilter === 'cancelled') && 
+            subscription.status === undefined && !subscription.is_active) {
+          return false;
+        }
       }
       
       // Category filter
@@ -225,12 +242,33 @@ export default function SubscriptionAnalytics({ subscriptions, categories }: Sub
         
         <Card>
           <CardHeader>
-            <CardTitle>Active Subscriptions</CardTitle>
-            <CardDescription>Number of active subscriptions</CardDescription>
+            <CardTitle>Subscription Status</CardTitle>
+            <CardDescription>Count by status</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">
-              {filteredSubscriptions.filter(sub => sub.is_active).length}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-sm">Active:</span>
+                <span className="font-medium">
+                  {filteredSubscriptions.filter(sub => 
+                    sub.status === 'active' || (sub.status === undefined && sub.is_active)
+                  ).length}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm">Paused:</span>
+                <span className="font-medium">
+                  {filteredSubscriptions.filter(sub => sub.status === 'paused').length}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm">Cancelled:</span>
+                <span className="font-medium">
+                  {filteredSubscriptions.filter(sub => 
+                    sub.status === 'cancelled' || (sub.status === undefined && !sub.is_active)
+                  ).length}
+                </span>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -251,8 +289,9 @@ export default function SubscriptionAnalytics({ subscriptions, categories }: Sub
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="true">Active</SelectItem>
-                  <SelectItem value="false">Inactive</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="paused">Paused</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
                 </SelectContent>
               </Select>
             </div>

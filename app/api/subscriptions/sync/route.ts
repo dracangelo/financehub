@@ -7,9 +7,12 @@ export async function POST(request: NextRequest) {
     // Get the subscription data from the request
     const subscriptionData = await request.json();
     
-    // Use the proper async pattern for cookies
+    // Create a Supabase client with the correct cookie handling
+    // Note: cookies() returns ReadonlyRequestCookies, not a Promise in Next.js 14
     const cookieStore = cookies();
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
+    const supabase = createRouteHandlerClient({
+      cookies: () => cookieStore
+    });
     
     // Try to get the user ID from various sources
     let userId = '00000000-0000-0000-0000-000000000000'; // Default fallback

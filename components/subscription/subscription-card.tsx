@@ -10,6 +10,7 @@ import { SubscriptionCategoryInfo } from '@/types/subscription';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useState } from 'react';
+import { formatFrequency, getUsageRatingColorClass } from '@/lib/subscription-utils';
 
 interface SubscriptionCardProps {
   subscription: Subscription;
@@ -22,27 +23,10 @@ export default function SubscriptionCard({ subscription }: SubscriptionCardProps
   // Format the recurring amount
   const formattedAmount = formatCurrency(subscription.amount, subscription.currency);
   
-  // Get the recurrence text
+  // Get the recurrence text using the utility function
   const getRecurrenceText = () => {
-    switch (subscription.recurrence) {
-      case 'monthly':
-        return 'Monthly';
-      case 'yearly':
-      case 'annual':
-        return 'Yearly';
-      case 'weekly':
-        return 'Weekly';
-      case 'quarterly':
-        return 'Quarterly';
-      case 'semi_annual':
-        return 'Biannually';
-      case 'bi_weekly':
-        return 'Bi-Weekly';
-      case 'daily':
-        return 'Daily';
-      default:
-        return subscription.recurrence;
-    }
+    // Use frequency if available, otherwise fall back to recurrence
+    return formatFrequency(subscription.frequency || subscription.recurrence);
   };
 
   // Handle edit click
@@ -57,14 +41,11 @@ export default function SubscriptionCard({ subscription }: SubscriptionCardProps
     try {
       setIsDeleting(true);
       
-      // Delete from database
-      const response = await fetch(`/api/subscriptions/${subscription.id}`, {
-        method: 'DELETE',
-      });
+      // Import the server action to delete the subscription
+      const { deleteSubscription } = await import('@/app/actions/subscription');
       
-      if (!response.ok) {
-        throw new Error('Failed to delete subscription');
-      }
+      // Delete using server action instead of API route
+      await deleteSubscription(subscription.id);
       
       toast.success('Subscription deleted successfully');
       
@@ -79,7 +60,7 @@ export default function SubscriptionCard({ subscription }: SubscriptionCardProps
   };
 
   return (
-    <Card className="h-full flex flex-col">
+    <Card className={`flex flex-col h-full hover:shadow-md transition-shadow ${getUsageRatingColorClass(subscription.usage_rating)}`}>
       <CardHeader className="pb-2">
         <div className="flex justify-between items-start">
           <CardTitle className="text-lg">{subscription.name}</CardTitle>
@@ -96,19 +77,19 @@ export default function SubscriptionCard({ subscription }: SubscriptionCardProps
             {formattedAmount}
           </div>
           
-          <div className="flex items-center text-sm text-muted-foreground">
+          <div className="flex items-center text-sm font-medium">
             <Clock className="h-4 w-4 mr-1" />
             <span>{getRecurrenceText()}</span>
           </div>
           
           {subscription.category && (
-            <Badge variant="secondary" className="mt-2">
-              {typeof subscription.category === 'string' ? subscription.category : subscription.category.name}
+            <Badge variant="secondary" className="mt-2 font-medium">
+              {typeof subscription.category === 'string' ? subscription.category : 'Uncategorized'}
             </Badge>
           )}
           
           {subscription.description && (
-            <p className="text-sm mt-2 text-muted-foreground line-clamp-2">
+            <p className="text-sm mt-2 font-medium line-clamp-2">
               {subscription.description}
             </p>
           )}
@@ -116,15 +97,20 @@ export default function SubscriptionCard({ subscription }: SubscriptionCardProps
       </CardContent>
       
       <CardFooter className="flex justify-between pt-2 border-t">
-        <Button variant="outline" size="sm" onClick={handleEdit}>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={handleEdit}
+          className="bg-gray-200 text-black hover:bg-gray-300 transition-colors"
+        >
           <Edit className="h-4 w-4 mr-1" />
           Edit
         </Button>
         
         <Button 
-          variant="outline" 
+          variant="destructive" 
           size="sm" 
-          className="text-destructive hover:bg-destructive/10" 
+          className="bg-red-500 text-black hover:bg-red-600 transition-colors" 
           onClick={handleDelete}
           disabled={isDeleting}
         >

@@ -140,8 +140,21 @@ async function createServerSupabaseClient() {
     const supabaseAuthCookie = await cookieStore.get('supabase-auth-token')
     if (supabaseAuthCookie?.value) {
       try {
+        // Handle base64-encoded cookies
+        let cookieValue = supabaseAuthCookie.value;
+        if (cookieValue && typeof cookieValue === 'string' && cookieValue.startsWith('base64-')) {
+          try {
+            // Remove 'base64-' prefix and decode
+            const base64Value = cookieValue.substring(7); // Remove 'base64-' prefix
+            cookieValue = Buffer.from(base64Value, 'base64').toString('utf-8');
+          } catch (decodeError) {
+            console.error('Error decoding base64 cookie:', decodeError);
+            // Continue with original value if decoding fails
+          }
+        }
+        
         // Parse the cookie value to extract the session data
-        const sessionData = JSON.parse(decodeURIComponent(supabaseAuthCookie.value))
+        const sessionData = JSON.parse(decodeURIComponent(cookieValue))
         
         if (sessionData && Array.isArray(sessionData) && sessionData.length >= 2) {
           const [token, refreshToken] = sessionData
@@ -167,7 +180,20 @@ async function createServerSupabaseClient() {
     const sbAuthCookie = cookieStore.get('sb-auth-cookie')
     if (sbAuthCookie?.value) {
       try {
-        const authData = JSON.parse(sbAuthCookie.value)
+        // Handle base64-encoded cookies
+        let cookieValue = sbAuthCookie.value;
+        if (cookieValue && typeof cookieValue === 'string' && cookieValue.startsWith('base64-')) {
+          try {
+            // Remove 'base64-' prefix and decode
+            const base64Value = cookieValue.substring(7); // Remove 'base64-' prefix
+            cookieValue = Buffer.from(base64Value, 'base64').toString('utf-8');
+          } catch (decodeError) {
+            console.error('Error decoding base64 cookie:', decodeError);
+            // Continue with original value if decoding fails
+          }
+        }
+        
+        const authData = JSON.parse(cookieValue)
         if (authData?.access_token && authData?.refresh_token) {
           await supabase.auth.setSession({
             access_token: authData.access_token,
@@ -184,7 +210,20 @@ async function createServerSupabaseClient() {
     const sbAuthTokenCookie = cookieStore.get('sb-auth-token')
     if (sbAuthTokenCookie?.value) {
       try {
-        const tokenData = JSON.parse(sbAuthTokenCookie.value)
+        // Handle base64-encoded cookies
+        let cookieValue = sbAuthTokenCookie.value;
+        if (cookieValue && typeof cookieValue === 'string' && cookieValue.startsWith('base64-')) {
+          try {
+            // Remove 'base64-' prefix and decode
+            const base64Value = cookieValue.substring(7); // Remove 'base64-' prefix
+            cookieValue = Buffer.from(base64Value, 'base64').toString('utf-8');
+          } catch (decodeError) {
+            console.error('Error decoding base64 cookie:', decodeError);
+            // Continue with original value if decoding fails
+          }
+        }
+        
+        const tokenData = JSON.parse(cookieValue)
         if (tokenData?.access_token && tokenData?.refresh_token) {
           await supabase.auth.setSession({
             access_token: tokenData.access_token,

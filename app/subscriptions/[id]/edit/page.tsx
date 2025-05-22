@@ -15,7 +15,7 @@ interface EditSubscriptionPageProps {
 }
 
 export default async function EditSubscriptionPage({ params }: EditSubscriptionPageProps) {
-  const { id } = params;
+  const { id } = await params;
   
   // Fetch subscription data
   const subscription = await getSubscriptionById(id);
