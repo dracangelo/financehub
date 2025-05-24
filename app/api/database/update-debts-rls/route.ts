@@ -1,21 +1,18 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
+import { supabaseAdmin } from '@/lib/supabase'
 
 export async function GET() {
   try {
-    // Create a cookie store
-    const cookieStore = cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    // Use supabaseAdmin to bypass RLS and have full permissions
     
     // Read the SQL file
     const sqlFilePath = path.join(process.cwd(), 'supabase', 'db', 'update_debts_rls.sql')
-    const sqlContent = fs.readFileSync(sqlFilePath, 'utf8')
+    let sqlContent = fs.readFileSync(sqlFilePath, 'utf8')
     
-    // Execute the SQL script
-    const { error } = await supabase.rpc('execute_sql', {
+    // Execute the SQL script using supabaseAdmin
+    const { error } = await supabaseAdmin.rpc('execute_sql', {
       sql_query: sqlContent
     })
     
@@ -29,27 +26,21 @@ export async function GET() {
     }
     
     // Also directly update the RLS policies as a backup
-    const { error: directError } = await supabase.rpc('execute_sql', {
+    const { error: directError } = await supabaseAdmin.rpc('execute_sql', {
       sql_query: `
-        -- Drop the existing RLS policy
+        -- Drop all existing RLS policies for debts table
         DROP POLICY IF EXISTS "Users can manage their own debts" ON public.debts;
+        DROP POLICY IF EXISTS "Authenticated users can manage their own debts" ON public.debts;
+        DROP POLICY IF EXISTS "Anonymous users can manage debts with their client ID" ON public.debts;
+        DROP POLICY IF EXISTS "Default user can access their debts" ON public.debts;
         
-        -- Create a more permissive policy for authenticated users
+        -- Create a simple policy for authenticated users only
         CREATE POLICY "Authenticated users can manage their own debts"
         ON public.debts
         FOR ALL
         USING (
           -- Allow access if the user is authenticated and the record belongs to them
           (auth.uid() IS NOT NULL AND auth.uid() = user_id)
-        );
-        
-        -- Create a policy for anonymous users with client IDs
-        CREATE POLICY "Anonymous users can manage debts with their client ID"
-        ON public.debts
-        FOR ALL
-        USING (
-          -- For anonymous users, we'll use a special function to check client ID
-          (auth.uid() IS NULL)
         );
         
         -- Refresh PostgREST schema cache

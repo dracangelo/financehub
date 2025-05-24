@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useRouter } from "next/navigation";
+import { ensureSplitExpenseStructure } from "@/lib/database/init-split-expenses";
 import { useToast } from "@/components/ui/use-toast";
 import { Calendar, MapPin, Receipt, Split, AlertTriangle, CalendarDays, User, Upload, Loader2, X, Search } from "lucide-react";
 
@@ -21,12 +22,15 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -92,6 +96,7 @@ export function ExpenseForm({
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [rateLimitError, setRateLimitError] = useState(false);
+  const [dbInitialized, setDbInitialized] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Location search state
@@ -99,6 +104,25 @@ export function ExpenseForm({
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
   const [showSplitOptions, setShowSplitOptions] = useState(false);
   const [availableUsers, setAvailableUsers] = useState(users);
+  
+  // Initialize the database structure when the component loads
+  useEffect(() => {
+    const initDatabase = async () => {
+      try {
+        // Initialize the split expense database structure
+        const success = await ensureSplitExpenseStructure();
+        setDbInitialized(success);
+        
+        if (!success) {
+          console.warn('Failed to initialize split expense database structure');
+        }
+      } catch (error) {
+        console.error('Error initializing split expense database:', error);
+      }
+    };
+    
+    initDatabase();
+  }, []);
 
   // Location search state
   const [locationSearchQuery, setLocationSearchQuery] = useState("");
@@ -898,12 +922,12 @@ export function ExpenseForm({
                       <FormLabel>Split With</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="Enter name or email of person"
+                          placeholder="Enter name of person"
                           {...field}
                         />
                       </FormControl>
                       <FormDescription>
-                        Enter the name or email of the person you're splitting this expense with
+                        Enter the name of the person you're splitting this expense with
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -933,6 +957,25 @@ export function ExpenseForm({
                       <FormDescription>
                         Amount the other person owes you for this expense
                       </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={form.control}
+                  name="split_note"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Split Note</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Add any details about this split..."
+                          className="min-h-[80px]"
+                          {...field}
+                          value={field.value || ""}
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

@@ -71,11 +71,11 @@ export function DebtConsolidationAnalyzer() {
       setFetchingDebts(true)
       setFetchError(null)
       
-      // Use the DebtService instead of the server action to get debts from both DB and localStorage
+      // Use the DebtService to get authenticated user debts
       const { DebtService } = await import('@/lib/debt/debt-service')
       const debtService = new DebtService()
       
-      // Get debts from both database and local storage
+      // Get debts using server-side authentication only
       const fetchedDBDebts = await debtService.getDebts()
       
       if (fetchedDBDebts && fetchedDBDebts.length > 0) {
@@ -92,30 +92,7 @@ export function DebtConsolidationAnalyzer() {
         
         setCurrentDebts(mappedDebts)
       } else {
-        // Fallback to server action if debt service doesn't work
-        try {
-          const existingDebts = await getDebts()
-          
-          if (existingDebts && existingDebts.length > 0) {
-            console.log('DebtConsolidationAnalyzer: Found', existingDebts.length, 'debts from server action')
-            
-            // Map the database debt format to the component's format
-            const mappedDebts: Debt[] = existingDebts.map(debt => ({
-              id: debt.id,
-              name: debt.name,
-              balance: debt.principal,
-              interestRate: debt.interest_rate,
-              minimumPayment: debt.minimum_payment || 0
-            }))
-            
-            setCurrentDebts(mappedDebts)
-          } else {
-            setFetchError("No debts found. Please add debts in the Debt Management section first.")
-          }
-        } catch (serverError) {
-          console.error("Error fetching debts from server action:", serverError)
-          setFetchError("Failed to load your debts. Please try again.")
-        }
+        setFetchError("No debts found. Please add debts in the Debt Management section first.")
       }
     } catch (error) {
       console.error("Error fetching debts:", error)

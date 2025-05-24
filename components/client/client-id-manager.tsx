@@ -38,7 +38,7 @@ export function ClientIdManager() {
       
       // Add the client ID to the headers
       const headers = new Headers(init.headers);
-      headers.append("x-user-id", clientId);
+      headers.append("client-id", clientId);
       
       init.headers = headers;
       

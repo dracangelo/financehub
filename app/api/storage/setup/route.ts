@@ -1,18 +1,21 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { createAdminSupabaseClient } from '@/lib/supabase/admin'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 
 export async function GET() {
   try {
-    const supabase = await createServerSupabaseClient()
-    if (!supabase) {
-      console.error('Failed to create Supabase client')
-      return NextResponse.json({ error: 'Failed to create Supabase client' }, { status: 500 })
+    // Always use admin client to set up storage buckets and policies
+    const adminClient = await createAdminSupabaseClient()
+    
+    if (!adminClient) {
+      console.error('Failed to create admin client for storage setup')
+      return NextResponse.json({ error: 'Failed to create admin client' }, { status: 500 })
     }
     
     // Create the profile-images bucket if it doesn't exist
-    const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets()
+    const { data: buckets, error: bucketsError } = await adminClient.storage.listBuckets()
     
     if (bucketsError) {
       console.error('Error listing buckets:', bucketsError)
@@ -23,7 +26,7 @@ export async function GET() {
     
     if (!profileBucketExists) {
       console.log('Creating profile-images bucket...')
-      const { error: createError } = await supabase.storage.createBucket('profile-images', {
+      const { error: createError } = await adminClient.storage.createBucket('profile-images', {
         public: true,
         fileSizeLimit: 2097152, // 2MB
         allowedMimeTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
@@ -37,18 +40,21 @@ export async function GET() {
     
     // Execute the SQL function to create the reports bucket with proper RLS policies
     // @ts-ignore - TypeScript error with rpc typing
-    const { data, error } = await supabase.rpc('create_reports_bucket')
+    const { data: adminData, error: adminError } = await adminClient.rpc('create_reports_bucket_with_policies')
     
-    if (error) {
-      console.error('Error setting up reports bucket:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+    if (adminError) {
+      console.error('Error setting up reports bucket with admin client:', adminError)
+      return NextResponse.json({ error: adminError.message }, { status: 500 })
     }
+    
+    console.log('Successfully set up reports bucket with admin client')
     
     return NextResponse.json({ 
       success: true, 
       message: 'Storage buckets setup completed successfully',
-      buckets: buckets.map(b => b.name)
+      buckets: buckets.map((b: any) => b.name)
     })
+    
   } catch (error: any) {
     console.error('Error in storage setup endpoint:', error)
     return NextResponse.json({ error: error.message || 'Unknown error occurred' }, { status: 500 })

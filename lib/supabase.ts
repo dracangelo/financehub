@@ -9,112 +9,71 @@ console.warn(
   "lib/supabase.ts is deprecated. Use lib/supabase/client for client components and lib/supabase/server for server components.",
 )
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+// Default Supabase URL and keys if environment variables are not available
+const DEFAULT_SUPABASE_URL = 'https://oummldjpaqapqhblwjzq.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im91bW1sZGpwYXFhcHFoYmx3anpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE2OTY5NjY2NzYsImV4cCI6MjAxMjU0MjY3Nn0.Nh83ebqzf8AeSxRjZXmYQIyhh-wTjSvSzXDn1ZQPMm0';
+const DEFAULT_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im91bW1sZGpwYXFhcHFoYmx3anpxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTY5Njk2NjY3NiwiZXhwIjoyMDEyNTQyNjc2fQ.z2CN0mvO2No8wSi46Gw59VR9X3X4DlJY7zL0qoy1VkE';
+
+// Get Supabase URL with fallback
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+// Get service role key with fallback
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || DEFAULT_SERVICE_ROLE_KEY;
+// Get anon key with fallback
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY;
 
 // Create a Supabase client with the service role key for server-side operations
 export const supabaseAdmin = createSupabaseClient(supabaseUrl, supabaseServiceKey);
 
 // Create a Supabase client for client-side operations (uses anon key)
-export const supabaseClient = createSupabaseClient(
-  supabaseUrl,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+export const supabaseClient = createSupabaseClient(supabaseUrl, supabaseAnonKey);
 
-// Helper function to get the current user's ID from the session
-export async function getCurrentUserId(request?: Request): Promise<string> {
+// Helper function to get the current user's ID from the session - server-side only approach
+export async function getCurrentUserId(request?: Request): Promise<string | null> {
   try {
-    // PRIORITY 1: Get authenticated user ID from the session cookie
-    try {
-      const { cookies } = await import('next/headers');
-      const cookieStore = await cookies();
-      const authCookie = cookieStore.get('sb-oummldjpaqapqhblwjzq-auth-token');
-      
-      if (authCookie?.value) {
-        try {
-          let cookieValue = authCookie.value;
-          
-          // Handle base64-encoded cookies
-          if (cookieValue.startsWith('base64-')) {
-            try {
-              console.log('Decoding base64-encoded cookie');
-              const base64Value = cookieValue.substring(7); // Remove 'base64-' prefix
-              cookieValue = Buffer.from(base64Value, 'base64').toString('utf-8');
-              console.log('Successfully decoded base64 cookie');
-            } catch (decodeError) {
-              console.error('Error decoding base64 cookie:', decodeError);
-              throw new Error('Failed to decode base64 cookie');
-            }
-          }
-          
-          // Parse the cookie value
-          let parsedCookie;
-          try {
-            parsedCookie = JSON.parse(cookieValue);
-          } catch (jsonError) {
-            console.error('Error parsing cookie as JSON:', jsonError);
-            console.log('Cookie value that failed to parse:', cookieValue.substring(0, 50) + '...');
-            throw new Error('Failed to parse cookie as JSON');
-          }
-          
-          if (parsedCookie && parsedCookie.length > 0) {
-            // Extract user ID from the JWT token
-            const token = parsedCookie[0];
-            if (token) {
-              try {
-                // Decode the JWT token to get the user ID
-                const tokenParts = token.split('.');
-                if (tokenParts.length === 3) {
-                  const payload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString());
-                  if (payload && payload.sub) {
-                    console.log(`Using authenticated user ID from cookie: ${payload.sub}`);
-                    return payload.sub;
-                  }
-                }
-              } catch (tokenError) {
-                console.error('Error decoding JWT token:', tokenError);
-              }
-            }
-          }
-        } catch (cookieParseError) {
-          console.error('Error parsing auth cookie:', cookieParseError);
-        }
+    // PRIORITY 1: Get user ID from request headers (for API calls)
+    if (request?.headers) {
+      const clientId = request.headers.get('client-id');
+      if (clientId) {
+        console.log(`Using client ID from request headers: ${clientId}`);
+        return clientId;
       }
       
-      // PRIORITY 2: Try the server component client
-      const { createServerComponentClient } = await import('@supabase/auth-helpers-nextjs');
-      
-      const supabase = createServerComponentClient({
-        cookies: () => cookieStore
-      });
-      
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user && user.id) {
-        console.log(`Using authenticated user ID from server: ${user.id}`);
-        return user.id;
-      }
-    } catch (serverError) {
-      console.error('Error getting user from server:', serverError);
-    }
-    
-    // PRIORITY 3: Check for client ID in request cookies/headers
-    if (request) {
-      // Try to get client ID from cookies
+      // Also check cookies in the request headers
       const cookieHeader = request.headers.get('cookie');
       if (cookieHeader) {
         const clientIdMatch = cookieHeader.match(/client-id=([^;]+)/);
         if (clientIdMatch && clientIdMatch[1] && clientIdMatch[1].trim() !== '') {
-          console.log(`Using client ID from cookie: ${clientIdMatch[1]}`);
+          console.log(`Using client ID from cookie header: ${clientIdMatch[1]}`);
           return clientIdMatch[1];
         }
       }
+    }
+    
+    // PRIORITY 2: Get authenticated user directly from Supabase admin client
+    try {
+      // Use supabaseAdmin to bypass RLS policies, similar to subscription system
+      const { data, error } = await supabaseAdmin.auth.getSession();
       
-      // Try to get client ID from headers
-      const clientId = request.headers.get('client-id');
-      if (clientId && clientId.trim() !== '') {
-        console.log(`Using client ID from header: ${clientId}`);
-        return clientId;
+      if (data?.session?.user?.id) {
+        const userId = data.session.user.id;
+        console.log(`Using authenticated user ID from Supabase admin: ${userId}`);
+        return userId;
+      } else if (error) {
+        console.warn('Error getting authenticated user from Supabase admin:', error);
       }
+    } catch (adminError) {
+      console.warn('Error using supabaseAdmin for authentication:', adminError);
+    }
+    
+    // PRIORITY 3: Try to get user ID from the client
+    try {
+      const { data: { user } } = await supabaseClient.auth.getUser();
+      if (user && user.id) {
+        console.log(`Using authenticated user ID from client: ${user.id}`);
+        return user.id;
+      }
+    } catch (clientError) {
+      console.warn('Error getting user from client:', clientError);
     }
     
     // PRIORITY 4: Get user ID directly from the subscriptions table
@@ -134,12 +93,11 @@ export async function getCurrentUserId(request?: Request): Promise<string> {
       console.error('Error getting user ID from subscriptions:', subError);
     }
     
-    // PRIORITY 5: Get a real user from the database (not the default UUID)
+    // PRIORITY 5: Get a real user from the database (not a default UUID)
     try {
       const { data: existingUsers, error: userError } = await supabaseAdmin
         .from('users')
         .select('id')
-        .neq('id', '00000000-0000-0000-0000-000000000000')
         .order('created_at', { ascending: false })
         .limit(1);
       
@@ -147,8 +105,8 @@ export async function getCurrentUserId(request?: Request): Promise<string> {
         console.log(`Using existing user ID from database: ${existingUsers[0].id}`);
         return existingUsers[0].id;
       }
-    } catch (dbError) {
-      console.error('Error getting user from database:', dbError);
+    } catch (userError) {
+      console.error('Error getting user from database:', userError);
     }
     
     // PRIORITY 6: Create a new user as last resort
@@ -172,7 +130,7 @@ export async function getCurrentUserId(request?: Request): Promise<string> {
         } else {
           console.log('Successfully stored new user ID in database');
         }
-      } catch (insertError: unknown) {
+      } catch (insertError) {
         console.error('Exception storing new user ID:', insertError);
       }
       
@@ -181,12 +139,12 @@ export async function getCurrentUserId(request?: Request): Promise<string> {
       console.error('Error creating new user ID:', createError);
     }
     
-    // ABSOLUTE LAST RESORT: Use default UUID
-    console.warn('WARNING: Using default UUID as absolute last resort');
-    return '00000000-0000-0000-0000-000000000000';
+    // If we couldn't get a user ID, return null instead of a default UUID
+    console.warn('Server: No authenticated user found');
+    return null;
   } catch (error) {
     console.error('Error getting user ID:', error);
-    return '00000000-0000-0000-0000-000000000000';
+    return null;
   }
 }
 

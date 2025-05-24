@@ -97,26 +97,26 @@ async function ensureReportsTableExists() {
     }
     
     // Table doesn't exist, inform about the migration script
-    console.warn(`
-==========================================================================
-REPORTS TABLE MISSING
-==========================================================================
-The reports table does not exist in your database. Please run the migration
-script to create it:
+//     console.warn(`
+// ==========================================================================
+// REPORTS TABLE MISSING
+// ==========================================================================
+// The reports table does not exist in your database. Please run the migration
+// script to create it:
 
-Option 1: Using the Supabase Dashboard (Recommended)
-1. Log in to your Supabase dashboard
-2. Navigate to the SQL Editor
-3. Create a new query
-4. Copy and paste the contents of 'migrations/create_reports_table.sql'
-5. Run the query
+// Option 1: Using the Supabase Dashboard (Recommended)
+// 1. Log in to your Supabase dashboard
+// 2. Navigate to the SQL Editor
+// 3. Create a new query
+// 4. Copy and paste the contents of 'migrations/create_reports_table.sql'
+// 5. Run the query
 
-Option 2: Using the Migration Script
-Run: node scripts/run-reports-migration.js
+// Option 2: Using the Migration Script
+// Run: node scripts/run-reports-migration.js
 
-For more information, see README-REPORTS.md
-==========================================================================
-    `)
+// For more information, see README-REPORTS.md
+// ==========================================================================
+//     `)
     
     // Create a temporary table in memory to handle operations until the real table is created
     global._tempReportsTable = global._tempReportsTable || []
@@ -384,18 +384,49 @@ async function processReport(reportId: string) {
 // Ensure reports storage bucket exists with proper RLS policies
 async function ensureReportsStorageBucket() {
   try {
-    // Call the API endpoint to set up the reports bucket
-    const response = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/storage/setup`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json()
-      console.warn('Warning: Reports storage bucket setup failed:', errorData)
-      // Continue execution - we'll handle failures gracefully
+    // Use admin client to bypass RLS policies
+    const adminClient = await createAdminSupabaseClient()
+    
+    if (!adminClient) {
+      console.warn('Warning: Failed to create admin client for storage setup')
+      return false
+    }
+    
+    // Check if the reports bucket already exists
+    const { data: buckets, error: bucketsError } = await adminClient.storage.listBuckets()
+    
+    if (bucketsError) {
+      console.warn('Warning: Error listing storage buckets:', bucketsError)
+      return false
+    }
+    
+    const reportsBucketExists = buckets.some(bucket => bucket.name === 'reports')
+    
+    if (!reportsBucketExists) {
+      // Create the reports bucket with admin client
+      const { error: createError } = await adminClient.storage.createBucket('reports', {
+        public: false,
+        fileSizeLimit: 20971520, // 20MB
+        allowedMimeTypes: [
+          'application/json',
+          'application/pdf',
+          'text/csv',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        ]
+      })
+      
+      if (createError) {
+        console.warn('Warning: Error creating reports bucket:', createError)
+        return false
+      }
+      
+      // Execute the SQL function to set up proper RLS policies
+      // @ts-ignore - TypeScript error with rpc typing
+      const { error: rpcError } = await adminClient.rpc('create_reports_bucket_with_policies')
+      
+      if (rpcError) {
+        console.warn('Warning: Error setting up reports bucket policies:', rpcError)
+      }
     }
     
     return true
@@ -416,6 +447,23 @@ async function generateReportFile(report: Report): Promise<string> {
   
   // Ensure the reports storage bucket exists before attempting to upload
   await ensureReportsStorageBucket()
+  
+  // Get the authenticated user ID
+  let userId = report.user_id
+  
+  // If no user ID is provided, try to get the authenticated user
+  if (!userId || userId === 'default-user') {
+    try {
+      const user = await getAuthenticatedUser()
+      if (user && user.id) {
+        userId = user.id
+      } else {
+        throw new Error('User not authenticated')
+      }
+    } catch (error) {
+      throw new Error('Authentication required to generate reports')
+    }
+  }
   
   try {
     // Fetch data based on report type and time range
@@ -498,7 +546,7 @@ async function generateReportFile(report: Report): Promise<string> {
     const filename = `${report.type}_${report.format}_${uuidv4()}.${getFileExtension(report.format)}`
     
     // Prepare file path for storage
-    const filePath = `reports/${report.user_id}/${filename}`
+    const filePath = `reports/${userId}/${filename}`
     
     // If we have real data, we would generate the file here and upload to storage
     // For demonstration purposes, we'll create a metadata file with report info
@@ -509,7 +557,8 @@ async function generateReportFile(report: Report): Promise<string> {
       time_range: report.time_range,
       generated_at: new Date().toISOString(),
       record_count: data.length,
-      user_id: report.user_id
+      user_id: userId,
+      is_authenticated: report.user_id !== 'default-user'
     }
     
     // Convert metadata to string

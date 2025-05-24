@@ -3,15 +3,15 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { CreditCard, Calculator, TrendingUp, BarChart3, PieChart, Target } from "lucide-react"
+import { CreditCard, Calculator, TrendingUp, BarChart3, PieChart, Target, Calendar, Award } from "lucide-react"
 
-import { RepaymentStrategyCalculator } from "@/components/debt/strategic/repayment-strategy-calculator"
+import { RepaymentStrategyCalculator } from "@/components/debt/strategic/repayment-strategy-calculator-new"
 import { RefinancingAnalyzer } from "@/components/debt/strategic/refinancing-analyzer"
 import { DebtToIncomeTracker } from "@/components/debt/strategic/debt-to-income-tracker"
 import { DebtConsolidationAnalyzer } from "@/components/debt/strategic/debt-consolidation-analyzer"
 import { LoanComparisonCalculator } from "@/components/debt/strategic/loan-comparison-calculator"
-// import { DebtTest } from "@/components/debt/debt-test"
-import { DebtList } from "@/components/debt/debt-list"
+import { DebtList } from "@/components/debt/debt-list-new"
+import DebtFreeCountdown from "@/components/debt/debt-free-countdown"
 
 export const dynamic = "force-dynamic"
 
@@ -26,6 +26,11 @@ export default function DebtManagementPage() {
       
 
       <div className="container py-10 max-w-7xl">
+        {/* Debt-Free Countdown with Celebration Milestones */}
+        <div className="mb-8">
+          <DebtFreeCountdown />
+        </div>
+        
         {/* Display the user's debts */}
         <div className="mb-8">
           <DebtList />

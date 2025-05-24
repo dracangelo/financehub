@@ -96,6 +96,50 @@ export async function GET(request: NextRequest) {
         ALTER TABLE IF EXISTS public.debts ADD COLUMN IF NOT EXISTS minimum_payment NUMERIC DEFAULT 0;
         ALTER TABLE IF EXISTS public.debts ADD COLUMN IF NOT EXISTS loan_term INTEGER;
         
+        -- Add split expense columns to expenses table
+        ALTER TABLE IF EXISTS public.expenses ADD COLUMN IF NOT EXISTS split_with_name TEXT;
+        ALTER TABLE IF EXISTS public.expenses ADD COLUMN IF NOT EXISTS split_amount NUMERIC;
+        
+        -- Create expense_splits table if it doesn't exist
+        CREATE TABLE IF NOT EXISTS public.expense_splits (
+          id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+          expense_id UUID NOT NULL REFERENCES expenses(id) ON DELETE CASCADE,
+          shared_with_name TEXT NOT NULL,
+          amount NUMERIC NOT NULL,
+          status TEXT DEFAULT 'pending',
+          notes TEXT,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+        
+        -- Enable RLS on expense_splits
+        ALTER TABLE IF EXISTS public.expense_splits ENABLE ROW LEVEL SECURITY;
+        
+        -- Create policies for expense_splits
+        DROP POLICY IF EXISTS "Users can view their own expense splits" ON expense_splits;
+        CREATE POLICY "Users can view their own expense splits"
+          ON expense_splits
+          FOR SELECT
+          USING (expense_id IN (SELECT id FROM expenses WHERE user_id = auth.uid()));
+          
+        DROP POLICY IF EXISTS "Users can insert their own expense splits" ON expense_splits;
+        CREATE POLICY "Users can insert their own expense splits"
+          ON expense_splits
+          FOR INSERT
+          WITH CHECK (expense_id IN (SELECT id FROM expenses WHERE user_id = auth.uid()));
+          
+        DROP POLICY IF EXISTS "Users can update their own expense splits" ON expense_splits;
+        CREATE POLICY "Users can update their own expense splits"
+          ON expense_splits
+          FOR UPDATE
+          USING (expense_id IN (SELECT id FROM expenses WHERE user_id = auth.uid()));
+          
+        DROP POLICY IF EXISTS "Users can delete their own expense splits" ON expense_splits;
+        CREATE POLICY "Users can delete their own expense splits"
+          ON expense_splits
+          FOR DELETE
+          USING (expense_id IN (SELECT id FROM expenses WHERE user_id = auth.uid()));
+        
         -- Refresh the schema cache
         NOTIFY pgrst, 'reload schema';
       `

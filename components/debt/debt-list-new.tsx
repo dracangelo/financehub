@@ -1,11 +1,11 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { formatCurrency } from "@/lib/utils"
@@ -28,9 +28,7 @@ export function DebtList() {
   const router = useRouter()
   const { toast } = useToast()
   const { user } = useAuth()
-  const { debts: contextDebts, loading, error: contextError, refreshDebts, addDebt: addContextDebt, updateDebt: updateContextDebt, removeDebt: removeContextDebt } = useDebtContext()
-
-  // No need for useEffect to fetch debts - the context handles that
+  const { debts: contextDebts, loading, error, authRequired, refreshDebts, addDebt: addContextDebt, updateDebt: updateContextDebt, removeDebt: removeContextDebt } = useDebtContext()
 
   // Convert context debts to UI debts format for display
   const convertToUIDebts = (): UIDebt[] => {
@@ -57,35 +55,37 @@ export function DebtList() {
     "credit-card": <CreditCard className="h-4 w-4" />,
     "mortgage": <Home className="h-4 w-4" />,
     "auto": <Car className="h-4 w-4" />,
-    "auto_loan": <Car className="h-4 w-4" />,
+    "auto-loan": <Car className="h-4 w-4" />,
     "student": <GraduationCap className="h-4 w-4" />,
-    "student_loan": <GraduationCap className="h-4 w-4" />,
+    "student-loan": <GraduationCap className="h-4 w-4" />,
     "personal": <Briefcase className="h-4 w-4" />,
-    "personal_loan": <Briefcase className="h-4 w-4" />,
-    "medical": <Stethoscope className="h-4 w-4" />,
-    "other": <CreditCard className="h-4 w-4" />,
+    "personal-loan": <Briefcase className="h-4 w-4" />,
+    "medical": <Stethoscope className="h-4 w-4" />
   }
 
   const formatDebtType = (type: string) => {
-    return type.replace('_', ' ').replace('-', ' ')
+    return type.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
   }
-  
+
   // Function to map UI debt types to database debt types
   const mapUITypeToDBType = (uiType: string | undefined): string => {
-    if (!uiType) return 'personal_loan'; // Default to personal_loan if type is undefined
+    if (!uiType) return 'personal_loan'
     
     // Map from UI format (with hyphens) to DB format (with underscores)
-    const typeMap: Record<string, string> = {
-      'credit-card': 'credit_card',
-      'auto': 'auto_loan',
-      'student': 'student_loan',
-      'personal': 'personal_loan',
-      'medical': 'medical_debt',
-      'mortgage': 'mortgage',
-      'other': 'other'
+    const typeMapping: Record<string, string> = {
+      "credit-card": "credit_card",
+      "auto-loan": "auto",
+      "student-loan": "student",
+      "personal-loan": "personal"
     }
     
-    return typeMap[uiType] || 'personal_loan' // Default to personal_loan if type not found
+    // If the type is in the mapping, return the mapped value
+    if (uiType in typeMapping) {
+      return typeMapping[uiType]
+    }
+    
+    // Otherwise, replace hyphens with underscores
+    return uiType.replace('-', '_')
   }
 
   const handleAddDebt = () => {
@@ -109,18 +109,21 @@ export function DebtList() {
         debtService.setUserId(user.id)
       }
       
-      await debtService.deleteDebt(id)
-      
-      // Remove the debt from context
+      // First remove from context to give immediate UI feedback
       removeContextDebt(id)
+      
+      // Then delete from database
+      await debtService.deleteDebt(id)
       
       toast({
         title: "Debt Deleted",
         description: "The debt has been removed from your list.",
       })
       
-      // Refresh the debt context
-      refreshDebts()
+      // Refresh the debt context to ensure both components have the latest data
+      setTimeout(() => {
+        refreshDebts()
+      }, 100) // Small delay to ensure state updates are processed
     } catch (error) {
       console.error('Error deleting debt:', error)
       toast({
@@ -128,6 +131,8 @@ export function DebtList() {
         description: error instanceof Error ? error.message : "Failed to delete debt",
         variant: "destructive",
       })
+      // If there was an error, refresh to restore the deleted debt
+      refreshDebts()
     } finally {
       setDeleting(null)
     }
@@ -138,12 +143,7 @@ export function DebtList() {
       console.log('handleSaveDebt:', debt)
       const debtService = new DebtService()
       
-      // Set the user ID if available from auth context
-      if (user?.id) {
-        debtService.setUserId(user.id)
-      }
-      
-      // Convert UI debt to DB debt format
+      // Convert UI debt to database debt format
       const dbDebt: Partial<DBDebt> = {
         name: debt.name,
         type: mapUITypeToDBType(debt.type),
@@ -154,110 +154,99 @@ export function DebtList() {
         due_date: debt.due_date || null
       }
       
-      if (debt.id && debt.id !== 'new') {
+      if (debt.id) {
         // Update existing debt
-        await debtService.updateDebt(debt.id, dbDebt)
-        // Update the debt in context
+        console.log(`Updating existing debt: ${debt.id}`)
+        // First update the context for immediate UI feedback
         updateContextDebt(debt.id, dbDebt)
+        
+        // Then update the database
+        await debtService.updateDebt(debt.id, dbDebt)
+        console.log(`Debt updated in database: ${debt.id}`)
+        
         toast({
           title: "Debt Updated",
           description: `${debt.name} has been updated successfully.`,
         })
       } else {
         // Create new debt
-        const newDebt = await debtService.createDebt(dbDebt)
-        console.log('New debt created:', newDebt)
+        console.log('Creating new debt')
+        const newDebt = await debtService.createDebt(dbDebt as Omit<DBDebt, 'id' | 'user_id' | 'created_at' | 'updated_at'>)
+        console.log(`New debt created in database: ${newDebt.id}`)
+        
         // Add the new debt to context
         addContextDebt(newDebt)
+        
         toast({
           title: "Debt Added",
-          description: `${debt.name} has been added to your debts.`,
+          description: `${debt.name} has been added successfully.`,
         })
       }
       
       // Close the dialog
       setOpen(false)
       
-      // Refresh the debt context
-      refreshDebts()
+      // Refresh debts to ensure we have the latest data
+      console.log('Refreshing debts after save')
+      setTimeout(() => {
+        refreshDebts()
+      }, 500) // Add a slight delay to ensure the database operation completes
     } catch (error) {
-      console.error('Error saving debt:', error)
+      console.error('Error in handleSaveDebt:', error)
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Failed to save debt",
         variant: "destructive",
       })
-      setOpen(false)
     }
-    }
+  }
+
+  // If authentication is required, show a login prompt
+  if (authRequired) {
+    return (
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle>Authentication Required</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-8">
+            <p className="mb-4">Please sign in to access your debts. Debt management requires authentication to ensure your data is secure and accessible across devices.</p>
+            <p className="mb-4 text-muted-foreground">
+              Your debt information is securely stored and only accessible to you when signed in. 
+              This ensures your financial data remains private and protected.
+            </p>
+            <div className="flex justify-center space-x-4">
+              <Button onClick={() => router.push('/login')}>
+                Sign In
+              </Button>
+              <Button variant="outline" onClick={() => router.push('/register')}>
+                Create Account
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
 
   return (
     <>
       <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>My Debts</CardTitle>
-              <CardDescription>Manage and track all your debts in one place</CardDescription>
-            </div>
-            <div className="flex space-x-2">
-              {/* Only show sync button if there are local debts */}
-              {debts.some(debt => (debt as any).isLocal) && (
-                <Button 
-                  onClick={async () => {
-                    setLoading(true)
-                    try {
-                      const debtService = new DebtService()
-                      const success = await debtService.forceSync()
-                      if (success) {
-                        toast({
-                          title: "Success",
-                          description: "Successfully synced debts to database",
-                          variant: "default",
-                        })
-                        await fetchDebts() // Refresh the debt list
-                      } else {
-                        toast({
-                          title: "Warning",
-                          description: "Failed to sync some debts to database",
-                          variant: "destructive",
-                        })
-                      }
-                    } catch (error) {
-                      console.error('Error syncing debts:', error)
-                      toast({
-                        title: "Error",
-                        description: "Error syncing debts to database",
-                        variant: "destructive",
-                      })
-                    } finally {
-                      setLoading(false)
-                    }
-                  }} 
-                  variant="outline"
-                >
-                  <Loader2 className="mr-2 h-4 w-4" />
-                  Sync to DB
-                </Button>
-              )}
-              <Button onClick={handleAddDebt}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Debt
-              </Button>
-            </div>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <div>
+            <CardTitle className="text-2xl font-bold">My Debts</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Track and manage all your debts in one place.
+            </p>
+          </div>
+          <div className="flex space-x-2">
+            <Button onClick={handleAddDebt}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Debt
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
-          {loading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
-          ) : debts.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <p>No debts added yet. Click "Add Debt" to get started.</p>
-            </div>
-          ) : (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -308,7 +297,6 @@ export function DebtList() {
                 ))}
               </TableBody>
             </Table>
-          )}
         </CardContent>
         <CardFooter className="border-t bg-muted/50 px-6 py-3">
           <div className="flex w-full items-center justify-between">

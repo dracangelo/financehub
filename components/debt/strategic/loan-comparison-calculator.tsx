@@ -9,7 +9,7 @@ import { Slider } from "@/components/ui/slider"
 import { Button } from "@/components/ui/button"
 import { formatCurrency, formatPercentage } from "@/lib/utils"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from "recharts"
-import { Info, Plus, Trash2 } from "lucide-react"
+import { Info, Plus, Trash2, AlertCircle } from "lucide-react"
 import {
   Tooltip as TooltipComponent,
   TooltipContent,

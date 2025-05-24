@@ -1,4 +1,6 @@
 import { Metadata } from "next"
+import { ReactNode } from "react"
+import { DebtProvider } from "@/lib/debt/debt-context"
 
 export const metadata: Metadata = {
   title: "Debt Management",
@@ -8,7 +10,7 @@ export const metadata: Metadata = {
 export default function DebtManagementLayout({
   children,
 }: {
-  children: React.ReactNode
+  children: ReactNode
 }) {
-  return <>{children}</>
-} 
+  return <DebtProvider>{children}</DebtProvider>
+}

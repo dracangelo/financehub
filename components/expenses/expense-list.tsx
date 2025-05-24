@@ -115,12 +115,25 @@ const ExpenseItem = ({ expense, onDelete }: { expense: any; onDelete: (id: strin
       });
   }, [locationCoords, locationName]);
   
-  // Debug split expenses
+  // Debug split expenses and refresh data when needed
   useEffect(() => {
     if (expense.splits && expense.splits.length > 0) {
       console.log('Split expenses found:', expense.splits);
     }
-  }, [expense.splits]);
+    
+    // Add event listener for split expense updates
+    const handleSplitExpenseUpdate = () => {
+      // Force a re-render by creating a new reference
+      console.log('Split expense update detected');
+      // We don't need to do anything here as the parent component will refresh
+    };
+    
+    window.addEventListener('split-expense-updated', handleSplitExpenseUpdate);
+    
+    return () => {
+      window.removeEventListener('split-expense-updated', handleSplitExpenseUpdate);
+    };
+  }, [expense.id, expense.splits]);
 
   return (
     <Card className="relative overflow-hidden">
@@ -180,13 +193,13 @@ const ExpenseItem = ({ expense, onDelete }: { expense: any; onDelete: (id: strin
               <div className="mt-3 space-y-1">
                 <h4 className="text-sm font-semibold text-indigo-700">Split Details:</h4>
                 {expense.splits.map((split: any, index: number) => (
-                  <div key={index} className="flex items-center text-indigo-600 bg-indigo-50 p-2 rounded-md">
+                  <div key={split.id || index} className="flex items-center text-indigo-600 bg-indigo-50 p-2 rounded-md">
                     <Split className="w-4 h-4 mr-2" />
                     <div>
-                      <span className="font-medium">Split with <strong>{split.shared_with_user}</strong></span>
+                      <span className="font-medium">Split with <strong>{split.shared_with_name || split.split_with_name}</strong></span>
                       <div className="text-sm">
                         They owe you <strong>{formatCurrency(split.amount)}</strong>
-                        {split.note && <span className="italic"> ({split.note})</span>}
+                        {split.notes && <span className="italic"> ({split.notes})</span>}
                       </div>
                     </div>
                   </div>
@@ -365,7 +378,8 @@ export function ExpenseList() {
     const handleStorageChange = (event: StorageEvent) => {
       if (event.key === 'expense_added' || 
           event.key === 'expense_updated' || 
-          event.key === 'expense_deleted') {
+          event.key === 'expense_deleted' || 
+          event.key === 'split-expense-updated') {
         fetchExpenses()
       }
     }
@@ -380,6 +394,7 @@ export function ExpenseList() {
     window.addEventListener('expense_updated', handleCustomEvent)
     window.addEventListener('expense_added', handleCustomEvent)
     window.addEventListener('expense_deleted', handleCustomEvent)
+    window.addEventListener('split-expense-updated', handleCustomEvent)
     
     // Clean up event listeners on unmount
     return () => {

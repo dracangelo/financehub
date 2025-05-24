@@ -73,13 +73,14 @@ export function ReportsList({ reports }: ReportsListProps) {
       // Fetch real data from the server
       let data = await fetchReportData(report.type, report.time_range);
       
-      // If no data was returned, use fallback sample data
+      // If no data was returned, show a message instead of using fallback data
       if (!data || data.length === 0) {
-        console.warn(`No real data found for ${report.type} report, using fallback data`);
-        data = getFallbackData(report.type);
-        toast.warning("Using sample data", {
-          description: "No real data was found for this report type. Using sample data instead."
+        console.warn(`No real data found for ${report.type} report`);
+        toast.dismiss();
+        toast.error("No data found", {
+          description: "No data was found for this report type. Please try a different report or time range."
         });
+        return; // Exit the function early
       } else {
         console.log(`Using real data for ${report.type} report: ${data.length} records`);
       }
