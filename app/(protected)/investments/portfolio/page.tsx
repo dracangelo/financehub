@@ -102,6 +102,12 @@ export default function PortfolioOverviewPage() {
   const [activeTab, setActiveTab] = useState<string>("overview")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
+
+  // Function to refresh data
+  const refreshData = () => {
+    setRefreshTrigger(prev => prev + 1);
+  };
 
   // Fetch investments and asset classes
   useEffect(() => {
@@ -130,7 +136,7 @@ export default function PortfolioOverviewPage() {
     }
     
     fetchData();
-  }, []);
+  }, [refreshTrigger]); // Add refreshTrigger to the dependency array
 
   // Calculate performance metrics
   const performanceMetrics = investments.length > 0 ? calculatePerformance(investments) : {
@@ -274,16 +280,20 @@ export default function PortfolioOverviewPage() {
                   <CardTitle>Investment Portfolio</CardTitle>
                   <CardDescription>All your investment holdings</CardDescription>
                 </div>
-                <AddInvestmentForm />
+                <AddInvestmentForm onInvestmentAdded={refreshData} />
               </div>
             </CardHeader>
             <CardContent>
               {investments.length > 0 ? (
-                <PortfolioInvestmentTable investments={investments} />
+                <PortfolioInvestmentTable 
+                  investments={investments} 
+                  onInvestmentUpdated={refreshData}
+                  onInvestmentDeleted={refreshData}
+                />
               ) : (
                 <div className="text-center py-8">
                   <p className="text-muted-foreground mb-4">You don't have any investments yet</p>
-                  <AddInvestmentForm />
+                  <AddInvestmentForm onInvestmentAdded={refreshData} />
                 </div>
               )}
             </CardContent>
@@ -303,12 +313,16 @@ export default function PortfolioOverviewPage() {
                         {assetClass.currentAllocation.toFixed(1)}% of portfolio)
                       </CardDescription>
                     </div>
-                    <AddInvestmentForm />
+                    <AddInvestmentForm onInvestmentAdded={refreshData} />
                   </div>
                 </CardHeader>
                 <CardContent>
                   {assetClass.investments.length > 0 ? (
-                    <PortfolioInvestmentTable investments={assetClass.investments} />
+                    <PortfolioInvestmentTable 
+                      investments={assetClass.investments} 
+                      onInvestmentUpdated={refreshData}
+                      onInvestmentDeleted={refreshData}
+                    />
                   ) : (
                     <p className="text-center text-muted-foreground py-4">No investments in this asset class</p>
                   )}
@@ -320,7 +334,7 @@ export default function PortfolioOverviewPage() {
               <CardContent className="p-6">
                 <div className="text-center">
                   <p className="text-muted-foreground mb-4">No asset classes found</p>
-                  <AddInvestmentForm />
+                  <AddInvestmentForm onInvestmentAdded={refreshData} />
                 </div>
               </CardContent>
             </Card>
@@ -339,7 +353,7 @@ export default function PortfolioOverviewPage() {
                   <CardContent className="p-6">
                     <div className="text-center">
                       <p className="text-muted-foreground mb-4">No accounts found</p>
-                      <AddInvestmentForm />
+                      <AddInvestmentForm onInvestmentAdded={refreshData} />
                     </div>
                   </CardContent>
                 </Card>
@@ -363,11 +377,15 @@ export default function PortfolioOverviewPage() {
                             : "0.0"}% of portfolio)
                         </CardDescription>
                       </div>
-                      <AddInvestmentForm />
+                      <AddInvestmentForm onInvestmentAdded={refreshData} />
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <PortfolioInvestmentTable investments={accountInvestments} />
+                    <PortfolioInvestmentTable 
+                      investments={accountInvestments} 
+                      onInvestmentUpdated={refreshData}
+                      onInvestmentDeleted={refreshData}
+                    />
                   </CardContent>
                 </Card>
               );

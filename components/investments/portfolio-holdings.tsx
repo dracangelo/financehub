@@ -47,6 +47,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { PortfolioAssetAllocation } from "./portfolio-asset-allocation"
 
 interface PortfolioHoldingsProps {
   portfolioId: string
@@ -518,10 +519,7 @@ export function PortfolioHoldings({ portfolioId, portfolioName }: PortfolioHoldi
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {summary.totalValue.toLocaleString('en-US', {
-                style: 'currency',
-                currency: 'USD'
-              })}
+              {isLoadingHoldings ? "Loading..." : `$${summary.totalValue.toFixed(2)}`}
             </div>
             <p className="text-xs text-muted-foreground">
               {summary.holdingsCount} active holdings
@@ -534,10 +532,7 @@ export function PortfolioHoldings({ portfolioId, portfolioName }: PortfolioHoldi
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {summary.totalCost.toLocaleString('en-US', {
-                style: 'currency',
-                currency: 'USD'
-              })}
+              {isLoadingHoldings ? "Loading..." : `$${summary.totalCost.toFixed(2)}`}
             </div>
           </CardContent>
         </Card>
@@ -546,18 +541,17 @@ export function PortfolioHoldings({ portfolioId, portfolioName }: PortfolioHoldi
             <CardTitle className="text-sm font-medium">Total Gain/Loss</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${summary.totalGain >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-              {summary.totalGain.toLocaleString('en-US', {
-                style: 'currency',
-                currency: 'USD'
-              })}
-              <span className="text-sm ml-1">
-                ({summary.totalGainPercentage.toFixed(2)}%)
-              </span>
+            <div className={`text-2xl font-bold ${summary.totalGain >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {isLoadingHoldings ? "Loading..." : `$${summary.totalGain.toFixed(2)} (${summary.totalGainPercentage.toFixed(2)}%)`}
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Asset Allocation Chart */}
+      {!isLoadingHoldings && holdings.length > 0 && (
+        <PortfolioAssetAllocation />
+      )}
 
       {/* Holdings Table */}
       {isLoadingHoldings ? (

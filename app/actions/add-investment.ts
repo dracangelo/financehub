@@ -238,8 +238,9 @@ export async function addInvestment(formData: FormData) {
       result = data
     }
 
-    // Revalidate the investments page to show the new/updated investment
+    // Revalidate the investments and portfolio pages to show the new/updated investment
     revalidatePath("/investments")
+    revalidatePath("/investments/portfolio")
     
     return { success: true, data: result }
   } catch (error) {
@@ -287,8 +288,9 @@ export async function deleteInvestment(id: string) {
       return { error: `Failed to delete investment: ${error.message}` }
     }
 
-    // Revalidate the investments page
+    // Revalidate the investments and portfolio pages
     revalidatePath("/investments")
+    revalidatePath("/investments/portfolio")
     
     return { success: true }
   } catch (error) {

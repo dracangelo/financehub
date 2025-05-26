@@ -9,17 +9,23 @@ console.warn(
   "lib/supabase.ts is deprecated. Use lib/supabase/client for client components and lib/supabase/server for server components.",
 )
 
-// Default Supabase URL and keys if environment variables are not available
-const DEFAULT_SUPABASE_URL = 'https://oummldjpaqapqhblwjzq.supabase.co';
-const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im91bW1sZGpwYXFhcHFoYmx3anpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE2OTY5NjY2NzYsImV4cCI6MjAxMjU0MjY3Nn0.Nh83ebqzf8AeSxRjZXmYQIyhh-wTjSvSzXDn1ZQPMm0';
-const DEFAULT_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im91bW1sZGpwYXFhcHFoYmx3anpxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTY5Njk2NjY3NiwiZXhwIjoyMDEyNTQyNjc2fQ.z2CN0mvO2No8wSi46Gw59VR9X3X4DlJY7zL0qoy1VkE';
+// Get Supabase URL from environment variables with empty string fallback to prevent TypeScript errors
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+if (!supabaseUrl) {
+  console.error('NEXT_PUBLIC_SUPABASE_URL is not set in environment variables');
+}
 
-// Get Supabase URL with fallback
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || DEFAULT_SUPABASE_URL;
-// Get service role key with fallback
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || DEFAULT_SERVICE_ROLE_KEY;
-// Get anon key with fallback
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY;
+// Get service role key from environment variables with empty string fallback
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+if (!supabaseServiceKey) {
+  console.error('SUPABASE_SERVICE_ROLE_KEY is not set in environment variables');
+}
+
+// Get anon key from environment variables with empty string fallback
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+if (!supabaseAnonKey) {
+  console.error('NEXT_PUBLIC_SUPABASE_ANON_KEY is not set in environment variables');
+}
 
 // Create a Supabase client with the service role key for server-side operations
 export const supabaseAdmin = createSupabaseClient(supabaseUrl, supabaseServiceKey);

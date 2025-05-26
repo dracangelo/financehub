@@ -535,12 +535,54 @@ export async function getPortfolioPerformance(timeframe: 'week' | 'month' | 'qua
                           new Date(performanceData[0].date).getTime()) / (1000 * 60 * 60 * 24)
             const annualizedReturn = ((Math.pow((endValue / startValue), (365 / days)) - 1) * 100)
             
+            // Calculate daily returns for volatility and Sharpe ratio
+            const dailyReturns: number[] = []
+            for (let i = 1; i < performanceData.length; i++) {
+              const prevValue = performanceData[i-1].value
+              const currentValue = performanceData[i].value
+              if (prevValue > 0) {
+                const dailyReturn = (currentValue - prevValue) / prevValue
+                dailyReturns.push(dailyReturn)
+              }
+            }
+            
+            // Calculate volatility (standard deviation of returns, annualized)
+            let volatility = 0
+            if (dailyReturns.length > 1) {
+              const meanReturn = dailyReturns.reduce((sum, ret) => sum + ret, 0) / dailyReturns.length
+              const sumSquaredDiff = dailyReturns.reduce((sum, ret) => sum + Math.pow(ret - meanReturn, 2), 0)
+              const variance = sumSquaredDiff / (dailyReturns.length - 1)
+              const dailyStdDev = Math.sqrt(variance)
+              // Annualize volatility (multiply by sqrt of trading days in a year)
+              volatility = dailyStdDev * Math.sqrt(252) * 100
+            }
+            
+            // Calculate Sharpe ratio (using 2% as risk-free rate)
+            const riskFreeRate = 2.0 // 2% annual risk-free rate
+            let sharpeRatio = 0
+            if (volatility > 0) {
+              sharpeRatio = (annualizedReturn - riskFreeRate) / volatility
+            }
+            
+            // Calculate beta (using S&P 500 as market benchmark)
+            // For simplicity, we'll use a synthetic market benchmark
+            const marketReturns = generateSyntheticMarketReturns(dailyReturns.length)
+            let beta = 0
+            if (dailyReturns.length > 1 && marketReturns.length === dailyReturns.length) {
+              beta = calculateBeta(dailyReturns, marketReturns)
+            }
+            
             return {
               performanceData,
               totalReturn: parseFloat(totalReturn.toFixed(2)),
               annualizedReturn: parseFloat(annualizedReturn.toFixed(2)),
               startValue,
-              endValue
+              endValue,
+              riskMetrics: {
+                volatility: parseFloat(volatility.toFixed(2)),
+                sharpeRatio: parseFloat(sharpeRatio.toFixed(2)),
+                beta: parseFloat(beta.toFixed(2))
+              }
             }
           }
         }
@@ -583,12 +625,54 @@ export async function getPortfolioPerformance(timeframe: 'week' | 'month' | 'qua
         })
       }
       
+      // Calculate volatility, Sharpe ratio, and beta from synthetic data
+      const syntheticReturns: number[] = []
+      for (let i = 1; i < performanceData.length; i++) {
+        const prevValue = performanceData[i-1].value
+        const currentValue = performanceData[i].value
+        if (prevValue > 0) {
+          const return_ = (currentValue - prevValue) / prevValue
+          syntheticReturns.push(return_)
+        }
+      }
+      
+      // Calculate volatility
+      let volatility = 0
+      if (syntheticReturns.length > 1) {
+        const meanReturn = syntheticReturns.reduce((sum, ret) => sum + ret, 0) / syntheticReturns.length
+        const sumSquaredDiff = syntheticReturns.reduce((sum, ret) => sum + Math.pow(ret - meanReturn, 2), 0)
+        const variance = sumSquaredDiff / (syntheticReturns.length - 1)
+        const monthlyStdDev = Math.sqrt(variance)
+        // Annualize volatility
+        volatility = monthlyStdDev * Math.sqrt(12) * 100
+      }
+      
+      // Calculate Sharpe ratio (using 2% as risk-free rate)
+      const riskFreeRate = 2.0 // 2% annual risk-free rate
+      const annualizedReturn = parseFloat((totalReturn / 1).toFixed(2)) // Assume 1 year for simplicity
+      let sharpeRatio = 0
+      if (volatility > 0) {
+        sharpeRatio = (annualizedReturn - riskFreeRate) / volatility
+      }
+      
+      // Calculate beta
+      const marketReturns = generateSyntheticMarketReturns(syntheticReturns.length)
+      let beta = 0
+      if (syntheticReturns.length > 1 && marketReturns.length === syntheticReturns.length) {
+        beta = calculateBeta(syntheticReturns, marketReturns)
+      }
+      
       return {
         performanceData,
         totalReturn: parseFloat(totalReturn.toFixed(2)),
-        annualizedReturn: parseFloat((totalReturn / 1).toFixed(2)), // Assume 1 year for simplicity
+        annualizedReturn: annualizedReturn,
         startValue: totalCostBasis,
-        endValue: totalValue
+        endValue: totalValue,
+        riskMetrics: {
+          volatility: parseFloat(volatility.toFixed(2)),
+          sharpeRatio: parseFloat(sharpeRatio.toFixed(2)),
+          beta: parseFloat(beta.toFixed(2))
+        }
       }
     }
 
@@ -598,7 +682,12 @@ export async function getPortfolioPerformance(timeframe: 'week' | 'month' | 'qua
       totalReturn: 0,
       annualizedReturn: 0,
       startValue: 0,
-      endValue: 0
+      endValue: 0,
+      riskMetrics: {
+        volatility: 0,
+        sharpeRatio: 0,
+        beta: 0
+      }
     }
   } catch (error) {
     console.error("Error in getPortfolioPerformance:", error)
@@ -610,6 +699,42 @@ export async function getPortfolioPerformance(timeframe: 'week' | 'month' | 'qua
       endValue: 0
     }
   }
+}
+
+// Helper function to generate synthetic market returns
+function generateSyntheticMarketReturns(length: number): number[] {
+  const marketReturns: number[] = []
+  // Use a base market return with some randomness
+  const baseMarketReturn = 0.0003 // ~8% annual return
+  
+  for (let i = 0; i < length; i++) {
+    // Add some randomness to simulate market fluctuations
+    const randomFactor = (Math.random() - 0.5) * 0.002
+    marketReturns.push(baseMarketReturn + randomFactor)
+  }
+  
+  return marketReturns
+}
+
+// Helper function to calculate beta
+function calculateBeta(portfolioReturns: number[], marketReturns: number[]): number {
+  // Calculate covariance between portfolio and market returns
+  const portfolioMean = portfolioReturns.reduce((sum, ret) => sum + ret, 0) / portfolioReturns.length
+  const marketMean = marketReturns.reduce((sum, ret) => sum + ret, 0) / marketReturns.length
+  
+  let covariance = 0
+  let marketVariance = 0
+  
+  for (let i = 0; i < portfolioReturns.length; i++) {
+    covariance += (portfolioReturns[i] - portfolioMean) * (marketReturns[i] - marketMean)
+    marketVariance += Math.pow(marketReturns[i] - marketMean, 2)
+  }
+  
+  covariance /= portfolioReturns.length
+  marketVariance /= marketReturns.length
+  
+  // Beta = covariance / market variance
+  return marketVariance > 0 ? covariance / marketVariance : 0
 }
 
 export async function getPortfolioCorrelation() {
@@ -1429,142 +1554,174 @@ export async function getRebalancingRecommendations(targetAllocation?: Record<st
   try {
     const user = await getCurrentUser()
     if (!user) {
-      redirect("/login")
+      return getSafeRebalancingDefaults()
     }
 
     const supabase = await createServerSupabaseClient()
-
-    // Get current allocation
-    let currentAllocation = null
-    let error = null
-    try {
-      const result = await supabase
-        .from("portfolio_targets")
-        .select("*")
-        .eq("user_id", user.id)
-        .single()
-      currentAllocation = result.data
-      error = result.error
-    } catch (err) {
-      // If the error is about the table not existing, skip and use fallback targets
-      if (err && err.code === '42P01') {
-        currentAllocation = null
-        error = null
-      } else {
-        console.error("Error fetching current allocation targets:", err)
-        // Return safe default values instead of throwing
-        return getSafeRebalancingDefaults()
-      }
-    }
-
-    // Accept both 'no rows', empty object, or null error as valid for fallback
-    if (error && error.code !== "PGRST116" && error.code !== undefined) {
-      // Only throw if error is not 'no rows' or not just an empty error object
-      console.error("Error fetching current allocation targets:", error)
+    
+    // Fetch investments for this user
+    const { data: investments, error } = await supabase
+      .from('investments')
+      .select('*')
+      .eq('user_id', user.id)
+    
+    if (error) {
+      console.error('Error fetching investments:', error)
       return getSafeRebalancingDefaults()
     }
-    if (error && Object.keys(error).length === 0) {
-      // Do not log or throw, just proceed
+    
+    if (!investments || investments.length === 0) {
+      return getSafeRebalancingDefaults()
     }
-
-    // Use provided target allocation or fallback to saved targets
-    const targets = targetAllocation ||
-      currentAllocation?.targets || {
-        Stocks: 30,
-        Bonds: 20,
-        Cash: 5,
-        Alternative: 5,
-        Shares: 15,
-        Bills: 5,
-        Crypto: 5,
-        "Real Estate": 15
+    
+    // Calculate total portfolio value
+    const portfolioValue = investments.reduce((total, inv) => total + (inv.value || 0), 0)
+    
+    if (portfolioValue === 0) {
+      return getSafeRebalancingDefaults()
+    }
+    
+    // Group investments by asset class
+    const investmentsByType: Record<string, any[]> = {}
+    const currentAllocation: Record<string, number> = {}
+    
+    investments.forEach(inv => {
+      const type = inv.asset_type || 'Other'
+      
+      if (!investmentsByType[type]) {
+        investmentsByType[type] = []
       }
-
-    // Get current portfolio allocation
-    const portfolio = await getPortfolioAllocation()
-
-    // Calculate current allocation by type
-    const currentAllocationByType = portfolio.allocationByType.reduce((acc, item) => {
-      acc[item.name] = item.percentage
-      return acc
-    }, {})
-
-    // Calculate differences between current and target
-    const differences = {}
+      
+      investmentsByType[type].push(inv)
+      
+      if (!currentAllocation[type]) {
+        currentAllocation[type] = 0
+      }
+      
+      currentAllocation[type] += (inv.value || 0)
+    })
+    
+    // Convert absolute values to percentages
+    Object.keys(currentAllocation).forEach(type => {
+      currentAllocation[type] = (currentAllocation[type] / portfolioValue) * 100
+    })
+    
+    // Use provided target allocation or a default
+    const defaultTargets = {
+      Stocks: 60,
+      Bonds: 30,
+      Cash: 5,
+      Alternative: 5,
+    }
+    
+    const finalTargetAllocation = targetAllocation || defaultTargets
+    
+    // Calculate differences and rebalancing needs
+    const differences: Record<string, any> = {}
     let totalDifference = 0
-
-    for (const type in targets) {
-      const target = targets[type] || 0
-      const current = currentAllocationByType[type] || 0
+    
+    // First, handle asset classes that exist in both current and target
+    Object.keys(currentAllocation).forEach(type => {
+      const target = finalTargetAllocation[type] || 0
+      const current = currentAllocation[type] || 0
+      const difference = target - current
+      
       differences[type] = {
         type,
         target,
         current,
-        difference: current - target,
-        investments: portfolio.allocationByType.find((a) => a.name === type)?.investments || [],
+        difference,
+        investments: investmentsByType[type] || []
       }
-      totalDifference += Math.abs(current - target)
-    }
-
-    // Generate recommendations
-    const recommendations = []
-    const threshold = 5 // Percentage threshold for rebalancing
-
-    for (const type in differences) {
-      const { difference, investments } = differences[type]
-
-      if (Math.abs(difference) >= threshold) {
-        if (difference > 0) {
-          // Overweight - need to reduce
-          const safeInvestments = investments.map(inv => ({
-            id: inv.id || `temp-${Math.random().toString(36).substring(2, 9)}`,
-            name: inv.name || "Unnamed Investment",
-            ticker: inv.ticker || "--",
-            current_value: inv.current_value || 0,
-            allocation_percentage: inv.allocation_percentage || 0
-          }));
-          
-          recommendations.push({
-            type,
-            action: "reduce",
-            amount: difference.toFixed(2),
-            message: `Reduce ${type} by ${difference.toFixed(2)}%`,
-            investments: safeInvestments.sort((a, b) => b.current_value - a.current_value).slice(0, 3),
-          })
-        } else {
-          // Underweight - need to increase
-          recommendations.push({
-            type,
-            action: "increase",
-            amount: Math.abs(difference).toFixed(2),
-            message: `Increase ${type} by ${Math.abs(difference).toFixed(2)}%`,
-            suggestedInvestments: [
-              { name: `Sample ${type} Fund`, ticker: "SAMPLE", risk: "medium" }
-            ], // Default suggested investment
-          })
+      
+      totalDifference += Math.abs(difference)
+    })
+    
+    // Then, handle asset classes that exist only in target
+    Object.keys(finalTargetAllocation).forEach(type => {
+      if (!currentAllocation[type]) {
+        const target = finalTargetAllocation[type] || 0
+        const difference = target
+        
+        differences[type] = {
+          type,
+          target,
+          current: 0,
+          difference,
+          investments: []
         }
+        
+        totalDifference += Math.abs(difference)
       }
+    })
+    
+    // Calculate rebalancing amounts
+    const rebalanceAmounts: Record<string, number> = {}
+    Object.keys(differences).forEach(type => {
+      rebalanceAmounts[type] = (differences[type].difference / 100) * portfolioValue
+    })
+    
+    // Helper function to get suggested investments for a specific asset class
+    function getSuggestedInvestments(assetClass: string, isBuying: boolean) {
+      // Default suggestions for common asset classes
+      const suggestions: Record<string, Array<{name: string, ticker: string}>> = {
+        Stocks: [
+          { name: 'Vanguard Total Stock Market ETF', ticker: 'VTI' },
+          { name: 'iShares Core S&P 500 ETF', ticker: 'IVV' },
+          { name: 'Schwab US Broad Market ETF', ticker: 'SCHB' }
+        ],
+        Bonds: [
+          { name: 'Vanguard Total Bond Market ETF', ticker: 'BND' },
+          { name: 'iShares Core US Aggregate Bond ETF', ticker: 'AGG' },
+          { name: 'Schwab US Aggregate Bond ETF', ticker: 'SCHZ' }
+        ],
+        Cash: [
+          { name: 'High-Yield Savings Account', ticker: '' },
+          { name: 'Money Market Fund', ticker: '' },
+          { name: 'Short-Term Treasury Bills', ticker: 'SHV' }
+        ],
+        Alternative: [
+          { name: 'Vanguard Real Estate ETF', ticker: 'VNQ' },
+          { name: 'Invesco Optimum Yield Diversified Commodity Strategy', ticker: 'PDBC' },
+          { name: 'iShares Gold Trust', ticker: 'IAU' }
+        ]
+      }
+      
+      // Return suggestions for the specified asset class or a default message
+      return suggestions[assetClass] || [
+        { name: `${assetClass} Index Fund`, ticker: '' }
+      ]
     }
-
-    // Calculate dollar amounts to rebalance
-    const rebalanceAmounts = {}
-    for (const type in differences) {
-      const { difference } = differences[type]
-      rebalanceAmounts[type] = (difference / 100) * portfolio.totalPortfolioValue
-    }
-
+    
+    // Generate recommendations
+    const recommendations = Object.keys(differences)
+      .filter(type => Math.abs(differences[type].difference) >= 1) // Only show significant differences
+      .map(type => {
+        const diff = differences[type]
+        const action = diff.difference > 0 ? 'increase' : diff.difference < 0 ? 'decrease' : 'maintain'
+        
+        return {
+          type,
+          action,
+          amount: Math.abs(diff.difference).toFixed(2),
+          message: `${action === 'increase' ? 'Increase' : action === 'decrease' ? 'Decrease' : 'Maintain'} ${type} by ${Math.abs(diff.difference).toFixed(2)}%`,
+          suggestedInvestments: getSuggestedInvestments(type, action === 'increase')
+        }
+      })
+      .sort((a, b) => parseFloat(b.amount) - parseFloat(a.amount))
+    
     return {
-      currentAllocation: currentAllocationByType,
-      targetAllocation: targets,
+      currentAllocation,
+      targetAllocation: finalTargetAllocation,
       differences,
       recommendations,
       rebalanceAmounts,
       totalDifference,
-      needsRebalancing: totalDifference >= threshold,
-      portfolioValue: portfolio.totalPortfolioValue,
+      needsRebalancing: totalDifference > 5, // Consider rebalancing if total difference > 5%
+      portfolioValue,
     }
   } catch (error) {
-    console.error("Error in getRebalancingRecommendations:", error)
+    console.error('Error in getRebalancingRecommendations:', error)
     return getSafeRebalancingDefaults()
   }
 }

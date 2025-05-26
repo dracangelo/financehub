@@ -42,6 +42,7 @@ interface Investment {
   quantity?: number
   currentPrice?: number
   initialPrice?: number
+  purchaseDate?: string
 }
 
 interface InvestmentListProps {
@@ -86,7 +87,8 @@ export function InvestmentList({ initialInvestments }: InvestmentListProps) {
           category: inv.categories?.name || (inv.category_id ? "Unknown Category" : undefined),
           quantity: inv.quantity,
           currentPrice: inv.current_price,
-          initialPrice: inv.initial_price
+          initialPrice: inv.initial_price,
+          purchaseDate: inv.purchase_date
         }))
         setInvestments(formattedInvestments)
       } else {
@@ -137,6 +139,63 @@ export function InvestmentList({ initialInvestments }: InvestmentListProps) {
     await fetchInvestments()
     setIsRefreshing(false)
   }
+
+  // Calculate investment performance metrics
+  const calculatePerformance = (investment: Investment) => {
+    const initialCost = investment.costBasis || 0;
+    const currentValue = investment.value || 0;
+    
+    // Calculate absolute return
+    const absoluteReturn = currentValue - initialCost;
+    
+    // Calculate percentage return
+    const percentReturn = initialCost > 0 ? (absoluteReturn / initialCost) * 100 : 0;
+    
+    // Calculate annualized return based on purchase date
+    let annualizedReturn = 0;
+    if (investment.purchaseDate && initialCost > 0 && currentValue > 0) {
+      const purchaseDate = new Date(investment.purchaseDate);
+      const currentDate = new Date();
+      
+      // Calculate years held (handle same day purchase with a minimum of 1 day)
+      const millisecondsHeld = Math.max(currentDate.getTime() - purchaseDate.getTime(), 86400000); // at least 1 day
+      const yearsHeld = millisecondsHeld / (1000 * 60 * 60 * 24 * 365.25);
+      
+      // Calculate annualized return using CAGR formula: (Current/Initial)^(1/years) - 1
+      if (yearsHeld > 0) {
+        try {
+          const rawAnnualizedReturn = (Math.pow(currentValue / initialCost, 1 / yearsHeld) - 1) * 100;
+          
+          // Handle extremely large numbers or Infinity by capping at a reasonable maximum
+          if (!isFinite(rawAnnualizedReturn) || Math.abs(rawAnnualizedReturn) > 1000) {
+            // Cap at +/- 1000% for extremely large returns
+            annualizedReturn = Math.sign(rawAnnualizedReturn) * 1000;
+          } else {
+            annualizedReturn = Number(rawAnnualizedReturn.toFixed(2));
+          }
+        } catch (error) {
+          // Fallback to a reasonable value in case of calculation errors
+          annualizedReturn = 0;
+        }
+      }
+    }
+    
+    return {
+      absoluteReturn,
+      percentReturn,
+      annualizedReturn,
+      initialCost,
+      currentValue,
+      purchaseDate: investment.purchaseDate
+    };
+  };
+
+  // Format date for display
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return "—";
+    const date = new Date(dateString);
+    return date.toLocaleDateString();
+  };
 
   // Sort investments by value (largest first)
   const sortedInvestments = [...investments].sort((a, b) => b.value - a.value)
@@ -201,17 +260,22 @@ export function InvestmentList({ initialInvestments }: InvestmentListProps) {
                       <TableHead className="text-right">Value</TableHead>
                       <TableHead className="text-right">Cost Basis</TableHead>
                       <TableHead className="text-right">Return</TableHead>
+                      <TableHead className="text-right">Annual Return</TableHead>
+                      <TableHead>Purchase Date</TableHead>
                       <TableHead className="text-center">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {sortedInvestments.map((investment) => {
-                      // Calculate return values
-                      const value = investment.value || 0
-                      const costBasis = investment.costBasis || 0
-                      const returnAmount = value - costBasis
-                      const returnPercent = costBasis > 0 ? (returnAmount / costBasis) * 100 : 0
-                      const isPositive = returnAmount >= 0
+                      // Calculate performance metrics
+                      const performance = calculatePerformance(investment);
+                      const value = performance.currentValue;
+                      const costBasis = performance.initialCost;
+                      const returnAmount = performance.absoluteReturn;
+                      const returnPercent = performance.percentReturn;
+                      const annualizedReturn = performance.annualizedReturn;
+                      const isPositive = returnAmount >= 0;
+                      const isAnnualizedPositive = annualizedReturn >= 0
 
                       return (
                         <TableRow key={investment.id}>
@@ -243,14 +307,14 @@ export function InvestmentList({ initialInvestments }: InvestmentListProps) {
                           </TableCell>
                           <TableCell className="text-right">
                             {investment.currentPrice 
-                              ? formatCurrency(investment.currentPrice, investment.currency || "USD") 
+                              ? formatCurrency(investment.currentPrice, { currency: investment.currency || "USD" }) 
                               : "—"}
                           </TableCell>
                           <TableCell className="text-right">
-                            {formatCurrency(value, investment.currency || "USD")}
+                            {formatCurrency(value, { currency: investment.currency || "USD" })}
                           </TableCell>
                           <TableCell className="text-right">
-                            {formatCurrency(costBasis, investment.currency || "USD")}
+                            {formatCurrency(costBasis, { currency: investment.currency || "USD" })}
                           </TableCell>
                           <TableCell className="text-right">
                             <div
@@ -259,12 +323,27 @@ export function InvestmentList({ initialInvestments }: InvestmentListProps) {
                               }
                             >
                               {isPositive ? "+" : ""}
-                              {formatCurrency(returnAmount, investment.currency || "USD")}
+                              {formatCurrency(returnAmount, { currency: investment.currency || "USD" })}
                               <span className="ml-1 text-xs">
                                 ({isPositive ? "+" : ""}
                                 {returnPercent.toFixed(2)}%)
                               </span>
                             </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {investment.purchaseDate ? (
+                              <div
+                                className={
+                                  isAnnualizedPositive ? "text-green-600" : "text-red-600"
+                                }
+                              >
+                                {isAnnualizedPositive ? "+" : ""}
+                                {isFinite(annualizedReturn) ? Number(annualizedReturn.toFixed(2)) : 999.99}%
+                              </div>
+                            ) : "—"}
+                          </TableCell>
+                          <TableCell>
+                            {formatDate(investment.purchaseDate)}
                           </TableCell>
                           <TableCell className="text-center">
                             <div className="flex justify-center space-x-2">
@@ -281,6 +360,7 @@ export function InvestmentList({ initialInvestments }: InvestmentListProps) {
                               <DeleteInvestment 
                                 investmentId={investment.id} 
                                 investmentName={investment.name}
+                                className="ml-2"
                                 onInvestmentDeleted={handleRefresh}
                               />
                             </div>
@@ -297,7 +377,7 @@ export function InvestmentList({ initialInvestments }: InvestmentListProps) {
                 <div className="flex justify-between">
                   <span className="font-medium">Total Portfolio Value:</span>
                   <span className="font-bold">
-                    {formatCurrency(totalValue, "USD")}
+                    {formatCurrency(totalValue, { currency: "USD" })}
                   </span>
                 </div>
                 <div className="text-xs text-muted-foreground">

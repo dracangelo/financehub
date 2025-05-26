@@ -51,27 +51,7 @@ export default function InvestmentsPage() {
               </CardContent>
             </Card>
             
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg">Fee Analyzer</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Button asChild className="w-full">
-                  <Link href="/investments/fees">Analyze Fees</Link>
-                </Button>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg">ESG Screener</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Button asChild className="w-full">
-                  <Link href="/investments/esg-screener">Screen Investments</Link>
-                </Button>
-              </CardContent>
-            </Card>
+
             
             <Card>
               <CardHeader className="pb-2">

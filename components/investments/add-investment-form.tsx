@@ -32,6 +32,14 @@ export function AddInvestmentForm({ onInvestmentAdded, className, investment, is
   const [assetClasses, setAssetClasses] = useState<string[]>([])
   const { toast } = useToast()
 
+  // Helper function to format date as YYYY-MM-DD for input[type="date"]
+  const formatDateForInput = (date: Date) => {
+    return date.toISOString().split('T')[0];
+  }
+
+  // Get today's date formatted for the date input
+  const today = formatDateForInput(new Date());
+
   // Form state
   const [name, setName] = useState(investment?.name || "")
   const [ticker, setTicker] = useState(investment?.ticker || "")
@@ -43,6 +51,7 @@ export function AddInvestmentForm({ onInvestmentAdded, className, investment, is
   const [quantity, setQuantity] = useState(investment?.quantity?.toString() || "")
   const [initialPrice, setInitialPrice] = useState(investment?.initial_price?.toString() || "")
   const [currentPrice, setCurrentPrice] = useState(investment?.current_price?.toString() || "")
+  const [purchaseDate, setPurchaseDate] = useState(investment?.purchase_date || today)
 
   // Predefined account types
   const accountTypes = ["Default", "401k", "IRA", "Taxable", "HSA", "Brokerage", "Roth IRA"]
@@ -135,7 +144,7 @@ export function AddInvestmentForm({ onInvestmentAdded, className, investment, is
   const resetForm = () => {
     setName("")
     setTicker("")
-    setType("")
+    setType(assetClasses[0] || "")
     setValue("")
     setCostBasis("")
     setAccountName("Default")
@@ -143,6 +152,7 @@ export function AddInvestmentForm({ onInvestmentAdded, className, investment, is
     setQuantity("")
     setInitialPrice("")
     setCurrentPrice("")
+    setPurchaseDate(today)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -158,6 +168,7 @@ export function AddInvestmentForm({ onInvestmentAdded, className, investment, is
       formData.append("type", type)
       formData.append("value", value)
       formData.append("cost_basis", costBasis)
+      formData.append("purchase_date", purchaseDate)
       
       // Add optional fields with null checks
       if (ticker) formData.append("ticker", ticker)
@@ -177,53 +188,37 @@ export function AddInvestmentForm({ onInvestmentAdded, className, investment, is
         formData.append("current_price", currentPrice)
       }
       
-      // Add ID if editing
-      if (investment?.id) {
+      // If in edit mode, add the ID
+      if (isEditMode && investment?.id) {
         formData.append("id", investment.id)
       }
       
+      // Log form data for debugging
+      console.log("Form data being submitted with purchase date:", purchaseDate)
       console.log("Submitting form with data:", Object.fromEntries(formData.entries()))
       
       const result = await addInvestment(formData)
       
-      if (result && typeof result === 'object' && 'error' in result) {
-        console.error("Error submitting form:", result.error)
-        
-        // Check if the error is related to missing columns
-        if (result.error && typeof result.error === 'string' && result.error.includes("column")) {
-          toast({
-            title: "Database schema needs updating",
-            description: "The database schema needs to be updated. Please contact your administrator.",
-            variant: "destructive",
-          })
-        } else {
-          toast({
-            title: "Error",
-            description: result.error ? String(result.error) : "An unknown error occurred",
-            variant: "destructive",
-          })
-        }
-        
-        setIsLoading(false)
-        return
-      }
-      
       console.log("Form submitted successfully:", result)
       
-      toast({
-        title: isEditMode ? "Investment Updated" : "Investment Added",
-        description: isEditMode 
-          ? `Successfully updated ${name} in your portfolio.`
-          : `Successfully added ${name} to your portfolio.`,
-      })
-      
-      // Close dialog and reset form
-      setOpen(false)
-      resetForm()
-      
-      // Notify parent component
-      if (onInvestmentAdded) {
-        onInvestmentAdded()
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: isEditMode ? "Investment updated successfully" : "Investment added to portfolio",
+        })
+        resetForm()
+        setOpen(false)
+        
+        // Call the callback to refresh the portfolio data
+        if (onInvestmentAdded) {
+          onInvestmentAdded()
+        }
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to add investment",
+          variant: "destructive",
+        })
       }
     } catch (error) {
       console.error(`Error ${isEditMode ? "updating" : "adding"} investment:`, error)
@@ -428,6 +423,19 @@ export function AddInvestmentForm({ onInvestmentAdded, className, investment, is
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="purchaseDate" className="text-right">
+                Date Purchased
+              </Label>
+              <Input
+                id="purchaseDate"
+                type="date"
+                value={purchaseDate}
+                onChange={(e) => setPurchaseDate(e.target.value)}
+                className="col-span-3"
+                required
+              />
             </div>
           </div>
           <DialogFooter>

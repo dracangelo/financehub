@@ -182,6 +182,7 @@ export async function createPortfolio(formData: FormData) {
     }
 
     revalidatePath("/investments")
+    revalidatePath("/investments/portfolio")
     return { data: data[0] }
   } catch (error) {
     console.error("Error in createPortfolio:", error)
@@ -238,6 +239,7 @@ export async function updatePortfolio(formData: FormData) {
     }
 
     revalidatePath("/investments")
+    revalidatePath("/investments/portfolio")
     return { data: data[0] }
   } catch (error) {
     console.error("Error in updatePortfolio:", error)
@@ -266,6 +268,7 @@ export async function deletePortfolio(id: string) {
     }
 
     revalidatePath("/investments")
+    revalidatePath("/investments/portfolio")
     return { success: true }
   } catch (error) {
     console.error("Error in deletePortfolio:", error)
@@ -494,7 +497,8 @@ export async function deleteHolding(id: string, portfolioId: string) {
       return { error: error.message }
     }
 
-    revalidatePath(`/investments/${portfolioId}`)
+    revalidatePath("/investments")
+    revalidatePath("/investments/portfolio")
     return { success: true }
   } catch (error) {
     console.error("Error in deleteHolding:", error)
