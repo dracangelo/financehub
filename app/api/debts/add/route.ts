@@ -16,52 +16,32 @@ export async function POST(request: Request) {
       }, { status: 400 })
     }
     
-    // Get authenticated user from server-side with multiple fallback mechanisms
+    // Get authenticated user from server-side
     let userId = null
     
-    // PRIORITY 1: Try to get user ID from the request headers
-    const clientId = request.headers.get('client-id')
-    if (clientId) {
-      userId = clientId
-      console.log(`Server: Using client ID from headers: ${userId}`)
-    } else {
-      try {
-        // PRIORITY 2: Try to get authenticated user from Supabase auth
-        try {
-          const cookieStore = cookies()
-          const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
-          const { data: { user } } = await supabase.auth.getUser()
-          
-          if (user && user.id) {
-            userId = user.id
-            console.log(`Server: Using authenticated user ID: ${userId}`)
-          }
-        } catch (authError) {
-          console.warn('Server: Error getting authenticated user from Supabase:', authError)
-        }
-        
-        // PRIORITY 3: If still no user ID, try the getCurrentUserId helper
-        if (!userId) {
-          try {
-            userId = await getCurrentUserId(request)
-            if (userId) {
-              console.log(`Server: Using user ID from getCurrentUserId: ${userId}`)
-            }
-          } catch (getCurrentUserIdError) {
-            console.warn('Server: Error getting user ID from getCurrentUserId:', getCurrentUserIdError)
-          }
-        }
-        
-        // PRIORITY 4: Use default UUID as last resort
-        if (!userId) {
-          userId = '00000000-0000-0000-0000-000000000000'
-          console.warn(`Server: Using default UUID as last resort: ${userId}`)
-        }
-      } catch (authError) {
-        console.warn('Server: Error in authentication flow:', authError)
-        userId = '00000000-0000-0000-0000-000000000000'
-        console.warn(`Server: Using default UUID after error: ${userId}`)
+    // Get authenticated user from Supabase auth
+    try {
+      const cookieStore = cookies()
+      const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user || !user.id) {
+        return NextResponse.json({
+          success: false,
+          message: 'Authentication required',
+          error: 'User not authenticated'
+        }, { status: 401 })
       }
+      
+      userId = user.id
+      console.log(`Server: Using authenticated user ID: ${userId}`)
+    } catch (authError) {
+      console.error('Server: Error getting authenticated user from Supabase:', authError)
+      return NextResponse.json({
+        success: false,
+        message: 'Authentication error',
+        error: authError instanceof Error ? authError.message : 'Unknown authentication error'
+      }, { status: 401 })
     }
     
     console.log(`Adding debt for user ${userId} using supabaseAdmin`)
@@ -78,11 +58,14 @@ export async function POST(request: Request) {
         user_id: userId,
         name: debtData.name,
         type: debtData.type || 'personal_loan',
-        current_balance: debtData.current_balance,
-        interest_rate: debtData.interest_rate,
-        minimum_payment: debtData.minimum_payment,
-        loan_term: debtData.loan_term,
+        current_balance: debtData.current_balance || 0,
+        principal: debtData.principal || debtData.current_balance || 0,
+        interest_rate: debtData.interest_rate || 0,
+        minimum_payment: debtData.minimum_payment || 0,
+        loan_term: debtData.loan_term || 0,
         due_date: debtData.due_date,
+        payment_frequency: debtData.payment_frequency || 'monthly',
+        status: debtData.status || 'active',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })

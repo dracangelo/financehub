@@ -1,60 +1,64 @@
 import { NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
-import { supabaseAdmin } from '@/lib/supabase'
+import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { getAuthenticatedUser } from '@/lib/auth'
 
 export async function GET(request: Request) {
   try {
-    // Try multiple methods to get the user ID
-    let userId = null
-    let isAuthenticated = false
+    console.log('Server: Checking for authenticated user')
     
-    // APPROACH 1: Try to get authenticated user from server-side
-    try {
-      const cookieStore = cookies()
-      const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (user && user.id) {
-        userId = user.id
-        isAuthenticated = true
-        console.log(`Server: Using authenticated user ID from auth.getUser(): ${userId}`)
-        return NextResponse.json({ 
-          success: true, 
-          userId: userId,
-          isAuthenticated: true
-        })
-      }
-    } catch (authError) {
-      console.warn('Server: Error getting authenticated user with auth.getUser():', authError)
+    // Use the same authentication method as the dashboard
+    // This function is cached and handles all the edge cases properly
+    const user = await getAuthenticatedUser()
+    
+    if (user && user.id) {
+      console.log(`Server: Found authenticated user ID: ${user.id}`)
+      return NextResponse.json({ 
+        success: true, 
+        userId: user.id,
+        isAuthenticated: true,
+        email: user.email,
+        method: 'auth-lib'
+      })
     }
     
-    // APPROACH 2: Try to get authenticated user from session
+    // If no authenticated user found, try with server client directly
     try {
-      const cookieStore = cookies()
-      const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
-      const { data: { session } } = await supabase.auth.getSession()
+      const supabase = await createServerSupabaseClient()
+      if (!supabase) {
+        console.error('Failed to create Supabase client')
+        throw new Error('Failed to create Supabase client')
+      }
       
-      if (session && session.user && session.user.id) {
-        userId = session.user.id
-        isAuthenticated = true
-        console.log(`Server: Using authenticated user ID from auth.getSession(): ${userId}`)
+      // Use getUser for secure authentication by contacting the Supabase Auth server
+      const { data, error } = await supabase.auth.getUser()
+      
+      if (error) {
+        // Don't throw an error for auth session missing - this is expected for unauthenticated users
+        if (error.message.includes('Auth session missing')) {
+          console.log('Server: Auth session missing')
+        } else {
+          console.error('Server: Authentication error:', error.message)
+        }
+      } else if (data?.user?.id) {
+        console.log(`Server: Found authenticated user ID directly: ${data.user.id}`)
         return NextResponse.json({ 
           success: true, 
-          userId: userId,
-          isAuthenticated: true
+          userId: data.user.id,
+          isAuthenticated: true,
+          email: data.user.email,
+          method: 'direct-auth'
         })
       }
-    } catch (sessionError) {
-      console.warn('Server: Error getting authenticated session:', sessionError)
+    } catch (serverError) {
+      console.error('Server: Error with server client:', serverError)
     }
     
-    // No authenticated user found, return 401 Unauthorized
+    // If no authenticated user found, return 401 Unauthorized
     console.log('Server: No authenticated user found')
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Authentication required',
-      message: 'You must be logged in to access this resource'
+    return NextResponse.json({
+      success: false,
+      message: 'Authentication required',
+      error: 'User not authenticated'
     }, { status: 401 })
     
   } catch (error) {

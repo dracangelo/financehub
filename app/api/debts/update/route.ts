@@ -15,55 +15,106 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
     
-    // Create a server-side Supabase client that can access the user's session
-    const supabase = await createServerSupabaseClient()
     let userId: string | null = null
     
-    // Check if we have a valid Supabase client
-    if (supabase) {
-      try {
-        // Get the authenticated user ID using the server-side client
-        const { data: { user } } = await supabase.auth.getUser()
-        
-        // ALWAYS prioritize the authenticated user ID
-        if (user?.id) {
-          userId = user.id
-          console.log(`Using authenticated user ID: ${userId}`)
-        }
-      } catch (authError) {
-        console.warn('Server: Error getting authenticated user from Supabase client:', authError)
-      }
+    // Get authenticated user ID from server-side Supabase
+    const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+      return NextResponse.json({
+        success: false,
+        message: 'Authentication required',
+        error: 'Could not initialize Supabase client'
+      }, { status: 401 })
     }
     
-    // If no authenticated user found, fall back to client ID
-    if (!userId) {
-      try {
-        userId = await getCurrentUserId(request)
-        console.log(`No authenticated user found, using fallback ID: ${userId}`)
-      } catch (error) {
-        console.error('Error getting user ID:', error)
+    try {
+      // Get the authenticated user ID using the server-side client
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user || !user.id) {
         return NextResponse.json({
           success: false,
           message: 'Authentication required',
           error: 'User not authenticated'
         }, { status: 401 })
       }
-    }
-    
-    // If still no user ID after all attempts, return unauthorized
-    if (!userId) {
-      console.warn('No user ID found through any authentication method')
+      
+      userId = user.id
+      console.log(`Using authenticated user ID: ${userId}`)
+    } catch (authError) {
+      console.error('Error getting authenticated user:', authError)
       return NextResponse.json({
         success: false,
-        message: 'Authentication required',
-        error: 'User not authenticated'
+        message: 'Authentication error',
+        error: authError instanceof Error ? authError.message : 'Unknown authentication error'
       }, { status: 401 })
     }
     
     console.log(`Updating debt ${debtId} for user ${userId} using supabaseAdmin`)
+    console.log('Updates to apply:', updates)
+    
+    // First check if the debt exists for this user
+    const { data: existingDebt, error: checkError } = await supabaseAdmin
+      .from('debts')
+      .select('*')
+      .eq('id', debtId)
+      .eq('user_id', userId)
+      .single()
+    
+    if (checkError) {
+      console.error('Error checking if debt exists:', checkError)
+      // If the debt doesn't exist, we'll create it
+      if (checkError.code === 'PGRST116') { // No rows returned
+        console.log(`Debt ${debtId} not found for user ${userId}, creating it instead`)
+        
+        // Create the debt with the provided ID
+        const { data: insertData, error: insertError } = await supabaseAdmin
+          .from('debts')
+          .insert({
+            id: debtId,
+            user_id: userId,
+            name: updates.name || 'Unnamed Debt',
+            type: updates.type || 'personal_loan',
+            current_balance: updates.current_balance || 0,
+            principal: updates.principal || updates.current_balance || 0,
+            interest_rate: updates.interest_rate || 0,
+            minimum_payment: updates.minimum_payment || 0,
+            loan_term: updates.loan_term || 0,
+            due_date: updates.due_date,
+            payment_frequency: updates.payment_frequency || 'monthly',
+            status: updates.status || 'active',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .select()
+        
+        if (insertError) {
+          console.error('Error creating debt:', insertError)
+          return NextResponse.json({
+            success: false,
+            message: 'Failed to create debt',
+            error: insertError.message
+          }, { status: 500 })
+        }
+        
+        console.log('Created debt successfully:', insertData)
+        return NextResponse.json({
+          success: true,
+          message: 'Debt created successfully',
+          debt: insertData[0]
+        })
+      }
+      
+      return NextResponse.json({
+        success: false,
+        message: 'Failed to check if debt exists',
+        error: checkError.message
+      }, { status: 500 })
+    }
+    
+    console.log('Existing debt found:', existingDebt)
     
     // Update the debt in the database using supabaseAdmin to bypass RLS policies
-    // This approach is similar to how we fixed the subscription system
     const { data, error } = await supabaseAdmin
       .from('debts')
       .update({
@@ -72,6 +123,7 @@ export async function POST(request: NextRequest) {
       })
       .eq('id', debtId)
       .eq('user_id', userId)
+      .select() // Add select() to return the updated record
     
     // Log the result for debugging
     console.log('Update debt result:', data, error)

@@ -34,20 +34,8 @@ export class DebtService {
     return this.supabase
   }
   
-  // Set client ID in headers and cookies for better RLS handling
-  private setClientHeaders(userId: string): void {
-    if (typeof window !== 'undefined') {
-      // Set client ID in localStorage for persistence
-      window.localStorage.setItem('client-id', userId)
-      
-      // Set client ID in cookie with 1 year expiration
-      const expirationDate = new Date()
-      expirationDate.setFullYear(expirationDate.getFullYear() + 1)
-      document.cookie = `client-id=${userId}; expires=${expirationDate.toUTCString()}; path=/; SameSite=Lax`
-      
-      console.log(`Set client ID in headers and cookies: ${userId}`)
-    }
-  }
+  // This method has been removed as we no longer use client IDs in headers or cookies
+  // We only use authenticated user IDs now
   
   // Get client configuration from cookies or use defaults
   private getClientConfig(): {
@@ -124,16 +112,59 @@ export class DebtService {
     }
   }
   
-  // Get the current user ID - Using the same approach as the subscription system
+  // Get the current user ID - Using ONLY authenticated user IDs
   private async getUserId(): Promise<string | null> {
     try {
       // If we have a cached authenticated user ID, use it
-      if (this.cachedUserId) {
-        console.log(`getUserId: Using cached user ID: ${this.cachedUserId}`)
+      if (this.cachedUserId && this.isAuthenticatedId) {
+        console.log(`getUserId: Using cached authenticated user ID: ${this.cachedUserId}`)
         return this.cachedUserId
       }
       
-      // PRIORITY 1: Try to get the user ID from Supabase directly
+      // First check if user is signed in using Supabase client directly
+      // This is the most reliable method for client-side authentication
+      try {
+        // Force refresh the session to ensure we have the latest auth state
+        const { data: refreshData } = await this.supabase.auth.refreshSession()
+        if (refreshData?.session?.user?.id) {
+          console.log(`getUserId: Found user ID from refreshed session: ${refreshData.session.user.id}`)
+          this.cachedUserId = refreshData.session.user.id
+          this.isAuthenticatedId = true
+          return refreshData.session.user.id
+        }
+      } catch (refreshError) {
+        console.warn('Error refreshing session:', refreshError)
+        // Continue to other methods even if refresh fails
+      }
+      
+      // Try to get the authenticated user ID from the server
+      try {
+        const response = await fetch('/api/auth/user', {
+          method: 'GET',
+          credentials: 'include', // Include cookies for authentication
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          }
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          if (data.userId) {
+            this.cachedUserId = data.userId
+            this.isAuthenticatedId = true
+            console.log(`getUserId: Found authenticated user ID from server: ${this.cachedUserId}`)
+            return this.cachedUserId
+          }
+        } else {
+          console.log(`getUserId: Server returned status ${response.status}`)
+        }
+      } catch (serverError) {
+        console.warn('Error getting user ID from server:', serverError)
+      }
+      
+      // Try to get the user ID from Supabase directly
       try {
         const { data: { user } } = await this.supabase.auth.getUser()
         if (user && user.id) {
@@ -146,7 +177,7 @@ export class DebtService {
         console.warn('Error getting user from Supabase auth.getUser():', userError)
       }
       
-      // PRIORITY 2: Try to get authenticated user ID from session
+      // Try to get authenticated user ID from session
       try {
         const { data: sessionData } = await this.supabase.auth.getSession()
         if (sessionData?.session?.user?.id) {
@@ -159,68 +190,53 @@ export class DebtService {
         console.warn('Error getting session from Supabase:', sessionError)
       }
       
-      // PRIORITY 3: Try to get client ID from cookies
-      if (typeof document !== 'undefined') {
-        const cookieHeader = document.cookie
-        if (cookieHeader) {
-          // Try to get client ID from cookie
-          const clientIdMatch = cookieHeader.match(/client-id=([^;]+)/)
-          if (clientIdMatch && clientIdMatch[1] && clientIdMatch[1].trim() !== '') {
-            const clientId = decodeURIComponent(clientIdMatch[1])
-            console.log(`getUserId: Using client ID from cookie: ${clientId}`)
-            this.cachedUserId = clientId
-            this.isAuthenticatedId = false
-            return clientId
+      // Check localStorage for Supabase auth data as a last resort
+      try {
+        if (typeof window !== 'undefined') {
+          const supabaseSession = localStorage.getItem('supabase.auth.token')
+          if (supabaseSession) {
+            try {
+              const sessionData = JSON.parse(supabaseSession)
+              if (sessionData?.currentSession?.user?.id) {
+                console.log(`getUserId: Found user ID from localStorage: ${sessionData.currentSession.user.id}`)
+                this.cachedUserId = sessionData.currentSession.user.id
+                this.isAuthenticatedId = true
+                return sessionData.currentSession.user.id
+              }
+            } catch (parseError) {
+              console.warn('Error parsing localStorage session:', parseError)
+            }
           }
         }
+      } catch (localStorageError) {
+        console.warn('Error accessing localStorage:', localStorageError)
       }
       
-      // PRIORITY 4: Check for client ID in localStorage
-      if (typeof window !== 'undefined' && window.localStorage) {
-        const clientId = window.localStorage.getItem('client-id')
-        if (clientId) {
-          console.log(`getUserId: Using client ID from localStorage: ${clientId}`)
-          this.cachedUserId = clientId
-          this.isAuthenticatedId = false
-          return clientId
-        }
-      }
-      
-      // PRIORITY 5: Use default UUID as last resort
-      const defaultUuid = '00000000-0000-0000-0000-000000000000'
-      console.log(`getUserId: No user ID found, using default UUID: ${defaultUuid}`)
-      this.cachedUserId = defaultUuid
-      this.isAuthenticatedId = false
-      return defaultUuid
+      // If no authenticated user ID found, return null
+      console.log('getUserId: No authenticated user found, returning null')
+      return null
     } catch (error) {
       console.error('Error in getUserId:', error)
-      // Return default UUID instead of null
-      const defaultUuid = '00000000-0000-0000-0000-000000000000'
-      this.cachedUserId = defaultUuid
-      this.isAuthenticatedId = false
-      return defaultUuid
+      // Return null instead of a default UUID
+      return null
     }
   }
 
   async getDebts(): Promise<Debt[]> {
     try {
-      // Get user ID with fallback mechanisms
+      // Get authenticated user ID
       const userId = await this.getUserId()
       
-      // Set client ID in cookies and headers for better RLS handling
-      if (userId) {
-        this.setClientHeaders(userId)
-      } else {
-        console.warn('No user ID available, using default ID')
+      // If no authenticated user ID, return empty array
+      if (!userId) {
+        console.warn('Authentication required to fetch debts')
+        return []
       }
       
       // Use the server-side API endpoint to fetch debts
       console.log(`Using server-side API to fetch debts for user: ${userId}`)
       const response = await fetch('/api/debts/list', {
         method: 'GET',
-        headers: {
-          'client-id': userId || '00000000-0000-0000-0000-000000000000' // Include client ID in headers
-        },
         credentials: 'include' // Include cookies for authentication
       })
       
@@ -285,8 +301,8 @@ export class DebtService {
     
     console.log(`Syncing ${localDebts.length} local debts to database`)
     
-    // Set the client ID in cookies and localStorage
-    this.setClientHeaders(userId)
+    // No longer setting client ID in cookies and localStorage
+    // We only use authenticated user IDs now
     
     // Try to insert each local debt into the database
     for (const localDebt of localDebts) {
@@ -839,8 +855,8 @@ export class DebtService {
     try {
       const userId = await this.ensureUserId()
       
-      // Set client ID in cookies for better RLS handling
-      this.setClientHeaders(userId)
+      // No longer setting client ID in cookies
+      // We only use authenticated user IDs now
       
       // Get client configuration
       const config = this.getClientConfig()

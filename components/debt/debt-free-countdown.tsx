@@ -88,6 +88,8 @@ const DebtFreeCountdown: React.FC = () => {
       try {
         setLoading(true);
         const fetchedDebts = await debtService.getDebts();
+        // Even if the user is not authenticated, getDebts will return an empty array
+        // instead of throwing an error now
         setDebts(fetchedDebts);
         
         // Calculate debt-free date based on current debts and payment plans
@@ -102,6 +104,8 @@ const DebtFreeCountdown: React.FC = () => {
         setLoading(false);
       } catch (error) {
         console.error('Error fetching debts:', error);
+        // Set empty debts array to prevent UI errors
+        setDebts([]);
         setLoading(false);
       }
     };

@@ -5,48 +5,38 @@ import { supabaseAdmin, getCurrentUserId } from '@/lib/supabase'
 
 export async function GET(request: NextRequest) {
   try {
-    // Create a server-side Supabase client that can access the user's session
-    const supabase = await createServerSupabaseClient()
     let userId: string | null = null
     
-    // Check if we have a valid Supabase client
-    if (supabase) {
-      try {
-        // Get the authenticated user ID using the server-side client
-        const { data: { user } } = await supabase.auth.getUser()
-        
-        // ALWAYS prioritize the authenticated user ID
-        if (user?.id) {
-          userId = user.id
-          console.log(`Using authenticated user ID: ${userId}`)
-        }
-      } catch (authError) {
-        console.warn('Server: Error getting authenticated user from Supabase client:', authError)
-      }
-    }
-    
-    // If no authenticated user found, fall back to client ID
-    if (!userId) {
-      try {
-        userId = await getCurrentUserId(request)
-        console.log(`No authenticated user found, using fallback ID: ${userId}`)
-      } catch (error) {
-        console.error('Error getting user ID:', error)
-        return NextResponse.json({
-          success: false,
-          message: 'Authentication required',
-          debts: []
-        }, { status: 401 })
-      }
-    }
-    
-    // If still no user ID after all attempts, return unauthorized
-    if (!userId) {
-      console.warn('No user ID found through any authentication method')
+    // Get authenticated user ID from server-side Supabase
+    const supabase = await createServerSupabaseClient()
+    if (!supabase) {
       return NextResponse.json({
         success: false,
         message: 'Authentication required',
-        debts: []
+        error: 'Could not initialize Supabase client'
+      }, { status: 401 })
+    }
+    
+    try {
+      // Get the authenticated user ID using the server-side client
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user || !user.id) {
+        return NextResponse.json({
+          success: false,
+          message: 'Authentication required',
+          error: 'User not authenticated'
+        }, { status: 401 })
+      }
+      
+      userId = user.id
+      console.log(`Using authenticated user ID: ${userId}`)
+    } catch (authError) {
+      console.error('Error getting authenticated user:', authError)
+      return NextResponse.json({
+        success: false,
+        message: 'Authentication error',
+        error: authError instanceof Error ? authError.message : 'Unknown authentication error'
       }, { status: 401 })
     }
     
@@ -61,7 +51,32 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: false })
     
     // Log the result for debugging
-    console.log(`Fetched debts using SQL function:`, debts?.length || 0, 'debts found')
+    console.log(`Fetched debts using supabaseAdmin:`, debts?.length || 0, 'debts found')
+    
+    // If no debts were found, try a more direct approach with a raw query
+    if (!debts || debts.length === 0) {
+      console.log('No debts found, trying direct SQL query')
+      
+      // Use a direct SQL query to fetch the debts
+      const { data: sqlDebts, error: sqlError } = await supabaseAdmin
+        .from('debts')
+        .select('*')
+        .filter('user_id', 'eq', userId)
+        .order('created_at', { ascending: false })
+      
+      if (sqlError) {
+        console.error('Error fetching debts with direct query:', sqlError)
+      } else if (sqlDebts && sqlDebts.length > 0) {
+        console.log(`Found ${sqlDebts.length} debts using direct query`)
+        return NextResponse.json({
+          success: true,
+          message: 'Debts fetched successfully',
+          debts: sqlDebts
+        })
+      } else {
+        console.log('Still no debts found with direct query')
+      }
+    }
     
     // Check for errors first
     if (supabaseError) {
