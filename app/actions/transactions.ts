@@ -734,6 +734,10 @@ interface MonthlyIncomeExpense {
   month: string;
   income: number;
   expenses: number;
+  recurring_income?: number;
+  one_time_income?: number;
+  recurring_expenses?: number;
+  one_time_expenses?: number;
 }
 
 // Interface for combined transaction data
@@ -826,87 +830,179 @@ export async function getCombinedTransactions(): Promise<CombinedTransaction[]> 
 }
 
 export async function getMonthlyIncomeExpenseData(): Promise<MonthlyIncomeExpense[]> {
-  const supabase = await createServerSupabaseClient()
-  
-  if (!supabase) {
-    console.error("Failed to initialize Supabase client")
-    return []
-  }
-  
-  const user = await getAuthenticatedUser()
-
-  if (!user) {
-    return []
-  }
-
-  // Calculate date range for the past 12 months
-  const today = new Date()
-  const startDate = new Date(today)
-  startDate.setMonth(today.getMonth() - 11) // Go back 11 months for a total of 12 months including current
-  startDate.setDate(1) // Start from the 1st of the month
-  startDate.setHours(0, 0, 0, 0) // Start of the day
-
-  // Get all transactions in the period
-  const { data, error } = await supabase
-    .from("transactions")
-    .select("*")
-    .eq("user_id", user.id)
-    .gte("transaction_date", startDate.toISOString())
-    .lte("transaction_date", today.toISOString())
-    .order("transaction_date", { ascending: true })
-
-  if (error) {
-    console.error("Error fetching monthly data:", error)
-    return []
-  }
-
-  if (!data || data.length === 0) {
-    return []
-  }
-
-  // Create a map of months with income and expense totals
-  const monthlyData: { [key: string]: MonthlyIncomeExpense } = {}
-
-  // Initialize the past 12 months with zero values
-  for (let i = 0; i < 12; i++) {
-    const monthDate = new Date(today)
-    monthDate.setMonth(today.getMonth() - 11 + i)
+  try {
+    const supabase = await createServerSupabaseClient()
     
-    const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, "0")}`
-    const monthName = monthDate.toLocaleString("default", { month: "short" })
-    
-    monthlyData[monthKey] = {
-      month: monthName,
-      income: 0,
-      expenses: 0,
+    if (!supabase) {
+      console.error("Failed to initialize Supabase client")
+      return []
     }
-  }
 
-  // Aggregate transaction data by month
-  data.forEach((transaction) => {
-    const date = new Date(transaction.transaction_date)
-    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+    const user = await getAuthenticatedUser()
 
-    if (monthlyData[monthKey]) {
-      if (transaction.type === 'income') {
-        monthlyData[monthKey].income += transaction.amount
-      } else if (transaction.type === 'expense') {
-        monthlyData[monthKey].expenses += transaction.amount
+    if (!user) {
+      return []
+    }
+
+    // Calculate date range for the past 12 months
+    const today = new Date()
+    const startDate = new Date(today)
+    startDate.setMonth(today.getMonth() - 11) // 12 months ago
+    startDate.setDate(1) // Start of month
+
+    // Get all transactions in the period
+    const { data: transactionData, error: transactionError } = await supabase
+      .from("transactions")
+      .select("*")
+      .eq("user_id", user.id)
+      .gte("transaction_date", startDate.toISOString())
+      .lte("transaction_date", today.toISOString())
+      .order("transaction_date", { ascending: true })
+
+    if (transactionError) {
+      console.error("Error fetching transaction data:", transactionError)
+      // Continue with empty transactions array
+    }
+
+    // Get income data from the income table
+    const { data: incomeData, error: incomeError } = await supabase
+      .from("incomes")
+      .select("*")
+      .eq("user_id", user.id)
+      .gte("start_date", startDate.toISOString())
+      .lte("start_date", today.toISOString())
+      .order("start_date", { ascending: true })
+
+    if (incomeError) {
+      console.error("Error fetching income data:", incomeError)
+      // Continue with empty income array
+    }
+
+    // Get expense data from the expenses table
+    const { data: expenseData, error: expenseError } = await supabase
+      .from("expenses")
+      .select("*")
+      .eq("user_id", user.id)
+      .gte("expense_date", startDate.toISOString())
+      .lte("expense_date", today.toISOString())
+      .order("expense_date", { ascending: true })
+
+    if (expenseError) {
+      console.error("Error fetching expense data:", expenseError)
+      // Continue with empty expense array
+    }
+
+    // Create a map of months with income and expense totals
+    const monthlyData: { [key: string]: MonthlyIncomeExpense } = {}
+
+    // Initialize the past 12 months with zero values
+    for (let i = 0; i < 12; i++) {
+      const monthDate = new Date(today)
+      monthDate.setMonth(today.getMonth() - 11 + i)
+      
+      const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, "0")}`
+      const monthName = monthDate.toLocaleString("default", { month: "short" })
+      
+      monthlyData[monthKey] = {
+        month: monthName,
+        income: 0,
+        expenses: 0,
       }
     }
-  })
 
-  // Convert to array and sort by month
-  return Object.values(monthlyData)
-    .map((value) => ({
-      month: value.month,
-      income: value.income,
-      expenses: value.expenses
-    }))
-    .sort((a, b) => {
-      const monthOrder = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-      return monthOrder.indexOf(a.month) - monthOrder.indexOf(b.month)
-    })
+    // Aggregate transaction data by month
+    if (transactionData) {
+      transactionData.forEach((transaction) => {
+        const date = new Date(transaction.transaction_date)
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+
+        if (monthlyData[monthKey]) {
+          if (transaction.type === 'income') {
+            monthlyData[monthKey].income += transaction.amount || 0
+          } else if (transaction.type === 'expense') {
+            monthlyData[monthKey].expenses += transaction.amount || 0
+          }
+        }
+      })
+    }
+
+    // Add income data
+    if (incomeData) {
+      incomeData.forEach((income) => {
+        const date = new Date(income.start_date)
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+
+        if (monthlyData[monthKey]) {
+          // Track recurring and non-recurring income separately
+          const isRecurring = income.recurrence && income.recurrence !== 'none';
+          
+          // Add to the total income
+          monthlyData[monthKey].income += income.amount || 0;
+          
+          // Add recurring flag to the monthly data if not already present
+          if (!monthlyData[monthKey].hasOwnProperty('recurring_income')) {
+            monthlyData[monthKey].recurring_income = 0;
+            monthlyData[monthKey].one_time_income = 0;
+          }
+          
+          // Add to the appropriate category
+          if (isRecurring) {
+            monthlyData[monthKey].recurring_income += income.amount || 0;
+          } else {
+            monthlyData[monthKey].one_time_income += income.amount || 0;
+          }
+        }
+      })
+    }
+
+    // Add expense data
+    if (expenseData) {
+      expenseData.forEach((expense) => {
+        const date = new Date(expense.expense_date)
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+
+        if (monthlyData[monthKey]) {
+          // Track recurring and non-recurring expenses separately
+          const isRecurring = expense.recurrence && expense.recurrence !== 'none';
+          
+          // Add to the total expenses
+          monthlyData[monthKey].expenses += expense.amount || 0;
+          
+          // Add recurring flag to the monthly data if not already present
+          if (!monthlyData[monthKey].hasOwnProperty('recurring_expenses')) {
+            monthlyData[monthKey].recurring_expenses = 0;
+            monthlyData[monthKey].one_time_expenses = 0;
+          }
+          
+          // Add to the appropriate category
+          if (isRecurring) {
+            monthlyData[monthKey].recurring_expenses += expense.amount || 0;
+          } else {
+            monthlyData[monthKey].one_time_expenses += expense.amount || 0;
+          }
+        }
+      })
+    }
+
+    // Convert to array and sort by month
+    return Object.values(monthlyData)
+      .map((value) => ({
+        month: value.month,
+        income: value.income,
+        expenses: value.expenses,
+        recurring_income: value.recurring_income || 0,
+        one_time_income: value.one_time_income || 0,
+        recurring_expenses: value.recurring_expenses || 0,
+        one_time_expenses: value.one_time_expenses || 0
+      }))
+      .sort((a, b) => {
+        const monthOrder = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        return monthOrder.indexOf(a.month) - monthOrder.indexOf(b.month)
+      })
+  } catch (error) {
+    console.error('Error in getMonthlyIncomeExpenseData:', error)
+    return []
+  }
 }
 
 // Interface for financial calendar data

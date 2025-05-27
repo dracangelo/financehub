@@ -1,28 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { supabaseAdmin, getCurrentUserId } from '@/lib/supabase'
+import { PostgrestError } from '@supabase/supabase-js'
 
 export async function POST(request: NextRequest) {
   try {
     // Get the debt data from the request
-    const requestData = await request.json()
-    // Extract debtId from the request data
-    const { debtId } = requestData
+    const requestData = await request.json().catch(e => {
+      console.error('Failed to parse request JSON:', e)
+      return {}
+    })
     
-    // The client sends the debt data directly in the request body
-    // Remove debtId from the request data to get the debt updates
-    const { debtId: _, ...allUpdates } = requestData
+    if (!requestData || typeof requestData !== 'object') {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Invalid request data',
+        message: 'Failed to update debt: Invalid request format'
+      }, { status: 400 })
+    }
+    
+    // Extract debtId and debt object from the request data
+    const { debtId, debt } = requestData
+    
+    // Make sure we have a valid debt object
+    if (!debt || typeof debt !== 'object') {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Invalid debt data',
+        message: 'Failed to update debt: Invalid debt data format'
+      }, { status: 400 })
+    }
+    
+    console.log('Received debt data:', debt)
     
     // Filter out fields that might not exist in the database schema
     // Only include fields we know exist in the database
     const debtUpdates = {
-      name: allUpdates.name,
-      type: allUpdates.type,
-      current_balance: allUpdates.current_balance,
-      interest_rate: allUpdates.interest_rate,
-      minimum_payment: allUpdates.minimum_payment,
-      loan_term: allUpdates.loan_term,
-      due_date: allUpdates.due_date
+      name: debt.name,
+      type: debt.type,
+      current_balance: debt.current_balance,
+      interest_rate: debt.interest_rate,
+      minimum_payment: debt.minimum_payment,
+      loan_term: debt.loan_term,
+      due_date: debt.due_date
     }
     
     if (!debtId) {
@@ -86,22 +106,26 @@ export async function POST(request: NextRequest) {
       if (checkError.code === 'PGRST116') { // No rows returned
         console.log(`Debt ${debtId} not found for user ${userId}, creating it instead`)
         
-        // Use the debt updates data
+        // Use the debt updates data from the request, but ensure we have valid values
         console.log('Creating debt with data:', debtUpdates)
         
+        // Extract the actual values from the request data (debt object)
+        const debt = requestData.debt || {}
+        
         // Create the debt with the provided ID - only include fields we know exist in the database
+        // and ensure we have valid default values for required fields
         const { data: insertData, error: insertError } = await supabaseAdmin
           .from('debts')
           .insert({
             id: debtId,
             user_id: userId,
-            name: debtUpdates.name || 'Unnamed Debt',
-            type: debtUpdates.type || 'personal_loan',
-            current_balance: debtUpdates.current_balance || 0,
-            interest_rate: debtUpdates.interest_rate || 0,
-            minimum_payment: debtUpdates.minimum_payment || 0,
-            loan_term: debtUpdates.loan_term || 0,
-            due_date: debtUpdates.due_date,
+            name: debt.name || 'Unnamed Debt',
+            type: debt.type || 'personal_loan',
+            current_balance: debt.current_balance || 0,
+            interest_rate: debt.interest_rate || 0,
+            minimum_payment: debt.minimum_payment || 0,
+            loan_term: debt.loan_term || 0,
+            due_date: debt.due_date,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           })
@@ -110,21 +134,44 @@ export async function POST(request: NextRequest) {
         if (insertError) {
           console.error('Error creating debt:', insertError)
           
-          // If the error is a duplicate key error, the debt was already created (possibly by a concurrent request)
-          // In this case, we should consider this a success and return the debt data
-          if (insertError.code === '23505' && insertError.message.includes('already exists')) {
-            console.log('Debt already exists, treating as success')
+          // If the debt already exists (duplicate key error), try to update it instead
+          if (insertError.code === '23505') {
+            console.log('Debt already exists with ID:', debtId, 'Attempting to update it instead')
             
-            // Try to fetch the existing debt
+            // Since the debt already exists, let's update it instead of creating it
+            const { data: updateData, error: updateError } = await supabaseAdmin
+              .from('debts')
+              .update({
+                name: debt.name,
+                type: debt.type,
+                current_balance: debt.current_balance,
+                interest_rate: debt.interest_rate,
+                minimum_payment: debt.minimum_payment,
+                loan_term: debt.loan_term,
+                due_date: debt.due_date,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', debtId)
+              .eq('user_id', userId)
+              .select()
+              
+            if (!updateError && updateData && updateData.length > 0) {
+              return NextResponse.json({
+                success: true,
+                message: 'Debt already existed and was updated successfully',
+                debt: updateData[0]
+              })
+            }
+            
+            // If update failed, try to fetch the existing debt
             const { data: existingDebt, error: fetchError } = await supabaseAdmin
               .from('debts')
               .select('*')
               .eq('id', debtId)
               .eq('user_id', userId)
               .single()
-              
+            
             if (!fetchError && existingDebt) {
-              console.log('Found existing debt, returning it')
               return NextResponse.json({
                 success: true,
                 message: 'Debt already exists',
@@ -135,7 +182,7 @@ export async function POST(request: NextRequest) {
             // If we couldn't fetch the existing debt, still return success with the data we have
             return NextResponse.json({
               success: true,
-              message: 'Debt already exists but could not be fetched',
+              message: 'Debt exists but could not be updated or fetched',
               debt: {
                 id: debtId,
                 user_id: userId,
@@ -146,18 +193,20 @@ export async function POST(request: NextRequest) {
             })
           }
           
-          // For other errors, return an error response
-          return NextResponse.json({
+          const errorResponse = {
             success: false,
             message: 'Failed to create debt',
-            error: insertError.message,
+            error: insertError.message || 'Unknown database error',
+            code: insertError.code || 'UNKNOWN',
             details: insertError,
             debtData: {
               id: debtId,
               user_id: userId,
               ...debtUpdates
             }
-          }, { status: 500 })
+          }
+          console.error('Error response being sent:', JSON.stringify(errorResponse))
+          return NextResponse.json(errorResponse, { status: 500 })
         }
         
         console.log('Created debt successfully:', insertData)
@@ -168,11 +217,14 @@ export async function POST(request: NextRequest) {
         })
       }
       
-      return NextResponse.json({
+      const errorResponse = {
         success: false,
         message: 'Failed to check if debt exists',
-        error: checkError.message
-      }, { status: 500 })
+        error: checkError.message || 'Unknown database error',
+        code: checkError.code || 'UNKNOWN'
+      }
+      console.error('Error response being sent:', JSON.stringify(errorResponse))
+      return NextResponse.json(errorResponse, { status: 500 })
     }
     
     console.log('Existing debt found:', existingDebt)
@@ -200,13 +252,16 @@ export async function POST(request: NextRequest) {
     
     if (error) {
       console.error('Error updating debt:', error)
-      return NextResponse.json({
+      const pgError = error as PostgrestError
+      const errorResponse = {
         success: false,
         message: 'Failed to update debt',
-        error: typeof error === 'object' && error !== null && 'message' in error 
-          ? String(error.message) 
-          : 'Unknown database error'
-      }, { status: 500 })
+        error: pgError.message || 'Unknown database error',
+        code: pgError.code || 'UNKNOWN',
+        details: error
+      }
+      console.error('Error response being sent:', JSON.stringify(errorResponse))
+      return NextResponse.json(errorResponse, { status: 500 })
     }
     
     // Return the updated debt data
@@ -222,10 +277,13 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('Unexpected error updating debt:', error)
-    return NextResponse.json({ 
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    const errorResponse = { 
       success: false, 
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage,
       message: 'Unexpected error updating debt'
-    }, { status: 500 })
+    }
+    console.error('Error response being sent:', JSON.stringify(errorResponse))
+    return NextResponse.json(errorResponse, { status: 500 })
   }
 }

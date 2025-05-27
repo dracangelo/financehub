@@ -560,6 +560,7 @@ export async function deleteCategory(id: string) {
 }
 
 export async function getCategorySpending(period: "week" | "month" | "year" = "month") {
+  // This function returns category spending data formatted for the financial summary component
   try {
     const supabase = await createServerSupabaseClient();
     const user = await getAuthenticatedUser();
@@ -593,6 +594,28 @@ export async function getCategorySpending(period: "week" | "month" | "year" = "m
 
     const endDate = now.toISOString().split("T")[0];
 
+    // Get expense categories from expense_categories table
+    const { data: expenseCategories, error: expenseCategoriesError } = await supabase
+      .from("expense_categories")
+      .select("*")
+      .eq("user_id", user.id);
+      
+    if (expenseCategoriesError) {
+      console.error("Error fetching expense categories:", expenseCategoriesError);
+    }
+    
+    // Create a map of expense categories for quick lookup
+    const expenseCategoryMap = new Map();
+    if (expenseCategories && expenseCategories.length > 0) {
+      expenseCategories.forEach(category => {
+        expenseCategoryMap.set(category.id, {
+          id: category.id,
+          name: category.name,
+          color: category.color || getColorFromString(category.name)
+        });
+      });
+    }
+    
     // Use the categorized_expense_summary view from categories.sql
     const { data: categorySummary, error: summaryError } = await supabase
       .from("categorized_expense_summary")
@@ -705,23 +728,46 @@ export async function getCategorySpending(period: "week" | "month" | "year" = "m
     // Format the summary data
     const spendingByCategory = categorySummary
       .map(summary => {
-        const category = categoryMap.get(summary.category_id) || {};
-        const categoryName = summary.category_name || 'Uncategorized';
+        // First check if we have the category in our expense categories map
+        const expenseCategory = expenseCategoryMap.get(summary.category_id);
         
-        // Use the category's color if available, otherwise generate one based on the category name
-        const categoryColor = category.color || getColorFromString(categoryName);
+        // Then check the user categories map as fallback
+        const userCategory = categoryMap.get(summary.category_id) || {};
+        
+        // Determine the category name, prioritizing real categories
+        let categoryName = 'Uncategorized';
+        if (expenseCategory) {
+          categoryName = expenseCategory.name;
+        } else if (summary.category_name) {
+          categoryName = summary.category_name;
+        } else if (userCategory.name) {
+          categoryName = userCategory.name;
+        }
+        
+        // Determine the color, prioritizing real categories
+        let categoryColor;
+        if (expenseCategory && expenseCategory.color) {
+          categoryColor = expenseCategory.color;
+        } else if (userCategory.color) {
+          categoryColor = userCategory.color;
+        } else {
+          categoryColor = getColorFromString(categoryName);
+        }
         
         return {
           category_id: summary.category_id,
           category_name: categoryName,
+          name: categoryName, // Add name field for compatibility with financial summary component
           color: categoryColor,
-          icon: category.icon || null,
-          total_amount: summary.total_spent,
-          transaction_count: 1 // We don't have count in the summary view
+          icon: userCategory.icon || null,
+          total_amount: summary.total_spent || 0,
+          amount: summary.total_spent || 0, // Add amount field for compatibility with financial summary component
+          transaction_count: summary.transaction_count || 1,
+          is_recurring: summary.is_recurring || false // Add flag for recurring expenses
         };
       })
-      .filter(category => category.total_amount > 0) // Only include categories with spending
-      .sort((a, b) => b.total_amount - a.total_amount); // Sort by amount descending
+      .filter(category => (category.total_amount > 0 || category.amount > 0)) // Only include categories with spending
+      .sort((a, b) => (b.amount || b.total_amount || 0) - (a.amount || a.total_amount || 0)); // Sort by amount descending
 
     return spendingByCategory;
   } catch (error) {

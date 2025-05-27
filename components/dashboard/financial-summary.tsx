@@ -37,6 +37,10 @@ interface FinancialSummaryProps {
     month: string
     income: number
     expenses: number
+    recurring_income?: number
+    one_time_income?: number
+    recurring_expenses?: number
+    one_time_expenses?: number
   }>
   // Direct props as passed from dashboard page
   totalIncome?: number
@@ -46,6 +50,7 @@ interface FinancialSummaryProps {
     name: string
     amount: number
     color?: string
+    is_recurring?: boolean
   }>
 }
 
@@ -77,9 +82,21 @@ export function FinancialSummary({
     : []
   
   // Prepare data for category spending chart
-  const topCategories = [...categorySpending]
-    .sort((a, b) => b.amount - a.amount)
-    .slice(0, 5)
+  const topCategories = [...(categorySpending || [])]
+    .filter(category => category && category.amount > 0) // Filter out categories with no spending
+    .sort((a, b) => (b.amount || 0) - (a.amount || 0)) // Sort by amount, handling null/undefined values
+    .slice(0, 5) // Get top 5 categories
+    
+  // Format monthly data for the chart
+  const formattedMonthlyData = (monthlyData || []).map(item => ({
+    month: item.month,
+    income: Number(item.income) || 0,
+    expenses: Number(item.expenses) || 0,
+    recurring_income: Number(item.recurring_income) || 0,
+    one_time_income: Number(item.one_time_income) || 0,
+    recurring_expenses: Number(item.recurring_expenses) || 0,
+    one_time_expenses: Number(item.one_time_expenses) || 0
+  }))
   
   // Default colors for categories
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#A569BD', '#5DADE2', '#58D68D']
@@ -140,34 +157,38 @@ export function FinancialSummary({
               <div className="h-[200px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart
-                    data={monthlyData || []}
+                    data={formattedMonthlyData}
                     margin={{ top: 5, right: 5, left: 5, bottom: 5 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                     <XAxis dataKey="month" stroke="#6b7280" />
-                    <YAxis tickFormatter={(value) => `$${value / 1000}k`} stroke="#6b7280" />
+                    <YAxis stroke="#6b7280" tickFormatter={(value) => `$${value}`} />
                     <Tooltip 
                       formatter={(value) => formatCurrency(value as number)}
                       contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)' }}
                     />
-                    <Legend iconType="circle" />
+                    <Legend />
+                    {/* Total Income line removed as requested */}
                     <Line
                       type="monotone"
-                      dataKey="income"
-                      name="Income"
-                      stroke="#22c55e"
+                      dataKey="recurring_income"
+                      name="Recurring Income"
+                      stroke="#4ade80"
                       strokeWidth={2}
-                      dot={{ r: 4, strokeWidth: 2 }}
-                      activeDot={{ r: 8 }}
+                      strokeDasharray="5 5"
+                      dot={{ r: 3, strokeWidth: 2 }}
+                      activeDot={{ r: 6 }}
                     />
+                    {/* Total Expenses line removed as requested */}
                     <Line
                       type="monotone"
-                      dataKey="expenses"
-                      name="Expenses"
-                      stroke="#ef4444"
+                      dataKey="recurring_expenses"
+                      name="Recurring Expenses"
+                      stroke="#f87171"
                       strokeWidth={2}
-                      dot={{ r: 4, strokeWidth: 2 }}
-                      activeDot={{ r: 8 }}
+                      strokeDasharray="5 5"
+                      dot={{ r: 3, strokeWidth: 2 }}
+                      activeDot={{ r: 6 }}
                     />
                   </LineChart>
                 </ResponsiveContainer>
@@ -225,7 +246,16 @@ export function FinancialSummary({
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                     <XAxis type="number" tickFormatter={(value) => `$${value}`} stroke="#6b7280" />
-                    <YAxis type="category" dataKey="name" stroke="#6b7280" width={100} />
+                    <YAxis 
+                      type="category" 
+                      dataKey="name" 
+                      stroke="#6b7280" 
+                      width={100}
+                      tickFormatter={(value, index) => {
+                        const category = topCategories[index];
+                        return category?.is_recurring ? `${value} (Recurring)` : value;
+                      }}
+                    />
                     <Tooltip 
                       formatter={(value) => formatCurrency(value as number)}
                       contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)' }}
@@ -234,7 +264,10 @@ export function FinancialSummary({
                       {topCategories.map((entry, index) => (
                         <Cell 
                           key={`cell-${index}`} 
-                          fill={entry.color || COLORS[index % COLORS.length]} 
+                          fill={entry.color || COLORS[index % COLORS.length]}
+                          strokeWidth={entry.is_recurring ? 2 : 0}
+                          stroke={entry.is_recurring ? '#000' : 'none'}
+                          strokeDasharray={entry.is_recurring ? '5 5' : 'none'}
                         />
                       ))}
                     </Bar>

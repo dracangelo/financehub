@@ -630,109 +630,45 @@ export class DebtService {
       window.location.href = '/login'
     }
   }
-
-  async updateDebt(debtId: string, debt: Partial<Debt>): Promise<void> {
-    try {
-      // Try to get the current user ID
-      let userId: string | null = null;
-      try {
-        userId = await this.getUserId();
-        if (!userId) {
-          throw new Error('Authentication required: Please sign in to update your debts');
-        }
-      } catch (authError) {
-        console.warn('Authentication error in updateDebt:', authError);
-        throw new Error('Authentication required: Please sign in to update your debts');
-      }
-      
-      // Use the server-side API endpoint to update the debt
-      console.log('Using server-side API to update debt')
-      const response = await fetch('/api/debts/update', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-          // No client ID header - only using authenticated users
-        },
-        credentials: 'include', // Include cookies for authentication
-        body: JSON.stringify({
-          debtId,
-          ...debt
-        })
-      })
-      
-      if (!response.ok) {
-        const errorData = await response.json()
-        console.error('Error from debt update API:', errorData)
-        throw new Error(errorData.message || 'Failed to update debt')
-      }
-      
-      const result = await response.json()
-      console.log('Successfully updated debt via API:', result)
-      
-      if (!result.success) {
-        throw new Error('Failed to update debt: Invalid response from server')
-      }
-    } catch (error) {
-      console.error('Error in updateDebt:', error)
-      
-      // If the error is authentication-related, redirect to login
-      if (error instanceof Error && this.isAuthError(error.message)) {
-        this.redirectToLogin()
-        return
-      }
-      throw new Error(`Failed to update debt: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    }
+  
+  // This method is kept for backward compatibility but now just delegates to the client-side approach
+  private async attemptDirectInsert(debt: Omit<Debt, 'id' | 'user_id' | 'created_at' | 'updated_at'>, userId: string): Promise<Debt> {
+    const clientDebt = this.createClientSideDebt(debt, userId)
+    this.storeDebtInLocalStorage(clientDebt)
+    return clientDebt;
+  }
+  
+  // Helper method to check if an error is authentication-related
+  private isAuthError(errorMessage?: string): boolean {
+    if (!errorMessage) return false
+    return errorMessage.includes('JWT') || 
+           errorMessage.includes('auth') || 
+           errorMessage.includes('Authentication') ||
+           errorMessage.includes('permission denied') ||
+           errorMessage.includes('not authorized')
   }
 
-  async deleteDebt(debtId: string): Promise<void> {
-    try {
-      // Get the current user ID
-      const userId = await this.getUserId()
-      
-      // If no user ID is found, the user is not authenticated
-      if (!userId) {
-        console.log('User not authenticated, redirecting to login')
-        this.redirectToLogin()
-        throw new Error('Authentication required')
-      }
-      
-      // Use the server-side API endpoint to delete the debt
-      console.log('Using server-side API to delete debt')
-      const response = await fetch('/api/debts/delete', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-          // No client ID header - only using authenticated users
-        },
-        credentials: 'include', // Include cookies for authentication
-        body: JSON.stringify({ debtId })
-      })
-      
-      if (!response.ok) {
-        const errorData = await response.json()
-        console.error('Error from debt delete API:', errorData)
-        throw new Error(errorData.message || 'Failed to delete debt')
-      }
-      
-      const result = await response.json()
-      console.log('Successfully deleted debt via API:', result)
-      
-      if (!result.success) {
-        throw new Error('Failed to delete debt: Invalid response from server')
-      }
-    } catch (error) {
-      console.error('Error in deleteDebt:', error)
-      
-      // If the error is authentication-related, redirect to login
-      if (error instanceof Error && this.isAuthError(error.message)) {
-        this.redirectToLogin()
+  // Helper method to redirect to login page when authentication fails
+  private redirectToLogin(): void {
+    if (typeof window !== 'undefined') {
+      // Check if we're already on the login page to prevent redirect loops
+      if (window.location.pathname === '/login') {
+        console.log('Already on login page, not redirecting')
         return
       }
       
-      throw new Error(`Failed to delete debt: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      // Store the current path to redirect back after login
+      const currentPath = window.location.pathname
+      if (currentPath !== '/' && !currentPath.includes('/login')) {
+        localStorage.setItem('redirectAfterLogin', currentPath)
+      }
+      
+      console.log('Redirecting to login page')
+      window.location.href = '/login'
     }
   }
-
+  
+  // Calculate repayment plan using the specified strategy
   async calculateRepaymentPlan(strategy: DebtRepaymentStrategy): Promise<DebtRepaymentPlan[]> {
     try {
       const userId = await this.ensureUserId()
@@ -757,7 +693,7 @@ export class DebtService {
       })
 
       if (error) {
-        console.error('Error calculating repayment plan:', error)
+        console.error(`Error calculating ${strategy} repayment plan:`, error)
         return []
       }
       return data || []
@@ -891,6 +827,439 @@ export class DebtService {
     }
   }
 
-  // This is a placeholder to fix the duplicate function implementation error
-  // The actual implementation is at line 280
+  async updateDebt(debtId: string, debt: Partial<Debt>): Promise<void> {
+    try {
+      // Try to get the current user ID
+      let userId: string | null = null;
+      try {
+        userId = await this.getUserId();
+        if (!userId) {
+          throw new Error('Authentication required: Please sign in to update your debts');
+        }
+      } catch (authError) {
+        console.warn('Authentication error in updateDebt:', authError);
+        throw new Error('Authentication required: Please sign in to update your debts');
+      }
+      
+      // Use the server-side API endpoint to update the debt
+      console.log('Using server-side API to update debt');
+      console.log('Sending debt update request:', { debtId, ...debt });
+      
+      try {
+        const response = await fetch('/api/debts/update', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+            // No client ID header - only using authenticated users
+          },
+          credentials: 'include', // Include cookies for authentication
+          body: JSON.stringify({
+            debtId,
+            ...debt
+          })
+        });
+        
+        // Always try to parse the response body, even if the response is not OK
+        let responseData;
+        try {
+          responseData = await response.json();
+          console.log('Response from debt update API:', responseData);
+        } catch (parseError) {
+          console.error('Failed to parse API response:', parseError);
+          responseData = { success: false, message: 'Invalid response format from server' };
+        }
+        
+        if (!response.ok) {
+          // If we have a structured error response, use it
+          if (responseData && responseData.error) {
+            throw new Error(responseData.message || responseData.error || 'Failed to update debt');
+          } else {
+            // If we don't have a structured error, use the status text
+            throw new Error(`Server error (${response.status}): ${response.statusText || 'Unknown error'}`);
+          }
+        }
+        
+        if (!responseData.success) {
+          throw new Error(responseData.message || 'Failed to update debt: Invalid response from server');
+        }
+        
+        console.log('Successfully updated debt via API:', responseData);
+        return;
+        
+      } catch (fetchError) {
+        console.error('Fetch error in updateDebt:', fetchError);
+        throw fetchError;
+      }
+    } catch (error) {
+      console.error('Error in updateDebt:', error);
+      
+      // If the error is authentication-related, redirect to login
+      if (error instanceof Error && this.isAuthError(error.message)) {
+        this.redirectToLogin();
+        return;
+      }
+      
+      throw new Error(`Failed to update debt: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async deleteDebt(debtId: string): Promise<void> {
+    try {
+      // Try to get the current user ID - strict authentication required
+      let userId: string | null = null;
+      try {
+        userId = await this.getUserId();
+        if (!userId) {
+          throw new Error('Authentication required: Please sign in to delete your debts');
+        }
+      } catch (authError) {
+        console.warn('Authentication error in deleteDebt:', authError);
+        throw new Error('Authentication required: Please sign in to delete your debts');
+      }
+      
+      // Use the server-side API endpoint to delete the debt
+      console.log('Using server-side API to delete debt')
+      const response = await fetch('/api/debts/delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+          // No client ID header - only using authenticated users
+        },
+        credentials: 'include', // Include cookies for authentication
+        body: JSON.stringify({
+          debtId
+        })
+      })
+      
+      // Always try to parse the response body, even if the response is not OK
+      let responseData;
+      try {
+        responseData = await response.json();
+        console.log('Response from debt delete API:', responseData);
+      } catch (parseError) {
+        console.error('Failed to parse API response:', parseError);
+        throw new Error('Invalid response format from server');
+      }
+      
+      // Check if the response indicates success
+      if (!response.ok) {
+        const errorMessage = responseData?.message || responseData?.error || 'Failed to delete debt';
+        console.error('Error deleting debt:', errorMessage);
+        throw new Error(errorMessage);
+      }
+      
+      // Verify the response contains success flag
+      if (!responseData.success) {
+        const errorMessage = responseData.message || 'Unknown error occurred while deleting debt';
+        console.error('API reported failure:', errorMessage);
+        throw new Error(errorMessage);
+      }
+      
+      // Remove the debt from local storage if client storage is enabled
+      const config = this.getClientConfig();
+      if (config.useClientStorage) {
+        this.removeLocalDebt(debtId);
+      }
+      
+      console.log('Successfully deleted debt:', responseData);
+    } catch (error) {
+      console.error('Error in deleteDebt:', error);
+      
+      // If the error is authentication-related, redirect to login
+      if (error instanceof Error && this.isAuthError(error.message)) {
+        this.redirectToLogin();
+        return;
+      }
+      
+      throw new Error(`Failed to delete debt: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async calculateRepaymentPlan(strategy: DebtRepaymentStrategy): Promise<DebtRepaymentPlan[]> {
+    try {
+      const userId = await this.ensureUserId();
+      
+      let functionName = '';
+      switch (strategy) {
+        case 'avalanche':
+          functionName = 'calculate_avalanche_repayment_plan';
+          break;
+        case 'snowball':
+          functionName = 'calculate_snowball_repayment_plan';
+          break;
+        default:
+          console.error('Invalid repayment strategy:', strategy);
+          return [];
+      }
+      
+      const { data, error } = await this.getSupabaseClient().rpc(functionName, {
+        _user_id: userId
+      });
+
+      if (error) {
+        console.error(`Error calculating ${strategy} repayment plan:`, error);
+        return [];
+      }
+      return data || [];
+    } catch (error) {
+      console.error('Error in calculateRepaymentPlan:', error);
+      return [];
+    }
+  }
+
+  async calculateInterestSavings(newInterestRate: number, loanTerm: number): Promise<number> {
+    try {
+      const userId = await this.ensureUserId();
+      
+      const { data, error } = await this.getSupabaseClient().rpc('calculate_interest_savings', {
+        _user_id: userId,
+        _new_interest_rate: newInterestRate,
+        _loan_term: loanTerm
+      });
+
+      if (error) {
+        console.error('Error calculating interest savings:', error);
+        return 0;
+      }
+      return data || 0;
+    } catch (error) {
+      console.error('Error in calculateInterestSavings:', error);
+      return 0;
+    }
+  }
+
+  async createRefinancingOpportunity(
+    newInterestRate: number, 
+    loanTerm: number, 
+    debtId: string
+  ): Promise<void> {
+    try {
+      const userId = await this.ensureUserId();
+      
+      const { error } = await this.getSupabaseClient().rpc('create_refinancing_opportunity', {
+        _user_id: userId,
+        _new_interest_rate: newInterestRate,
+        _loan_term: loanTerm,
+        _debt_id: debtId
+      });
+
+      if (error) {
+        console.error('Error creating refinancing opportunity:', error);
+      }
+    } catch (error) {
+      console.error('Error in createRefinancingOpportunity:', error);
+    }
+  }
+
+  async updateDebtAfterRefinancing(
+    debtId: string, 
+    newInterestRate: number, 
+    newLoanTerm: number
+  ): Promise<void> {
+    try {
+      const { error } = await this.getSupabaseClient().rpc('update_debt_after_refinancing', {
+        _debt_id: debtId,
+        _new_interest_rate: newInterestRate,
+        _new_loan_term: newLoanTerm
+      });
+
+      if (error) {
+        console.error('Error updating debt after refinancing:', error);
+      }
+    } catch (error) {
+      console.error('Error in updateDebtAfterRefinancing:', error);
+    }
+  }
+
+  async calculateDebtToIncomeRatio(): Promise<number> {
+    try {
+      const userId = await this.ensureUserId();
+      
+      const { data, error } = await this.getSupabaseClient().rpc('calculate_debt_to_income_ratio', {
+        _user_id: userId
+      });
+
+      if (error) {
+        console.error('Error calculating debt to income ratio:', error);
+        return 0;
+      }
+      return data || 0;
+    } catch (error) {
+      console.error('Error in calculateDebtToIncomeRatio:', error);
+      return 0;
+    }
+  }
+  
+  /**
+   * Update a debt with new information
+   * Requires authentication and follows strict security practices
+   */
+  async updateDebt(debtId: string, debt: Partial<Debt>): Promise<void> {
+    try {
+      // Ensure we have a valid authenticated user ID
+      const userId = await this.ensureUserId();
+      
+      console.log(`Updating debt ${debtId} for user ${userId}`);
+      console.log('Debt data being sent:', debt);
+      
+      // Make sure we're sending valid data
+      if (!debt || Object.keys(debt).length === 0) {
+        console.error('No valid debt data to update');
+        throw new Error('No valid debt data to update');
+      }
+      
+      // Send the update request to the server-side API
+      const response = await fetch('/api/debts/update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          debtId,
+          debt
+        })
+      });
+      
+      // Parse the response JSON regardless of status code
+      const result = await response.json().catch(e => {
+        console.error('Failed to parse response JSON:', e);
+        return { success: false, message: 'Failed to parse server response' };
+      });
+      
+      // Check if the response indicates success, even if the status code is not 200
+      if (result.success === true) {
+        console.log('Debt operation successful:', result);
+        
+        // If client storage is enabled, update the debt in local storage
+        const config = this.getClientConfig();
+        if (config.useClientStorage) {
+          this.updateLocalDebtInStorage(debtId, debt);
+        }
+        
+        return;
+      }
+      
+      // If we get here, the response was not successful
+      if (!response.ok) {
+        const errorMessage = result.message || 'Unknown error updating debt';
+        console.error('Error updating debt:', result);
+        
+        // Check if this is an authentication error
+        if (this.isAuthError(errorMessage)) {
+          console.error('Authentication error while updating debt:', errorMessage);
+          this.redirectToLogin();
+          throw new Error(`Authentication error: ${errorMessage}`);
+        }
+        
+        throw new Error(`Error updating debt: ${errorMessage}`);
+      }
+      
+      // Update was successful
+      console.log('Debt updated successfully:', result);
+      
+      // If client storage is enabled, update the debt in local storage
+      const config = this.getClientConfig();
+      if (config.useClientStorage) {
+        this.updateLocalDebtInStorage(debtId, debt);
+      }
+      
+    } catch (error) {
+      console.error('Error in updateDebt:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Delete a debt
+   * Requires authentication and follows strict security practices
+   */
+  async deleteDebt(debtId: string): Promise<void> {
+    try {
+      // Ensure we have a valid authenticated user ID
+      const userId = await this.ensureUserId();
+      
+      console.log(`Deleting debt ${debtId} for user ${userId}`);
+      
+      // Send the delete request to the server-side API
+      const response = await fetch('/api/debts/delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          debtId
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        const errorMessage = errorData.message || 'Unknown error deleting debt';
+        console.error('Error deleting debt:', errorData);
+        
+        // Check if this is an authentication error
+        if (this.isAuthError(errorMessage)) {
+          console.error('Authentication error while deleting debt:', errorMessage);
+          this.redirectToLogin();
+          throw new Error(`Authentication error: ${errorMessage}`);
+        }
+        
+        throw new Error(`Error deleting debt: ${errorMessage}`);
+      }
+      
+      // Delete was successful
+      const result = await response.json();
+      console.log('Debt deleted successfully:', result);
+      
+      // If client storage is enabled, remove the debt from local storage
+      const config = this.getClientConfig();
+      if (config.useClientStorage) {
+        this.deleteLocalDebt(debtId);
+      }
+      
+    } catch (error) {
+      console.error('Error in deleteDebt:', error);
+      throw error;
+    }
+  }
+  
+  // Public method to force sync all local debts to the database
+  async forceSync(): Promise<{ success: boolean; message: string }> {
+    try {
+      const userId = await this.ensureUserId();
+      
+      // No longer setting client ID in cookies
+      // We only use authenticated user IDs now
+      
+      // Get client configuration
+      const config = this.getClientConfig();
+      
+      // If database operations are disabled, return error
+      if (!config.attemptDatabaseOperations) {
+        return { success: false, message: 'Database operations are disabled' };
+      }
+      
+      // Get local debts
+      const localDebts = this.getLocalDebts(userId);
+      if (localDebts.length === 0) {
+        return { success: true, message: 'No local debts to sync' };
+      }
+      
+      console.log(`Syncing ${localDebts.length} local debts to database`);
+      
+      // Helper method to sync local debts to the database
+      await this.syncLocalDebtsToDatabase(localDebts, userId);
+      
+      console.log(`Force sync complete: ${localDebts.length} debts synced successfully`);
+      return { 
+        success: true, 
+        message: `Successfully synced ${localDebts.length} debts to database` 
+      };
+    } catch (error) {
+      console.error('Error in forceSync:', error);
+      return { 
+        success: false, 
+        message: `Error syncing debts: ${error instanceof Error ? error.message : 'Unknown error'}` 
+      };
+    }
+  }
 }

@@ -250,4 +250,3 @@ export function IncomeExpenseChart({
     </Card>
   )
 }
-

@@ -129,11 +129,14 @@ export default async function DashboardPage() {
       .reduce((sum, transaction) => sum + transaction.amount, 0)
 
     // Format category spending data for the financial summary
-    const formattedCategorySpending = categorySpending.map(category => ({
-      name: category.category_name || 'Uncategorized',
-      amount: category.total_amount || 0,
-      color: category.color || '#888888'
-    }))
+    const formattedCategorySpending = categorySpending
+      .filter(category => category && (category.total_amount > 0 || category.amount > 0))
+      .map(category => ({
+        name: category.name || category.category_name || 'Uncategorized',
+        amount: Number(category.amount || category.total_amount || 0),
+        color: category.color || '#888888',
+        is_recurring: category.is_recurring || false
+      }))
 
     // Ensure we have valid net worth history data or use an empty array
     const netWorthHistory = Array.isArray(netWorthData?.history) ? netWorthData.history : [];
