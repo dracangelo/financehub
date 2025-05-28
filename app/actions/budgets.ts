@@ -579,70 +579,135 @@ export async function updateBudget(id: string, budgetData: any) {
       throw updateError
     }
 
-    // Delete existing categories
-    const { error: deleteError } = await supabase
+    // Instead of deleting all categories, we'll fetch existing ones to preserve allocations
+    const { data: existingCategories, error: fetchCategoriesError } = await supabase
       .from("budget_categories")
-      .delete()
+      .select("*, budget_items(*)")
       .eq("budget_id", id)
 
-    if (deleteError) {
-      console.error("Error deleting existing categories:", deleteError)
-      throw deleteError
+    if (fetchCategoriesError) {
+      console.error("Error fetching existing categories:", fetchCategoriesError)
+      throw fetchCategoriesError
     }
+    
+    // Create a map of existing categories with their allocations for quick lookup
+    const existingCategoryMap = new Map();
+    existingCategories?.forEach(category => {
+      // Calculate total allocation from budget items
+      const totalAllocation = category.budget_items?.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0) || 0;
+      existingCategoryMap.set(category.id, {
+        ...category,
+        amount_allocated: totalAllocation
+      });
+    });
 
-    // Process and insert all categories and subcategories
+    // Process and insert/update all categories and subcategories
     const allCategories = [];
     
     // Extract parent categories and their subcategories
     console.log(`Processing ${budgetData.categories.length} categories for budget ${id}`);
     
     for (const category of budgetData.categories) {
-      // Log the category we're about to insert
-      const categoryAmount = parseFloat(category.amount || category.amount_allocated || 0);
-      console.log(`Inserting category: ${category.name} with amount ${categoryAmount}`);
+      // Check if this category already exists
+      const existingCategory = category.id ? existingCategoryMap.get(category.id) : null;
       
-      // Insert parent category - only include fields that exist in the database schema
-      const { data: budgetCategory, error: categoryError } = await supabase
-        .from("budget_categories")
-        .insert({
-          budget_id: id,
-          name: category.name,
-          description: category.description || null,
-          parent_category_id: null, // No parent for top-level categories
-          id: category.id || undefined // Preserve original ID if it exists
-        })
-        .select()
-        .single()
-
-      if (categoryError) {
-        console.error("Error creating category:", categoryError)
-        throw categoryError
+      // Determine the amount to use - prioritize the incoming amount, but fall back to existing amount
+      let categoryAmount = parseFloat(category.amount || category.amount_allocated || 0);
+      
+      // If we have an existing category and the new amount is 0, use the existing amount
+      if (existingCategory && categoryAmount === 0) {
+        categoryAmount = existingCategory.amount_allocated || 0;
       }
       
-      console.log(`Successfully inserted category with ID: ${budgetCategory.id}`);
+      console.log(`Processing category: ${category.name} with amount ${categoryAmount}`);
+      
+      // If the category exists, update it; otherwise, insert a new one
+      let budgetCategory;
+      
+      if (existingCategory) {
+        // Update the existing category
+        const { data: updatedCategory, error: updateError } = await supabase
+          .from("budget_categories")
+          .update({
+            name: category.name,
+            description: category.description || null,
+            parent_category_id: null, // No parent for top-level categories
+          })
+          .eq("id", existingCategory.id)
+          .select()
+          .single();
+          
+        if (updateError) {
+          console.error("Error updating category:", updateError);
+          throw updateError;
+        }
+        
+        budgetCategory = updatedCategory;
+        console.log(`Updated existing category with ID: ${budgetCategory.id}`);
+      } else {
+        // Insert a new category
+        const { data: newCategory, error: insertError } = await supabase
+          .from("budget_categories")
+          .insert({
+            budget_id: id,
+            name: category.name,
+            description: category.description || null,
+            parent_category_id: null, // No parent for top-level categories
+          })
+          .select()
+          .single();
+          
+        if (insertError) {
+          console.error("Error creating category:", insertError);
+          throw insertError;
+        }
+        
+        budgetCategory = newCategory;
+        console.log(`Created new category with ID: ${budgetCategory.id}`);
+      }
       
       // Add to our collection of all categories
       allCategories.push(budgetCategory);
       
-      // Create budget item for this category to store the amount
+      // Handle budget items for this category
       if (categoryAmount > 0) {
-        const { data: budgetItem, error: itemError } = await supabase
-          .from("budget_items")
-          .insert({
-            category_id: budgetCategory.id,
-            amount: categoryAmount,
-            actual_amount: 0, // Default to 0 for new items
-            notes: `Auto-created for category ${category.name}`
-          })
-          .select()
-          .single()
-          
-        if (itemError) {
-          console.error("Error creating budget item:", itemError)
-          throw itemError
-        }
+        // Check if there's an existing budget item for this category
+        const existingItems = existingCategory?.budget_items || [];
         
-        console.log(`Created budget item with amount ${categoryAmount} for category ${category.name}`);
+        if (existingItems.length > 0) {
+          // Update the first existing item
+          const { error: updateItemError } = await supabase
+            .from("budget_items")
+            .update({
+              amount: categoryAmount,
+              notes: `Updated for category ${category.name}`
+            })
+            .eq("id", existingItems[0].id);
+            
+          if (updateItemError) {
+            console.error("Error updating budget item:", updateItemError);
+            throw updateItemError;
+          }
+          
+          console.log(`Updated budget item with amount ${categoryAmount} for category ${category.name}`);
+        } else {
+          // Create a new budget item
+          const { error: insertItemError } = await supabase
+            .from("budget_items")
+            .insert({
+              category_id: budgetCategory.id,
+              amount: categoryAmount,
+              actual_amount: 0, // Default to 0 for new items
+              notes: `Auto-created for category ${category.name}`
+            });
+            
+          if (insertItemError) {
+            console.error("Error creating budget item:", insertItemError);
+            throw insertItemError;
+          }
+          
+          console.log(`Created budget item with amount ${categoryAmount} for category ${category.name}`);
+        }
       }
 
       // Insert subcategories if they exist
