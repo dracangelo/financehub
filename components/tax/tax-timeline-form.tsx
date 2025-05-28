@@ -73,47 +73,174 @@ export function TaxTimelineForm({ initialData, onSubmit, onCancel }: TaxTimeline
   const extractEventsFromText = () => {
     if (!textInput.trim()) return
 
-    // Simple regex to find dates in various formats
+    // Date regex for various formats
     const dateRegex = /(\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{1,2}-\d{1,2}|\w+ \d{1,2},? \d{4})/g
     const events: any[] = []
     
-    // Split by lines or sentences
-    const lines = textInput.split(/[\n\.\!]/).filter(line => line.trim().length > 0)
+    // First, try to detect the format of the input
+    const inputText = textInput.trim()
     
-    for (const line of lines) {
-      const dateMatch = line.match(dateRegex)
-      if (dateMatch) {
+    // Check for structured formats with Name/Description/Due Date pattern
+    if (inputText.includes('Name:') && inputText.includes('Due Date:')) {
+      console.log('Detected structured format with Name/Description/Due Date')
+      
+      // Split by double newlines to get each entry
+      const entries = inputText.split(/\n\s*\n/).filter(entry => entry.trim().length > 0)
+      
+      for (const entry of entries) {
         try {
-          const dateStr = dateMatch[0]
-          const date = new Date(dateStr)
+          // Extract name
+          const nameMatch = entry.match(/Name:\s*(.+?)(?:\n|$)/)
+          const title = nameMatch ? nameMatch[1].trim() : 'Tax Deadline'
           
-          if (!isNaN(date.getTime())) {
-            // Extract title - simple heuristic: first few words after the date
-            const parts = line.split(dateStr)
-            let title = "Tax Deadline"
-            let description = line.trim()
+          // Extract description
+          const descMatch = entry.match(/Description:\s*(.+?)(?:\n|(?=Due Date:)|$)/s)
+          const description = descMatch ? descMatch[1].trim() : ''
+          
+          // Extract due date
+          const dueDateMatch = entry.match(/Due Date:\s*(.+?)(?:\n|$)/)
+          if (dueDateMatch) {
+            const dateStr = dueDateMatch[1].trim()
+            const date = new Date(dateStr)
             
-            if (parts.length > 1 && parts[1].trim()) {
-              const afterDate = parts[1].trim()
-              title = afterDate.split(/\s+/).slice(0, 5).join(" ")
-              if (title.length > 50) {
-                title = title.substring(0, 47) + "..."
-              }
+            if (!isNaN(date.getTime())) {
+              // Format date as YYYY-MM-DD
+              const formattedDate = date.toISOString().split('T')[0]
+              
+              events.push({
+                title,
+                description,
+                due_date: formattedDate,
+                is_recurring: false,
+                is_completed: false
+              })
             }
-            
-            // Format date as YYYY-MM-DD for the input
-            const formattedDate = date.toISOString().split('T')[0]
-            
-            events.push({
-              title,
-              description,
-              due_date: formattedDate,
-              is_recurring: false,
-              is_completed: false
-            })
           }
         } catch (err) {
-          console.error("Error parsing date:", err)
+          console.error('Error parsing structured entry:', err)
+        }
+      }
+    }
+    // Check for table format with headers
+    else if (inputText.includes('Name\tDescription\tDue Date') || 
+             inputText.includes('Name|Description|Due Date') ||
+             inputText.includes('Name Description Due Date')) {
+      console.log('Detected table format')
+      
+      // Split by newlines to get rows
+      const rows = inputText.split(/\n/).filter(row => row.trim().length > 0)
+      
+      // Skip the header row
+      for (let i = 1; i < rows.length; i++) {
+        try {
+          // Split by tab, pipe, or multiple spaces
+          const cells = rows[i].split(/\t|\|\s*|\s{2,}/).filter(cell => cell.trim().length > 0)
+          
+          if (cells.length >= 3) {
+            const title = cells[0].trim()
+            const description = cells[1].trim()
+            const dateStr = cells[2].trim()
+            const date = new Date(dateStr)
+            
+            if (!isNaN(date.getTime())) {
+              const formattedDate = date.toISOString().split('T')[0]
+              
+              events.push({
+                title,
+                description,
+                due_date: formattedDate,
+                is_recurring: false,
+                is_completed: false
+              })
+            }
+          }
+        } catch (err) {
+          console.error('Error parsing table row:', err)
+        }
+      }
+    }
+    // Check for numbered list format
+    else if (/\d+\.\s+\w+/.test(inputText)) {
+      console.log('Detected numbered list format')
+      
+      // Split by numbered items
+      const items = inputText.split(/\n\s*\d+\.\s+/).filter(item => item.trim().length > 0)
+      
+      for (const item of items) {
+        try {
+          // Look for description and due date patterns
+          const titleMatch = item.match(/^([^\n]+)/)
+          const title = titleMatch ? titleMatch[1].trim() : 'Tax Deadline'
+          
+          const descMatch = item.match(/Description:\s*(.+?)(?:\n|(?=Due Date:)|$)/s) || 
+                           item.match(/- Description:\s*(.+?)(?:\n|$)/)
+          const description = descMatch ? descMatch[1].trim() : item.trim()
+          
+          const dueDateMatch = item.match(/Due Date:\s*(.+?)(?:\n|$)/) || 
+                              item.match(/- Due Date:\s*(.+?)(?:\n|$)/)
+          
+          if (dueDateMatch) {
+            const dateStr = dueDateMatch[1].trim()
+            const date = new Date(dateStr)
+            
+            if (!isNaN(date.getTime())) {
+              const formattedDate = date.toISOString().split('T')[0]
+              
+              events.push({
+                title,
+                description,
+                due_date: formattedDate,
+                is_recurring: false,
+                is_completed: false
+              })
+            }
+          }
+        } catch (err) {
+          console.error('Error parsing numbered item:', err)
+        }
+      }
+    }
+    // Fallback to the original line-by-line parsing
+    else {
+      console.log('Using fallback line-by-line parsing')
+      
+      // Split by lines or sentences
+      const lines = inputText.split(/[\n\.\!]/).filter(line => line.trim().length > 0)
+      
+      for (const line of lines) {
+        const dateMatch = line.match(dateRegex)
+        if (dateMatch) {
+          try {
+            const dateStr = dateMatch[0]
+            const date = new Date(dateStr)
+            
+            if (!isNaN(date.getTime())) {
+              // Extract title - simple heuristic: first few words before the date
+              const parts = line.split(dateStr)
+              let title = "Tax Deadline"
+              let description = line.trim()
+              
+              if (parts.length > 0 && parts[0].trim()) {
+                title = parts[0].trim()
+                if (title.length > 50) {
+                  title = title.substring(0, 47) + "..."
+                }
+              }
+              
+              // Format date as YYYY-MM-DD for the input
+              const formattedDate = date.toISOString().split('T')[0]
+              
+              events.push({
+                title,
+                description,
+                due_date: formattedDate,
+                is_recurring: false,
+                is_completed: false
+              })
+            }
+          } catch (err) {
+            console.error("Error parsing date:", err)
+          }
         }
       }
     }

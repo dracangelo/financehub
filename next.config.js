@@ -9,9 +9,6 @@ module.exports = {
   images: {
     unoptimized: true,
   },
-  serverActions: {
-    bodySizeLimit: '4mb',
-  },
   // Explicitly handle the problematic pages
   rewrites: async () => {
     return [

@@ -275,10 +275,7 @@ export async function POST(request: Request) {
     try {
       // Execute the SQL to create the table with the correct schema
       const createTableSQL = `
-      -- Drop the table if it exists to ensure a clean slate
-      DROP TABLE IF EXISTS tax_documents;
-      
-      -- Create the tax_documents table with all required columns
+      -- Create the tax_documents table with all required columns if it doesn't exist
       CREATE TABLE IF NOT EXISTS tax_documents (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
