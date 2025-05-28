@@ -395,31 +395,36 @@ export function SubscriptionForm({
             render={({ field }) => (
               <FormItem className="flex flex-col">
                 <FormLabel>Start Date</FormLabel>
-                <Popover>
-                  <PopoverTrigger asChild>
+                <div className="flex gap-2">
+                  <div className="flex-1">
                     <FormControl>
-                      <Button
-                        variant={"outline"}
-                        className="w-full pl-3 text-left font-normal"
-                      >
-                        {field.value ? (
-                          format(field.value, "PPP")
-                        ) : (
-                          <span>Pick a date</span>
-                        )}
-                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                      </Button>
+                      <Input
+                        type="date"
+                        value={field.value ? format(field.value, "yyyy-MM-dd") : ""}
+                        onChange={(e) => {
+                          const date = e.target.value ? new Date(e.target.value) : null;
+                          if (date) field.onChange(date);
+                        }}
+                        className="w-full"
+                      />
                     </FormControl>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={field.value}
-                      onSelect={field.onChange}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
+                  </div>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="icon">
+                        <CalendarIcon className="h-4 w-4" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="end">
+                      <Calendar
+                        mode="single"
+                        selected={field.value}
+                        onSelect={field.onChange}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
                 <FormMessage />
               </FormItem>
             )}
@@ -432,41 +437,47 @@ export function SubscriptionForm({
             render={({ field }) => (
               <FormItem className="flex flex-col">
                 <FormLabel>End Date (Optional)</FormLabel>
-                <Popover>
-                  <PopoverTrigger asChild>
+                <div className="flex gap-2">
+                  <div className="flex-1">
                     <FormControl>
-                      <Button
-                        variant={"outline"}
-                        className="w-full pl-3 text-left font-normal"
-                      >
-                        {field.value ? (
-                          format(field.value, "PPP")
-                        ) : (
-                          <span>No end date</span>
-                        )}
-                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                      </Button>
+                      <Input
+                        type="date"
+                        value={field.value ? format(field.value, "yyyy-MM-dd") : ""}
+                        onChange={(e) => {
+                          const date = e.target.value ? new Date(e.target.value) : null;
+                          field.onChange(date);
+                        }}
+                        className="w-full"
+                        placeholder="No end date"
+                      />
                     </FormControl>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <div className="p-2 border-b">
-                      <Button 
-                        variant="ghost" 
-                        onClick={() => field.onChange(null)}
-                        size="sm"
-                      >
-                        Clear
+                  </div>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="icon">
+                        <CalendarIcon className="h-4 w-4" />
                       </Button>
-                    </div>
-                    <Calendar
-                      mode="single"
-                      selected={field.value || undefined}
-                      onSelect={field.onChange}
-                      disabled={(date) => date < form.getValues("start_date")}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="end">
+                      <div className="p-2 border-b">
+                        <Button 
+                          variant="ghost" 
+                          onClick={() => field.onChange(null)}
+                          size="sm"
+                        >
+                          Clear
+                        </Button>
+                      </div>
+                      <Calendar
+                        mode="single"
+                        selected={field.value || undefined}
+                        onSelect={field.onChange}
+                        disabled={(date) => date < form.getValues("start_date")}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
                 <FormDescription>
                   Leave empty for ongoing subscriptions
                 </FormDescription>

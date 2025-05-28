@@ -647,15 +647,24 @@ export async function logSubscriptionUsage(subscriptionId: string, usedOn: strin
     console.log(`Logging usage for subscription: ${subscriptionName} (${serviceProvider || 'No provider'})`);
     
     // Use supabaseAdmin to bypass RLS policies and ensure consistency with getSubscriptionUsageLogs
+    // Remove fields that cause schema cache errors
+    console.log(`Inserting usage log with only essential fields to avoid schema cache errors`);
+    
+    // Store the subscription name in the note field if it's not already there
+    let enhancedNote = note || '';
+    if (subscriptionName && !enhancedNote.includes(subscriptionName)) {
+      enhancedNote = enhancedNote ? `${subscriptionName} - ${enhancedNote}` : subscriptionName;
+    }
+    
+    // Only include fields we know exist in the database schema
     const { data, error } = await supabaseAdmin
       .from('subscription_usage_logs')
       .insert({
         subscription_id: subscriptionId,
         user_id: user.id,
         used_on: usedOn,
-        note,
-        subscription_name: subscriptionName,
-        service_provider: serviceProvider
+        note: enhancedNote
+        // Removed both subscription_name and service_provider fields to avoid schema cache errors
       })
       .select()
       .single();

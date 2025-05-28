@@ -60,6 +60,7 @@ export interface SplitExpense {
   id: string;
   expense_id: string;
   shared_with_user: string;
+  shared_with_name?: string;
   amount: number;
   note?: string | null;
   created_at?: string;

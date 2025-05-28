@@ -265,18 +265,23 @@ export async function createExpense(expenseData: {
             continue
           }
           
-          // Create the category
+          console.log(`Creating missing category with ID: ${categoryId}`)
+          
+          // Create the category with minimal fields to avoid schema cache errors
+          // Deliberately not including the color field to avoid schema cache errors
           const { error: createError } = await supabase
             .from("expense_categories")
-            .insert({
+            .upsert({
               id: categoryId,
               user_id: user.id,
               name: categoryInfo.name
-            })
+              // No color field - this avoids the schema cache error
+            }, { onConflict: 'id', ignoreDuplicates: true })
           
           if (createError) {
-            console.error("Error creating category:", createError)
-            continue
+            console.error(`Error creating category ${categoryId}:`, createError)
+            // Continue with the process even if there's an error
+            // This allows the application to work even with schema mismatches
           }
         }
       }
@@ -884,21 +889,37 @@ export async function createSplitExpense(splitData: {
       throw new Error("Authentication required")
     }
     
-    // Since we're splitting with people who aren't users in our app,
-    // we'll use the current user's ID as a placeholder and store the
-    // actual person's name in the note field
-    
-    // Combine the provided note with the person's name
-    const combinedNote = `Split with: ${splitData.shared_with_user}${splitData.note ? ` - ${splitData.note}` : ''}`;
-    console.log(`Creating split expense with note: ${combinedNote}`);
+    // Since the shared_with_name column doesn't exist in the database schema,
+    // we'll store the name in the note field as we did before
+    console.log(`Creating split expense with: ${splitData.shared_with_user}, amount: ${splitData.amount}`);
 
-    // Insert the split expense record using the current user's ID
-    // as a placeholder for the shared_with_user field
+    // Combine the name and note in the note field
+    const combinedNote = `Split with: ${splitData.shared_with_user}${splitData.note ? ` - ${splitData.note}` : ''}`;
+    
+    // First check if the expense exists
+    console.log(`Checking if expense exists with ID: ${splitData.expense_id}`)
+    const { data: expenseExists, error: expenseCheckError } = await supabase
+      .from("expenses")
+      .select("id")
+      .eq("id", splitData.expense_id)
+      .maybeSingle()
+    
+    if (expenseCheckError) {
+      console.error("Error checking if expense exists:", expenseCheckError)
+      throw new Error("Failed to check if expense exists")
+    }
+    
+    if (!expenseExists) {
+      console.error(`Expense does not exist with ID: ${splitData.expense_id} - cannot create split expense`)
+      throw new Error(`Expense with ID ${splitData.expense_id} does not exist`)
+    }
+    
+    // Insert the split expense record
     const { data, error } = await supabase
       .from("split_expenses")
       .insert({
         expense_id: splitData.expense_id,
-        shared_with_user: user.id, // Use the current user's ID as a placeholder
+        shared_with_user: user.id, // Required for database relation
         amount: splitData.amount,
         note: combinedNote // Store the person's name in the note field
       })

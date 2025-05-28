@@ -11,7 +11,7 @@ import { Calendar, MapPin, Receipt, Split, AlertTriangle, CalendarDays, User, Up
 
 import { Button } from "@/components/ui/button";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
-import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage, Form } from "@/components/ui/form";
+import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -84,38 +84,6 @@ interface ExpenseFormProps {
   name?: string;
 }
 
-// Helper function to extract the person's name from the note field
-function extractNameFromNote(note?: string | null): string {
-  if (!note) return "";
-  
-  // Check if the note follows the pattern "Split with: [name] - [note]"
-  if (note.startsWith("Split with: ")) {
-    // Extract the name part
-    const nameMatch = note.match(/Split with: ([^-]+)/);
-    if (nameMatch && nameMatch[1]) {
-      return nameMatch[1].trim();
-    }
-  }
-  
-  return "";
-}
-
-// Helper function to extract the actual note part from the combined note
-function extractNoteFromCombinedNote(note?: string | null): string {
-  if (!note) return "";
-  
-  // Check if the note follows the pattern "Split with: [name] - [note]"
-  if (note.includes(" - ")) {
-    const parts = note.split(" - ");
-    if (parts.length > 1) {
-      return parts.slice(1).join(" - ").trim();
-    }
-  }
-  
-  // If there's no actual note part, return empty string
-  return "";
-}
-
 export function ExpenseForm({
   categories,
   expense,
@@ -183,8 +151,7 @@ export function ExpenseForm({
       notes: expense?.notes || "",
       receipt_image: null,
       warranty_expiration_date: expense?.warranty_expiration_date ? new Date(expense.warranty_expiration_date) : null,
-      // Extract the person's name from the note field if it exists
-      split_with_user: expense?.splits?.[0] ? extractNameFromNote(expense.splits[0].note) || "" : "",
+      split_with_user: expense?.splits?.[0]?.shared_with_user || "",
       split_amount: expense?.splits?.[0]?.amount || null,
       split_note: expense?.splits?.[0]?.note || null,
     },
@@ -212,7 +179,7 @@ export function ExpenseForm({
       console.log("Initializing form with expense data:", expense);
       
       // Check if the expense has splits data directly from the API response
-      const hasSplits = expense?.splits && Array.isArray(expense.splits) && expense.splits.length > 0;
+      const hasSplits = expense.splits && Array.isArray(expense.splits) && expense.splits.length > 0;
       const splitData = hasSplits ? expense.splits[0] : null;
       
       // Check if we have split data either in splits array or in the expense object directly
@@ -229,7 +196,7 @@ export function ExpenseForm({
         merchant: expense.merchant || "",
         amount: expense.amount || 0,
         currency: expense.currency || "USD",
-        category_ids: expense.categories?.map((cat: any) => cat.id) || [],
+        category_ids: expense.category_ids || [],
         budget_item_id: expense.budget_item_id || null,
         expense_date: expense.expense_date ? new Date(expense.expense_date) : new Date(),
         location_name: expense.location_name || null,
@@ -238,11 +205,10 @@ export function ExpenseForm({
         notes: expense.notes || null,
         receipt_image: null,
         warranty_expiration_date: expense.warranty_expiration_date ? new Date(expense.warranty_expiration_date) : null,
-        // Extract the person's name from the note field
-        split_with_user: extractNameFromNote(splitData?.note) || expense.split_with_user || "",
+        // Use split data from the expense.splits array if available, otherwise use direct properties
+        split_with_user: splitData ? splitData.shared_with_name : (expense.split_with_user || ""),
         split_amount: splitData ? splitData.amount : (expense.split_amount || null),
-        // Extract the actual note part from the combined note
-        split_note: extractNoteFromCombinedNote(splitData?.note) || expense.split_note || "",
+        split_note: splitData ? splitData.note : (expense.split_note || ""),
         latitude: expense.latitude || null,
         longitude: expense.longitude || null,
       });
@@ -464,17 +430,39 @@ export function ExpenseForm({
             if (showSplitOptions && data.split_with_user && data.split_amount !== null) {
               // If there are existing splits, update the first one instead of creating a new one
               if (existingSplits && existingSplits.length > 0) {
+                // Get the split ID - this is critical to ensure we're updating the correct record
+                const splitId = existingSplits[0].id;
+                console.log(`Found existing split with ID: ${splitId}`);
+                
                 // Prepare update data with all fields to ensure complete update
                 const updateData = {
                   shared_with_name: data.split_with_user,
                   amount: Number(data.split_amount),
-                  note: data.split_note || null,
+                  notes: data.split_note || null, // Note: API expects 'notes' not 'note'
                   status: existingSplits[0].status || 'pending' // Preserve existing status or default to pending
                 };
                 
-                console.log("Updating split expense with data:", updateData);
-                await updateSplitExpense(existingSplits[0].id, updateData);
-                console.log("Split expense updated successfully");
+                console.log(`Updating split expense with ID: ${splitId} and data:`, updateData);
+                try {
+                  await updateSplitExpense(splitId, updateData);
+                  console.log("Split expense updated successfully");
+                } catch (updateError) {
+                  console.error("Error updating split expense:", updateError);
+                  // If update fails, try to create a new one after deleting the old one
+                  try {
+                    await deleteSplitExpense(splitId);
+                    const newSplitData = {
+                      expense_id: expenseId,
+                      shared_with_user: data.split_with_user,
+                      amount: Number(data.split_amount),
+                      notes: data.split_note || null
+                    };
+                    await createSplitExpense(newSplitData);
+                    console.log("Created new split expense after failed update");
+                  } catch (fallbackError) {
+                    console.error("Failed to create replacement split expense:", fallbackError);
+                  }
+                }
                 
                 // Delete any additional split expenses (duplicates)
                 if (existingSplits.length > 1) {
@@ -489,18 +477,26 @@ export function ExpenseForm({
                   expense_id: expenseId,
                   shared_with_user: data.split_with_user,
                   amount: Number(data.split_amount),
-                  note: data.split_note || null
+                  notes: data.split_note || null // Note: API expects 'notes' not 'note'
                 };
                 
                 console.log("Creating new split expense:", newSplitData);
-                await createSplitExpense(newSplitData);
-                console.log("Split expense created successfully");
+                try {
+                  await createSplitExpense(newSplitData);
+                  console.log("Split expense created successfully");
+                } catch (createError) {
+                  console.error("Error creating split expense:", createError);
+                }
               }
             } else if (!showSplitOptions && existingSplits && existingSplits.length > 0) {
               // Split options turned off but splits exist - remove them
               console.log("Removing existing split expenses as split option was disabled");
               for (const split of existingSplits) {
-                await deleteSplitExpense(split.id);
+                try {
+                  await deleteSplitExpense(split.id);
+                } catch (deleteError) {
+                  console.error(`Error deleting split expense ${split.id}:`, deleteError);
+                }
               }
               console.log("Split expenses removed successfully");
             }
@@ -510,12 +506,30 @@ export function ExpenseForm({
               expense_id: expenseId,
               shared_with_user: data.split_with_user,
               amount: Number(data.split_amount),
-              note: data.split_note || null
+              notes: data.split_note || null // Note: API expects 'notes' not 'note'
             };
             
             console.log("Creating new split expense for new expense:", newSplitData);
-            await createSplitExpense(newSplitData);
-            console.log("Split expense created successfully for new expense");
+            try {
+              await createSplitExpense(newSplitData);
+              console.log("Split expense created successfully for new expense");
+            } catch (createError) {
+              console.error("Error creating split expense for new expense:", createError);
+              // Try again with a slight delay in case it's a timing issue
+              setTimeout(async () => {
+                try {
+                  await createSplitExpense(newSplitData);
+                  console.log("Split expense created successfully on retry");
+                } catch (retryError) {
+                  console.error("Failed to create split expense even after retry:", retryError);
+                  toast({
+                    title: "Split Expense Failed",
+                    description: "The expense was saved, but we couldn't manage the split record.",
+                    variant: "destructive",
+                  });
+                }
+              }, 1000);
+            }
           }
         } catch (splitError) {
           console.error("Error managing split expense:", splitError);
@@ -551,31 +565,30 @@ export function ExpenseForm({
   }
 
   return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit as any)} className="space-y-6">
-        {rateLimitError && (
-          <div className="mb-4 p-4 rounded-md bg-destructive/10 text-destructive">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4" />
-              <div>
-                <p className="font-medium">Rate Limit</p>
-                <p className="text-sm">You're making too many requests. Please wait a moment and try again.</p>
-              </div>
+    <form onSubmit={form.handleSubmit(onSubmit as any)} className="space-y-6">
+      {rateLimitError && (
+        <div className="mb-4 p-4 rounded-md bg-destructive/10 text-destructive">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4" />
+            <div>
+              <p className="font-medium">Rate Limit</p>
+              <p className="text-sm">You're making too many requests. Please wait a moment and try again.</p>
             </div>
           </div>
-        )}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Merchant Name */}
-          <FormField
-            control={form.control}
-            name="merchant"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Merchant Name <span className="text-red-500">*</span></FormLabel>
-                <FormControl>
-                  <Input type="text" placeholder="Where did you spend?" {...field} />
-                </FormControl>
-                <FormMessage />
+        </div>
+      )}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Merchant Name */}
+        <FormField
+          control={form.control}
+          name="merchant"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Merchant Name <span className="text-red-500">*</span></FormLabel>
+              <FormControl>
+                <Input type="text" placeholder="Where did you spend?" {...field} />
+              </FormControl>
+              <FormMessage />
               </FormItem>
             )}
           />
@@ -1010,85 +1023,91 @@ export function ExpenseForm({
           </div>
 
           {/* Split Expense */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label>Split Expense</Label>
-              <Switch
-                checked={showSplitOptions}
-                onCheckedChange={toggleSplitOptions}
-                disabled={isSubmitting}
-              />
+          <div className="flex items-center space-x-2 mb-4">
+            <Switch
+              id="split-expense"
+              checked={showSplitOptions}
+              onCheckedChange={setShowSplitOptions}
+            />
+            <div className="flex flex-col">
+              <Label htmlFor="split-expense">Split this expense with someone</Label>
+              {isEditing && expense?.splits && expense.splits.length > 0 && (
+                <span className="text-xs text-muted-foreground mt-1">
+                  Currently split with: <span className="font-medium">{expense.splits[0].shared_with_name}</span>
+                </span>
+              )}
             </div>
+          </div>
 
-            {showSplitOptions && (
-              <div className="rounded-md border p-4 space-y-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-medium">Split Expense Details</h3>
-                  <Button 
-                    type="button" 
-                    variant="ghost" 
-                    size="sm"
-                    onClick={() => {
-                      // Calculate 50/50 split based on current amount
-                      const totalAmount = form.getValues('amount');
-                      if (totalAmount && !isNaN(Number(totalAmount))) {
-                        const halfAmount = (Number(totalAmount) / 2).toFixed(2);
-                        form.setValue('split_amount', parseFloat(halfAmount));
-                      }
-                    }}
-                  >
-                    50/50 Split
-                  </Button>
-                </div>
-                
-                <FormField
-                  control={form.control}
-                  name="split_with_user"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Split With <span className="text-red-500">*</span></FormLabel>
-                      <FormControl>
+          {showSplitOptions && (
+            <div className="rounded-md border p-4 space-y-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium">Split Expense Details</h3>
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={() => {
+                    // Calculate 50/50 split based on current amount
+                    const totalAmount = form.getValues('amount');
+                    if (totalAmount && !isNaN(Number(totalAmount))) {
+                      const halfAmount = (Number(totalAmount) / 2).toFixed(2);
+                      form.setValue('split_amount', Number(halfAmount));
+                    }
+                  }}
+                >
+                  50/50 Split
+                </Button>
+              </div>
+              
+              <FormField
+                control={form.control}
+                name="split_with_user"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Split With <span className="text-red-500">*</span></FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="Enter name of person"
+                        {...field}
+                        value={field.value || ""}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Enter the name of the person you're splitting this expense with
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="split_amount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Their Share (Amount They Owe) <span className="text-red-500">*</span></FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
+                          $
+                        </span>
                         <Input
-                          placeholder="Enter name of person"
+                          type="number"
+                          placeholder="0.00"
+                          className="pl-8"
                           {...field}
-                          value={field.value || ""}
+                          value={field.value === null || field.value === undefined ? "" : field.value}
                         />
-                      </FormControl>
-                      <FormDescription>
-                        Enter the name of the person you're splitting this expense with
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="split_amount"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Their Share (Amount They Owe) <span className="text-red-500">*</span></FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
-                            $
-                          </span>
-                          <Input
-                            type="number"
-                            placeholder="0.00"
-                            className="pl-8"
-                            {...field}
-                            value={field.value === null || field.value === undefined ? "" : field.value}
-                          />
-                        </div>
-                      </FormControl>
-                      <FormDescription>
-                        Amount the other person owes you for this expense
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                      </div>
+                    </FormControl>
+                    <FormDescription>
+                      Amount the other person owes you for this expense
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
                 
                 <FormField
                   control={form.control}
@@ -1157,7 +1176,6 @@ export function ExpenseForm({
             )}
           </Button>
         </div>
-      </form>
-    </Form>
+    </form>
   );
 }
