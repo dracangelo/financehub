@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getCurrentUser } from '@/lib/auth'
+import { createServerSupabaseClient } from '@/lib/supabase/server'
 
 // Create a Supabase client
 function createSupabaseClient() {
@@ -45,105 +47,30 @@ function generateMockStockData(ticker: string) {
   }
 }
 
-// Generate mock watchlist items for testing
-function getMockWatchlistItems(userId: string) {
-  const mockTickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META']
-  
-  return mockTickers.map(ticker => {
-    const mockData = generateMockStockData(ticker)
-    
-    return {
-      id: `mock-${ticker}-${Date.now()}`,
-      user_id: userId,
-      ticker,
-      name: `${ticker} Inc.`,
-      price: mockData.price,
-      previous_close: mockData.previous_close,
-      price_change: mockData.price_change,
-      price_change_percent: mockData.price_change_percent,
-      day_high: mockData.day_high,
-      day_low: mockData.day_low,
-      target_price: Math.round(mockData.price * 1.1 * 100) / 100,
-      notes: "Mock data for testing",
-      sector: ["Technology", "Healthcare", "Financial Services", "Consumer Cyclical"][Math.floor(Math.random() * 4)],
-      price_alert_enabled: Math.random() > 0.5,
-      alert_threshold: Math.random() > 0.5 ? Math.round(mockData.price * 1.05 * 100) / 100 : null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      last_updated: mockData.last_updated
-    }
-  })
-}
+// This function has been removed as we no longer use mock data
+// Users will add their own watchlist items instead
 
 // GET endpoint to retrieve watchlist items
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createSupabaseClient()
+    // Get the authenticated user using the same method as other APIs
+    const user = await getCurrentUser();
+    const supabase = await createServerSupabaseClient();
     
-    // For debugging - log cookies
-    console.log('Cookie header:', request.headers.get('cookie'));
+    // Only use authenticated user ID, no fallbacks
+    let userId: string;
     
-    // Try to get the user ID with a clear priority order
-    // 1. Client ID from cookie (highest priority)
-    // 2. Client ID from header
-    // 3. Authenticated user ID from cookie
-    // 4. Authenticated user ID from Supabase auth
-    // 5. Default UUID (lowest priority)
-    
-    // Start with a valid UUID format for the default user ID to avoid database errors
-    let userId: string = '00000000-0000-0000-0000-000000000000';
-    
-    // Get all possible headers and cookies
-    const cookieHeader = request.headers.get('cookie') || '';
-    const clientIdHeader = request.headers.get('x-client-id');
-    const userIdHeader = request.headers.get('x-user-id');
-    
-    // Extract client ID from cookie if present
-    const clientIdMatch = cookieHeader.match(/client-id=([^;]+)/);
-    
-    // Priority 1: Client ID from cookie
-    if (clientIdMatch && clientIdMatch[1]) {
-      userId = clientIdMatch[1];
-      console.log('Using client ID from cookie:', userId);
-    } 
-    // Priority 2: Client ID from header
-    else if (clientIdHeader) {
-      userId = clientIdHeader;
-      console.log('Using client ID from header:', userId);
-    }
-    // Priority 3: Authenticated user ID from cookie
-    else {
-      const authUserIdMatch = cookieHeader.match(/x-auth-user-id=([^;]+)/);
-      if (authUserIdMatch && authUserIdMatch[1]) {
-        userId = authUserIdMatch[1];
-        console.log('Using authenticated user ID from cookie:', userId);
-      }
-      // Priority 4: Try to get the user from Supabase auth
-      else {
-        try {
-          // Try to get the user using getUser
-          const { data, error } = await supabase.auth.getUser();
-          
-          if (!error && data?.user) {
-            userId = data.user.id;
-            console.log('Using authenticated user ID from Supabase:', userId);
-          } else {
-            // Try to get the session as a fallback
-            try {
-              const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-              
-              if (!sessionError && sessionData?.session?.user) {
-                userId = sessionData.session.user.id;
-                console.log('Using session user ID from Supabase:', userId);
-              }
-            } catch (sessionError) {
-              console.error('Error getting session:', sessionError);
-            }
-          }
-        } catch (authError) {
-          console.error('Error during authentication check:', authError);
-        }
-      }
+    // Use authenticated user ID if available
+    if (user && user.id) {
+      userId = user.id;
+      console.log('Using authenticated user ID:', userId);
+    } else {
+      // Return empty array if no authenticated user
+      console.log('No authenticated user found, returning empty list');
+      return NextResponse.json({ 
+        success: true, 
+        items: [] 
+      });
     }
     
     // Log the final user ID being used
@@ -180,6 +107,8 @@ export async function GET(request: NextRequest) {
     // 1. First try to get items from the database
     try {
       console.log('Fetching watchlist items from database for user:', userId);
+      
+      // Use the server Supabase client for consistent auth handling
       const { data, error } = await supabase
         .from('watchlist')
         .select('*')
@@ -211,10 +140,11 @@ export async function GET(request: NextRequest) {
       }
     }
     
-    // If we have a client ID but no stored items in the header, try to use mock data
-    if (clientIdHeader && storedItems.length === 0 && databaseItems.length === 0) {
-      console.log('Using mock data for client ID:', clientIdHeader);
-      storedItems = getMockWatchlistItems(clientIdHeader);
+    // No mock data - if no items are found, return an empty array
+    // This allows users to add their own investments using the add investment button
+    if (storedItems.length === 0 && databaseItems.length === 0) {
+      console.log('No watchlist items found for user:', userId);
+      // Keep storedItems as an empty array
     }
     
     // 3. Combine items from both sources, prioritizing database items
