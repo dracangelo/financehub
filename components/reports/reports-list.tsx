@@ -264,8 +264,20 @@ function formatReportType(type: Report['type']): string {
       return 'Net Worth'
     case 'investments':
       return 'Investment Performance'
+    case 'income-sources':
+      return 'Income Sources'
+    case 'expense-trends':
+      return 'Expense Trends'
+    case 'debt-analysis':
+      return 'Debt Analysis'
+    case 'subscriptions':
+      return 'Subscriptions'
+    case 'budget-analysis':
+      return 'Budget Analysis'
+    case 'spending-categories':
+      return 'Spending Categories'
     default:
-      return type
+      return type.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
   }
 }
 

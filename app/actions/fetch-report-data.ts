@@ -44,8 +44,56 @@ export async function fetchReportData(reportType: ReportType, timeRange: TimeRan
         reportData = await fetchSpendingCategoriesData(supabase, user.id, timeFilter)
         break
       case 'income-sources':
-        reportData = await fetchIncomeSourcesData(supabase, user.id, timeFilter)
+        // Use our updated fetchIncomeData function from report-data-provider
+        try {
+          const { fetchIncomeData } = await import('./report-data-provider')
+          reportData = await fetchIncomeData(timeFilter)
+          console.log('Using updated fetchIncomeData function for income-sources report')
+        } catch (error) {
+          console.error('Error importing fetchIncomeData, falling back to fetchIncomeSourcesData:', error)
+          reportData = await fetchIncomeSourcesData(supabase, user.id, timeFilter)
+        }
         break
+      case 'expense-trends':
+        // Use our updated fetchExpenseData function from report-data-provider
+        try {
+          const { fetchExpenseData } = await import('./report-data-provider')
+          reportData = await fetchExpenseData(timeFilter)
+          console.log('Using updated fetchExpenseData function for expense-trends report')
+        } catch (error) {
+          console.error('Error importing fetchExpenseData:', error)
+          reportData = []
+        }
+        break
+      case 'debt-analysis':
+        // Use our updated fetchDebtData function from report-data-provider
+        try {
+          const { fetchDebtData } = await import('./report-data-provider')
+          reportData = await fetchDebtData()
+          console.log('Using updated fetchDebtData function for debt-analysis report')
+        } catch (error) {
+          console.error('Error importing fetchDebtData:', error)
+          reportData = []
+        }
+        break
+      case 'subscriptions':
+        // Use our updated fetchSubscriptionData function from report-data-provider
+        try {
+          const { fetchSubscriptionData } = await import('./report-data-provider')
+          reportData = await fetchSubscriptionData()
+          console.log('Using updated fetchSubscriptionData function for subscriptions report')
+        } catch (error) {
+          console.error('Error importing fetchSubscriptionData:', error)
+          reportData = []
+        }
+        break
+      // Handle other report types with the default case
+      case 'budget-analysis':
+      case 'spending-categories':
+      case 'investments':
+      case 'overview':
+      case 'income-expense':
+      case 'net-worth':
       default:
         console.warn(`Unknown report type: ${reportType}`)
         reportData = []

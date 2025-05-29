@@ -24,32 +24,46 @@ export async function fetchIncomeData(timeRange: { start: Date, end: Date }) {
   console.log(`Fetching income data for time range: ${timeRange.start.toISOString()} to ${timeRange.end.toISOString()}`)
   
   try {
+    // Use the 'incomes' table with the correct column names based on the existing code
     const { data: incomeSources, error } = await supabase
-      .from('income_sources')
-      .select('id, name, type, amount, frequency, start_date')
+      .from('incomes')
+      .select('*, income_categories(*)')
       .eq('user_id', user.id)
+      .order('start_date', { ascending: false })
       
     if (error) {
       console.error("Error fetching income sources:", error)
       return []
     }
     
-    console.log(`Found ${incomeSources?.length || 0} income sources`)
+    // Filter by date range in memory if needed
+    const filteredIncome = incomeSources?.filter((income: any) => {
+      if (!income.start_date) return true; // Include if no start date
+      const startDate = new Date(income.start_date);
+      return startDate >= timeRange.start && startDate <= timeRange.end;
+    }) || [];
     
-    const formattedIncome = incomeSources?.map(income => {
+    console.log(`Found ${incomeSources?.length || 0} income sources, filtered to ${filteredIncome.length} within date range`)
+    
+    const formattedIncome = filteredIncome.map((income: any) => {
+      // Get category name from the joined income_categories data
+      const categoryName = income.income_categories?.name || 'Other';
+      
       return {
-        name: income.name || 'Unnamed Income',
-        frequency: income.frequency || 'monthly',
+        name: income.title || 'Unnamed Income', // Using title instead of name
+        frequency: income.recurrence || 'monthly', // Using recurrence instead of frequency
         amount: income.amount || 0,
+        category: categoryName,
+        start_date: income.start_date ? new Date(income.start_date).toISOString() : null,
         formatted_amount: new Intl.NumberFormat('en-US', { 
           style: 'currency', 
           currency: 'USD' 
         }).format(income.amount || 0),
-        category: income.type || 'other',
-        start_date: income.start_date || '',
-        formatted_start_date: income.start_date ? format(new Date(income.start_date), 'MMM dd, yyyy') : ''
+        formatted_date: income.start_date ? format(new Date(income.start_date), 'MMM d, yyyy') : 'N/A'
       }
-    }) || []
+    }) || [];
+    
+    console.log(`Formatted ${formattedIncome.length} income entries with correct field mappings`)
     
     return formattedIncome
   } catch (error) {

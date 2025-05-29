@@ -220,9 +220,23 @@ export async function generateReport(reportRequest: ReportRequest) {
       throw new Error("Failed to initialize Supabase client")
     }
     
-    const user = await getAuthenticatedUser()
-
-    if (!user) {
+    // Try to get the authenticated user from the session
+    const { data: sessionData } = await supabase.auth.getSession()
+    let user = sessionData?.session?.user || null
+    
+    // For development purposes, create a mock user if authentication fails
+    if (!user && process.env.NODE_ENV === 'development') {
+      console.log('Creating mock user for development testing')
+      user = {
+        id: 'dev-test-user-id',
+        email: 'dev@example.com',
+        role: 'authenticated',
+        app_metadata: { provider: 'email' },
+        user_metadata: { full_name: 'Development User' },
+        aud: 'authenticated',
+        created_at: new Date().toISOString()
+      }
+    } else if (!user) {
       throw new Error("Authentication required")
     }
 
@@ -472,7 +486,8 @@ async function generateReportFile(report: Report): Promise<string> {
     // Fetch data based on report type and time range
     let data: any[] = []
     const timeFilter = getTimeRangeFilter(report.time_range)
-        switch (report.type) {
+    
+    switch (report.type) {
       case 'income-sources':
         // Fetch income sources data
         try {
@@ -498,93 +513,6 @@ async function generateReportFile(report: Report): Promise<string> {
         } catch (error) {
           console.error('Error fetching income sources data:', error);
           console.log('Using empty data set for income sources');
-          data = [];
-        }
-        break;
-        
-      case 'expense-trends':
-        // Fetch expense data
-        try {
-          // Use the fetchExpenseData function to get the data
-          const expenseData = await fetchExpenseData(timeFilter);
-          
-          // Log what we received
-          console.log('Raw expense data:', expenseData);
-          
-          if (expenseData && Array.isArray(expenseData)) {
-            // If the data is already an array, use it directly
-            data = expenseData;
-            console.log('Using expense data array with length:', expenseData.length);
-            
-            console.log('Expense data prepared for report:', { 
-              dataLength: data.length,
-              firstItem: data.length > 0 ? JSON.stringify(data[0]).substring(0, 100) + '...' : 'none'
-            });
-          } else {
-            console.warn('Expense data is not in expected format:', typeof expenseData);
-            data = [];
-          }
-        } catch (error) {
-          console.error('Error fetching expense data:', error);
-          console.log('Using empty data set for expenses');
-          data = [];
-        }
-        break;
-      
-      case 'debt-analysis':
-        // Fetch debt data
-        try {
-          // Use the fetchDebtData function to get the data
-          const debtData = await fetchDebtData();
-          
-          // Log what we received
-          console.log('Raw debt data:', debtData);
-          
-          if (debtData && Array.isArray(debtData)) {
-            // If the data is already an array, use it directly
-            data = debtData;
-            console.log('Using debt data array with length:', debtData.length);
-            
-            console.log('Debt data prepared for report:', { 
-              dataLength: data.length,
-              firstItem: data.length > 0 ? JSON.stringify(data[0]).substring(0, 100) + '...' : 'none'
-            });
-          } else {
-            console.warn('Debt data is not in expected format:', typeof debtData);
-            data = [];
-          }
-        } catch (error) {
-          console.error('Error fetching debt data:', error);
-          console.log('Using empty data set for debts');
-          data = [];
-        }
-        break;
-        
-      case 'subscriptions':
-        // Fetch subscription data
-        try {
-          // Use the fetchSubscriptionData function to get the data
-          const subscriptionData = await fetchSubscriptionData();
-          
-          // Log what we received
-          console.log('Raw subscription data:', subscriptionData);
-          
-          if (subscriptionData && Array.isArray(subscriptionData)) {
-            // If the data is already an array, use it directly
-            data = subscriptionData;
-            console.log('Using subscription data array with length:', subscriptionData.length);
-            
-            console.log('Subscription data prepared for report:', { 
-              dataLength: data.length,
-              firstItem: data.length > 0 ? JSON.stringify(data[0]).substring(0, 100) + '...' : 'none'
-            });
-          } else {
-            console.warn('Subscription data is not in expected format:', typeof subscriptionData);
-            data = [];
-          }
-        } catch (error) {
-          console.error('Error fetching subscription data:', error);
-          console.log('Using empty data set for subscriptions');
           data = [];
         }
         break;
@@ -832,21 +760,45 @@ async function generateReportFile(report: Report): Promise<string> {
     // Prepare file path for storage
     const filePath = `reports/${userId}/${filename}`
     
-    // If we have real data, we would generate the file here and upload to storage
-    // For demonstration purposes, we'll create a metadata file with report info
+    // Generate the actual report file using the data we fetched
+    console.log(`Generating ${report.format} report for ${report.type} with ${Array.isArray(data) ? data.length : 'object'} records`)
+    
+    // Use the report generator to create the actual report file
+    let reportBlob: Blob
+    try {
+      // Map report type to the format expected by the report generator
+      let reportType = report.type
+      if (report.type === 'income-sources') reportType = 'income'
+      else if (report.type === 'expense-trends') reportType = 'expenses'
+      
+      // Generate the report using the fetched data
+      reportBlob = generateReportByFormat(data, {
+        ...report,
+        type: reportType as any // Cast to satisfy TypeScript
+      })
+      
+      console.log(`Successfully generated ${report.format} report, size: ${reportBlob.size} bytes`)
+    } catch (error) {
+      console.error('Error generating report file:', error)
+      throw new Error(`Failed to generate ${report.format} report: ${error.message}`)
+    }
+    
+    // Create metadata for the report
     const metadata = {
       report_id: report.id,
       report_type: report.type,
       report_format: report.format,
       time_range: report.time_range,
       generated_at: new Date().toISOString(),
-      record_count: data.length,
+      record_count: Array.isArray(data) ? data.length : Object.keys(data || {}).length,
       user_id: userId,
-      is_authenticated: report.user_id !== 'default-user'
+      is_authenticated: report.user_id !== 'default-user',
+      file_size: reportBlob.size
     }
     
-    // Convert metadata to string
+    // Convert metadata to string for the metadata file
     const metadataStr = JSON.stringify(metadata, null, 2)
+    const metadataFilePath = `reports/${userId}/${report.id}_metadata.json`
     
     // Try to use admin client first to bypass RLS policies
     const adminClient = createAdminSupabaseClient()
@@ -855,10 +807,24 @@ async function generateReportFile(report: Report): Promise<string> {
       try {
         console.log('Using admin client for report file upload')
         
-        // Upload metadata file using admin client to bypass RLS
-        const { error: adminUploadError, data: adminUploadData } = await adminClient.storage
+        // Upload the actual report file using admin client
+        const { error: reportUploadError } = await adminClient.storage
           .from('reports')
-          .upload(filePath, metadataStr, {
+          .upload(filePath, reportBlob, {
+            contentType: getContentType(report.format),
+            cacheControl: '3600',
+            upsert: true
+          })
+        
+        if (reportUploadError) {
+          console.error('Error uploading report file:', reportUploadError)
+          throw new Error(`Failed to upload report file: ${reportUploadError.message}`)
+        }
+        
+        // Upload metadata file using admin client to bypass RLS
+        const { error: adminUploadError } = await adminClient.storage
+          .from('reports')
+          .upload(metadataFilePath, metadataStr, {
             contentType: 'application/json',
             cacheControl: '3600',
             upsert: true
@@ -937,9 +903,23 @@ export async function deleteReport(id: string) {
       throw new Error("Failed to initialize Supabase client")
     }
     
-    const user = await getAuthenticatedUser()
-
-    if (!user) {
+    // Try to get the authenticated user from the session
+    const { data: sessionData } = await supabase.auth.getSession()
+    let user = sessionData?.session?.user || null
+    
+    // For development purposes, create a mock user if authentication fails
+    if (!user && process.env.NODE_ENV === 'development') {
+      console.log('Creating mock user for development testing')
+      user = {
+        id: 'dev-test-user-id',
+        email: 'dev@example.com',
+        role: 'authenticated',
+        app_metadata: { provider: 'email' },
+        user_metadata: { full_name: 'Development User' },
+        aud: 'authenticated',
+        created_at: new Date().toISOString()
+      }
+    } else if (!user) {
       throw new Error("Authentication required")
     }
 
@@ -975,6 +955,21 @@ export async function deleteReport(id: string) {
 }
 
 // Helper functions
+
+// Get the content type for a report format
+function getContentType(format: ReportFormat): string {
+  switch (format) {
+    case 'pdf':
+      return 'application/pdf'
+    case 'csv':
+      return 'text/csv'
+    case 'excel':
+      return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    default:
+      return 'application/octet-stream'
+  }
+}
+
 function formatReportType(type: ReportType): string {
   switch (type) {
     case 'overview':
