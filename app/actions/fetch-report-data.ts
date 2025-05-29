@@ -3,6 +3,7 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { getAuthenticatedUser } from "@/lib/auth"
 import { ReportType, TimeRange } from "./reports"
+import { formatCurrency } from '@/lib/utils'
 
 // Fetch data for reports based on type and time range
 export async function fetchReportData(reportType: ReportType, timeRange: TimeRange) {
@@ -20,498 +21,41 @@ export async function fetchReportData(reportType: ReportType, timeRange: TimeRan
   
   // Get time range filter
   const timeFilter = getTimeRangeFilter(timeRange)
-  let data: any[] = []
+  let reportData: any = null
   
   try {
+    console.log(`Fetching data for ${reportType} report with time range ${timeRange}`)
+    console.log(`Date range: ${timeFilter.start.toISOString()} to ${timeFilter.end.toISOString()}`)
+    
     switch (reportType) {
       case 'overview':
-        // Fetch overview data (transactions, income, expenses, net worth)
-        const { data: transactions, error: transactionsError } = await supabase
-          .from('transactions')
-          .select('*')
-          .eq('user_id', user.id)
-          .gte('created_at', timeFilter.start.toISOString())
-          .lte('created_at', timeFilter.end.toISOString())
-          .order('created_at', { ascending: false })
-        
-        if (!transactionsError && transactions) {
-          // Process and enrich the data
-          data = transactions.map((transaction: any) => {
-            // Get account and payment information - use actual data without placeholders
-            const accountName = transaction.account_name || transaction.account || '';
-            const paymentMethod = transaction.payment_method || '';
-            
-            // Format date and time with validation
-            let formattedDate = '';
-            let formattedTime = '';
-            try {
-              if (transaction.created_at && !isNaN(new Date(transaction.created_at).getTime())) {
-                const createdDate = new Date(transaction.created_at);
-                formattedDate = createdDate.toLocaleDateString();
-                formattedTime = createdDate.toLocaleTimeString();
-              }
-              // No else clause - leave empty if invalid date
-            } catch (error) {
-              // Leave empty if there's an error
-              formattedDate = '';
-              formattedTime = '';
-            }
-            
-            // Format amount with currency
-            const formattedAmount = new Intl.NumberFormat('en-US', { 
-              style: 'currency', 
-              currency: 'USD' 
-            }).format(transaction.amount || 0);
-            
-            return {
-              ...transaction,
-              formatted_date: formattedDate,
-              formatted_time: formattedTime,
-              formatted_amount: formattedAmount,
-              account_name: accountName,
-              payment_method: paymentMethod,
-              name: transaction.name || transaction.title || '',
-              location: transaction.location || '',
-              recurring: transaction.is_recurring ? true : false,
-              notes: transaction.notes || '',
-              status: transaction.status || ''
-            };
-          });
-        } else if (transactionsError) {
-          console.error("Error fetching transactions:", transactionsError);
-        }
-        break;
-        
+        reportData = await fetchOverviewData(supabase, user.id, timeFilter)
+        break
       case 'income-expense':
-        // Fetch income and expense data
-        const { data: incomeExpense, error: incomeExpenseError } = await supabase
-          .from('transactions')
-          .select('*')
-          .eq('user_id', user.id)
-          .in('type', ['income', 'expense'])
-          .gte('created_at', timeFilter.start.toISOString())
-          .lte('created_at', timeFilter.end.toISOString())
-          .order('created_at', { ascending: false })
-        
-        if (!incomeExpenseError && incomeExpense) {
-          // Process and enrich the data
-          data = incomeExpense.map((item: any) => {
-            // Get account and payment information with validation
-            const accountName = item.account_name || item.account || '';
-            const paymentMethod = item.payment_method || '';
-            
-            // Format date and time with validation
-            let formattedDate = '';
-            let formattedTime = '';
-            try {
-              if (item.created_at && !isNaN(new Date(item.created_at).getTime())) {
-                const createdDate = new Date(item.created_at);
-                formattedDate = createdDate.toLocaleDateString();
-                formattedTime = createdDate.toLocaleTimeString();
-              }
-              // Leave empty if invalid date
-            } catch (error) {
-              // Leave empty if there's an error
-              formattedDate = '';
-              formattedTime = '';
-            }
-            
-            // Format amount with currency
-            const formattedAmount = new Intl.NumberFormat('en-US', { 
-              style: 'currency', 
-              currency: 'USD' 
-            }).format(item.amount || 0);
-            
-            return {
-              ...item,
-              formatted_date: formattedDate,
-              formatted_time: formattedTime,
-              formatted_amount: formattedAmount,
-              account_name: accountName,
-              payment_method: paymentMethod,
-              name: item.name || item.title || '',
-              location: item.location || '',
-              recurring: item.is_recurring ? true : false,
-              frequency: item.frequency || '',
-              tax_deductible: item.tax_deductible ? true : false,
-              notes: item.notes || '',
-              status: item.status || ''
-            };
-          });
-        } else if (incomeExpenseError) {
-          console.error("Error fetching income/expense data:", incomeExpenseError);
-        }
-        break;
-        
+        reportData = await fetchIncomeExpenseData(supabase, user.id, timeFilter)
+        break
       case 'net-worth':
-        // Fetch net worth data (assets and liabilities)
-        const { data: assets, error: assetsError } = await supabase
-          .from('assets')
-          .select('*')
-          .eq('user_id', user.id)
-        
-        const { data: liabilities, error: liabilitiesError } = await supabase
-          .from('liabilities')
-          .select('*')
-          .eq('user_id', user.id)
-        
-        if ((!assetsError || !liabilitiesError) && (assets || liabilities)) {
-          // Process and combine assets and liabilities
-          const processedAssets = (assets || []).map((asset: any) => {
-            // Format value with currency
-            const formattedValue = new Intl.NumberFormat('en-US', { 
-              style: 'currency', 
-              currency: 'USD' 
-            }).format(asset.value || 0);
-            
-            // Format dates with validation
-            let dateAcquired = '';
-            let maturityDate = '';
-            let updatedDate = '';
-            
-            try {
-              if (asset.date_acquired && !isNaN(new Date(asset.date_acquired).getTime())) {
-                dateAcquired = new Date(asset.date_acquired).toLocaleDateString();
-              }
-              
-              if (asset.maturity_date && !isNaN(new Date(asset.maturity_date).getTime())) {
-                maturityDate = new Date(asset.maturity_date).toLocaleDateString();
-              }
-              
-              const updateDate = asset.updated_at || asset.created_at;
-              if (updateDate && !isNaN(new Date(updateDate).getTime())) {
-                updatedDate = new Date(updateDate).toLocaleDateString();
-              }
-            } catch (error) {
-              // Keep empty values if any date parsing fails
-            }
-            
-            return {
-              ...asset,
-              type: 'asset',
-              formatted_value: formattedValue,
-              date_acquired: dateAcquired,
-              maturity_date: maturityDate,
-              last_updated: updatedDate,
-              interest_rate: asset.interest_rate ? `${asset.interest_rate}%` : '',
-              account_number: asset.account_number ? `xxxx-${asset.account_number.slice(-4)}` : '',
-              notes: asset.notes || '',
-              status: asset.status || ''
-            };
-          });
-          
-          const processedLiabilities = (liabilities || []).map((liability: any) => {
-            // Format value with currency
-            const formattedValue = new Intl.NumberFormat('en-US', { 
-              style: 'currency', 
-              currency: 'USD' 
-            }).format(liability.value || 0);
-            
-            // Format dates with validation
-            let dateAcquired = '';
-            let maturityDate = '';
-            let updatedDate = '';
-            
-            try {
-              if (liability.date_acquired && !isNaN(new Date(liability.date_acquired).getTime())) {
-                dateAcquired = new Date(liability.date_acquired).toLocaleDateString();
-              }
-              
-              if (liability.maturity_date && !isNaN(new Date(liability.maturity_date).getTime())) {
-                maturityDate = new Date(liability.maturity_date).toLocaleDateString();
-              }
-              
-              const updateDate = liability.updated_at || liability.created_at;
-              if (updateDate && !isNaN(new Date(updateDate).getTime())) {
-                updatedDate = new Date(updateDate).toLocaleDateString();
-              }
-            } catch (error) {
-              // Keep empty values if any date parsing fails
-            }
-            
-            return {
-              ...liability,
-              type: 'liability',
-              formatted_value: formattedValue,
-              date_acquired: dateAcquired,
-              maturity_date: maturityDate,
-              last_updated: updatedDate,
-              interest_rate: liability.interest_rate ? `${liability.interest_rate}%` : '',
-              account_number: liability.account_number ? `xxxx-${liability.account_number.slice(-4)}` : '',
-              notes: liability.notes || '',
-              status: liability.status || ''
-            };
-          });
-          
-          // Combine assets and liabilities
-          data = [...processedAssets, ...processedLiabilities];
-        } else {
-          if (assetsError) console.error("Error fetching assets:", assetsError);
-          if (liabilitiesError) console.error("Error fetching liabilities:", liabilitiesError);
-        }
-        break;
-        
-      case 'investments':
-        // Fetch investment data
-        const { data: investments, error: investmentsError } = await supabase
-          .from('investments')
-          .select('*')
-          .eq('user_id', user.id)
-        
-        if (!investmentsError && investments) {
-          // Process and enrich the data
-          data = investments.map((investment: any) => {
-            // Calculate current value and gain/loss
-            const shares = investment.shares || 0;
-            const price = investment.price || 0;
-            const currentValue = shares * price;
-            const costBasis = investment.cost_basis || 0;
-            const gainLoss = currentValue - costBasis;
-            const gainLossPercent = costBasis > 0 ? ((gainLoss / costBasis) * 100).toFixed(2) + '%' : '0%';
-            
-            // Format currency values
-            const formattedPrice = new Intl.NumberFormat('en-US', { 
-              style: 'currency', 
-              currency: 'USD' 
-            }).format(price);
-            
-            const formattedValue = new Intl.NumberFormat('en-US', { 
-              style: 'currency', 
-              currency: 'USD' 
-            }).format(currentValue);
-            
-            const formattedCostBasis = new Intl.NumberFormat('en-US', { 
-              style: 'currency', 
-              currency: 'USD' 
-            }).format(costBasis);
-            
-            const formattedGainLoss = new Intl.NumberFormat('en-US', { 
-              style: 'currency', 
-              currency: 'USD' 
-            }).format(gainLoss);
-            
-            // Format dates with validation
-            let dateAcquired = '';
-            let updatedDate = '';
-            
-            try {
-              if (investment.date_acquired && !isNaN(new Date(investment.date_acquired).getTime())) {
-                dateAcquired = new Date(investment.date_acquired).toLocaleDateString();
-              }
-              
-              const updateDate = investment.updated_at || investment.created_at;
-              if (updateDate && !isNaN(new Date(updateDate).getTime())) {
-                updatedDate = new Date(updateDate).toLocaleDateString();
-              }
-            } catch (error) {
-              // Keep empty values if any date parsing fails
-            }
-            
-            return {
-              ...investment,
-              shares: shares,
-              price: price,
-              formatted_price: formattedPrice,
-              value: currentValue,
-              formatted_value: formattedValue,
-              cost_basis: costBasis,
-              formatted_cost_basis: formattedCostBasis,
-              gain_loss: gainLoss,
-              formatted_gain_loss: formattedGainLoss,
-              gain_loss_percent: gainLossPercent,
-              date_acquired: dateAcquired,
-              last_updated: updatedDate,
-              account_name: investment.account_name || investment.account || '',
-              institution: investment.institution || '',
-              symbol: investment.symbol || '',
-              name: investment.name || '',
-              notes: investment.notes || ''
-            };
-          });
-        } else if (investmentsError) {
-          console.error("Error fetching investments:", investmentsError);
-        }
-        break;
-        
+        reportData = await fetchNetWorthData(supabase, user.id)
+        break
       case 'budget-analysis':
-        // Fetch budget data
-        const { data: budgets, error: budgetsError } = await supabase
-          .from('budgets')
-          .select('*')
-          .eq('user_id', user.id)
-          .gte('created_at', timeFilter.start.toISOString())
-          .lte('created_at', timeFilter.end.toISOString())
-        
-        if (!budgetsError && budgets) {
-          // Process and enrich the data
-          data = budgets.map((budget: any) => {
-            // Calculate budget metrics
-            const budgeted = budget.budgeted_amount || 0;
-            const actual = budget.actual_amount || 0;
-            const difference = budgeted - actual;
-            const percentUsed = budgeted > 0 ? ((actual / budgeted) * 100).toFixed(2) + '%' : '0%';
-            
-            // Format currency values
-            const formattedBudgeted = new Intl.NumberFormat('en-US', { 
-              style: 'currency', 
-              currency: 'USD' 
-            }).format(budgeted);
-            
-            const formattedActual = new Intl.NumberFormat('en-US', { 
-              style: 'currency', 
-              currency: 'USD' 
-            }).format(actual);
-            
-            const formattedDifference = new Intl.NumberFormat('en-US', { 
-              style: 'currency', 
-              currency: 'USD' 
-            }).format(difference);
-            
-            // Format period
-            const month = budget.month || '';
-            const year = budget.year || '';
-            const period = month && year ? `${month}/${year}` : '';
-            
-            return {
-              ...budget,
-              budgeted: budgeted,
-              formatted_budgeted: formattedBudgeted,
-              actual: actual,
-              formatted_actual: formattedActual,
-              difference: difference,
-              formatted_difference: formattedDifference,
-              percent_used: percentUsed,
-              month: month,
-              year: year,
-              period: period,
-              category: budget.category || '',
-              subcategory: budget.subcategory || '',
-              notes: budget.notes || ''
-            };
-          });
-        } else if (budgetsError) {
-          console.error("Error fetching budget data:", budgetsError);
-        }
-        break;
-        
+        reportData = await fetchBudgetAnalysisData(supabase, user.id, timeFilter)
+        break
       case 'spending-categories':
-        // Fetch spending by category data
-        const { data: categorySpending, error: categorySpendingError } = await supabase
-          .from('transactions')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('type', 'expense')
-          .gte('created_at', timeFilter.start.toISOString())
-          .lte('created_at', timeFilter.end.toISOString())
-        
-        if (!categorySpendingError && categorySpending) {
-          // Process and aggregate data by category
-          const spendingMap: any = {};
-          let totalSpending = 0;
-          
-          // First pass: aggregate data
-          categorySpending.forEach((transaction: any) => {
-            const amount = transaction.amount || 0;
-            totalSpending += amount;
-            
-            const categoryId = transaction.category || '';
-            const subcategoryId = transaction.subcategory || '';
-            const categoryName = transaction.category_name || categoryId;
-            const subcategoryName = transaction.subcategory_name || subcategoryId;
-            
-            // Initialize category if it doesn't exist
-            if (!spendingMap[categoryId]) {
-              spendingMap[categoryId] = {
-                id: categoryId,
-                category: categoryName,
-                amount: 0,
-                transaction_count: 0,
-                subcategories: {}
-              }
-            }
-            
-            // Add amount to category
-            spendingMap[categoryId].amount += amount;
-            spendingMap[categoryId].transaction_count += 1;
-            
-            // Handle subcategory
-            if (subcategoryId) {
-              if (!spendingMap[categoryId].subcategories[subcategoryId]) {
-                spendingMap[categoryId].subcategories[subcategoryId] = {
-                  id: subcategoryId,
-                  subcategory: subcategoryName,
-                  amount: 0,
-                  transaction_count: 0
-                }
-              }
-              
-              spendingMap[categoryId].subcategories[subcategoryId].amount += amount
-              spendingMap[categoryId].subcategories[subcategoryId].transaction_count += 1
-            }
-          })
-          
-          // Second pass: calculate percentages and format data
-          data = Object.values(spendingMap).map((category: any) => {
-            // Calculate percentage of total spending
-            const percentOfTotal = totalSpending > 0 ? (category.amount / totalSpending * 100) : 0
-            
-            // Format currency values
-            const formattedAmount = new Intl.NumberFormat('en-US', { 
-              style: 'currency', 
-              currency: 'USD' 
-            }).format(category.amount || 0);
-            
-            // Calculate average transaction amount
-            const avgTransaction = category.transaction_count > 0 ? 
-              (category.amount / category.transaction_count) : 0;
-              
-            const formattedAverage = new Intl.NumberFormat('en-US', { 
-              style: 'currency', 
-              currency: 'USD' 
-            }).format(avgTransaction);
-            
-            // Process subcategories into array with formatted values
-            const subcategories = Object.values(category.subcategories).map((sub: any) => {
-              const subPercentOfCategory = category.amount > 0 ? (sub.amount / category.amount * 100) : 0;
-              const subPercentOfTotal = totalSpending > 0 ? (sub.amount / totalSpending * 100) : 0;
-              
-              const subFormattedAmount = new Intl.NumberFormat('en-US', { 
-                style: 'currency', 
-                currency: 'USD' 
-              }).format(sub.amount || 0);
-              
-              return {
-                ...sub,
-                percent_of_category: subPercentOfCategory.toFixed(2) + '%',
-                percent_of_total: subPercentOfTotal.toFixed(2) + '%',
-                formatted_amount: subFormattedAmount
-              };
-            });
-            
-            // Format dates and period
-            const month = new Date(timeFilter.start).getMonth() + 1;
-            const year = new Date(timeFilter.start).getFullYear();
-            const period = `${month}/${year}`;
-            
-            return {
-              ...category,
-              percent_of_total: percentOfTotal.toFixed(2) + '%',
-              formatted_amount: formattedAmount,
-              average_transaction: avgTransaction,
-              formatted_average: formattedAverage,
-              subcategories: subcategories,
-              month: month,
-              year: year,
-              period: period
-            };
-          });
-        } else if (categorySpendingError) {
-          console.error("Error fetching category spending data:", categorySpendingError);
-        }
-        break;
+        reportData = await fetchSpendingCategoriesData(supabase, user.id, timeFilter)
+        break
+      case 'income-sources':
+        reportData = await fetchIncomeSourcesData(supabase, user.id, timeFilter)
+        break
+      default:
+        console.warn(`Unknown report type: ${reportType}`)
+        reportData = []
     }
     
-    return data
+    console.log(`Returning data for ${reportType} report:`, 
+      reportData ? (Array.isArray(reportData) ? 
+        `${reportData.length} items` : 'Object with data') : 'No data')
+    
+    return reportData
   } catch (error) {
     console.error(`Error fetching data for ${reportType} report:`, error)
     return []
@@ -547,4 +91,899 @@ function getTimeRangeFilter(timeRange: TimeRange): { start: Date, end: Date } {
   }
   
   return { start, end }
+}
+
+// Helper function to map account types to categories
+function mapAccountTypeToCategory(accountType: string): string {
+  switch (accountType) {
+    case 'checking':
+    case 'savings':
+      return 'Cash'
+    case 'investment':
+      return 'Investments'
+    case 'credit_card':
+      return 'Credit Cards'
+    case 'loan':
+    case 'mortgage':
+      return 'Loans'
+    case 'cash':
+      return 'Cash'
+    default:
+      return 'Other'
+  }
+}
+
+// Fetch overview data (expenses, income, budgets)
+async function fetchOverviewData(supabase: any, userId: string, timeFilter: { start: Date, end: Date }) {
+  // Fetch expenses data
+  const { data: expenses, error: expensesError } = await supabase
+    .from('expenses')
+    .select('*, expense_categories(name, color)')
+    .eq('user_id', userId)
+    .gte('date', timeFilter.start.toISOString())
+    .lte('date', timeFilter.end.toISOString())
+    .order('date', { ascending: false })
+  
+  // Fetch income data
+  const { data: income, error: incomeError } = await supabase
+    .from('incomes')
+    .select('*, income_categories(name, color)')
+    .eq('user_id', userId)
+    .gte('start_date', timeFilter.start.toISOString())
+    .lte('start_date', timeFilter.end.toISOString())
+    .order('start_date', { ascending: false })
+  
+  // Fetch budgets
+  const { data: budgets, error: budgetsError } = await supabase
+    .from('budgets')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(20)
+  
+  console.log(`Overview data fetched: ${expenses?.length || 0} expenses, ${income?.length || 0} income items, ${budgets?.length || 0} budgets`)
+  
+  if ((expenses && !expensesError) || (income && !incomeError)) {
+    // Process and combine the data
+    const combinedData: any[] = []
+    
+    // Process expenses
+    if (expenses && expenses.length > 0) {
+      expenses.forEach((expense: any) => {
+        // Format date
+        let formattedDate = ''
+        try {
+          if (expense.date && !isNaN(new Date(expense.date).getTime())) {
+            formattedDate = new Date(expense.date).toLocaleDateString()
+          }
+        } catch (error) {
+          // Leave empty if there's an error
+        }
+        
+        // Format amount with currency
+        const formattedAmount = new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(expense.amount || 0)
+        
+        combinedData.push({
+          id: expense.id,
+          date: expense.date,
+          formatted_date: formattedDate,
+          name: expense.name || '',
+          category: expense.expense_categories?.name || 'Uncategorized',
+          category_color: expense.expense_categories?.color || '#888888',
+          amount: -Math.abs(parseFloat(expense.amount) || 0), // Negative for expenses
+          formatted_amount: '-' + formattedAmount.replace('-', ''),
+          type: 'expense',
+          notes: expense.notes || '',
+          payment_method: expense.payment_method || '',
+          recurring: expense.is_recurring || false
+        })
+      })
+    }
+    
+    // Process income
+    if (income && income.length > 0) {
+      income.forEach((inc: any) => {
+        // Format date
+        let formattedDate = ''
+        try {
+          if (inc.date && !isNaN(new Date(inc.date).getTime())) {
+            formattedDate = new Date(inc.date).toLocaleDateString()
+          }
+        } catch (error) {
+          // Leave empty if there's an error
+        }
+        
+        // Format amount with currency
+        const formattedAmount = new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(inc.amount || 0)
+        
+        combinedData.push({
+          id: inc.id,
+          date: inc.date,
+          formatted_date: formattedDate,
+          name: inc.name || '',
+          category: inc.income_categories?.name || 'Uncategorized',
+          category_color: inc.income_categories?.color || '#4CAF50',
+          amount: parseFloat(inc.amount) || 0, // Positive for income
+          formatted_amount: formattedAmount,
+          type: 'income',
+          notes: inc.notes || '',
+          payment_method: inc.payment_method || '',
+          recurring: inc.is_recurring || false
+        })
+      })
+    }
+    
+    // Sort by date (newest first)
+    const sortedData = combinedData.sort((a: any, b: any) => {
+      return new Date(b.date).getTime() - new Date(a.date).getTime()
+    })
+    
+    // Add summary data
+    const result: any = [...sortedData]
+    
+    if (sortedData.length > 0) {
+      const totalIncome = income ? income.reduce((sum: number, inc: any) => sum + (parseFloat(inc.amount) || 0), 0) : 0
+      const totalExpenses = expenses ? expenses.reduce((sum: number, exp: any) => sum + (parseFloat(exp.amount) || 0), 0) : 0
+      
+      result.summary = {
+        totalIncome,
+        totalExpenses,
+        netCashflow: totalIncome - totalExpenses,
+        budgetCount: budgets?.length || 0,
+        period: `${timeFilter.start.toLocaleDateString()} - ${timeFilter.end.toLocaleDateString()}`
+      }
+    }
+    
+    return result
+  } else {
+    if (expensesError) console.error("Error fetching expenses:", expensesError)
+    if (incomeError) console.error("Error fetching income:", incomeError)
+    return []
+  }
+}
+
+// Fetch income and expense data
+async function fetchIncomeExpenseData(supabase: any, userId: string, timeFilter: { start: Date, end: Date }) {
+  // Fetch expenses data
+  const { data: expensesData, error: expensesDataError } = await supabase
+    .from('expenses')
+    .select('*, expense_categories(name, color)')
+    .eq('user_id', userId)
+    .gte('date', timeFilter.start.toISOString())
+    .lte('date', timeFilter.end.toISOString())
+    .order('date', { ascending: false })
+  
+  // Fetch income data
+  const { data: incomeData, error: incomeDataError } = await supabase
+    .from('incomes')
+    .select('*, income_categories(name, color)')
+    .eq('user_id', userId)
+    .gte('start_date', timeFilter.start.toISOString())
+    .lte('start_date', timeFilter.end.toISOString())
+    .order('start_date', { ascending: false })
+  
+  console.log(`Income/Expense data fetched: ${expensesData?.length || 0} expenses, ${incomeData?.length || 0} income items`)
+  
+  if ((expensesData && !expensesDataError) || (incomeData && !incomeDataError)) {
+    // Calculate monthly totals
+    const monthlyData: Record<string, {month: string, expenses: number, income: number, net: number}> = {}
+    
+    // Process expenses by month
+    if (expensesData) {
+      expensesData.forEach((expense: any) => {
+        if (!expense.date) return
+        
+        const date = new Date(expense.date)
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+        const monthName = date.toLocaleString('default', { month: 'long' })
+        const monthDisplay = `${monthName} ${date.getFullYear()}`
+        
+        if (!monthlyData[monthKey]) {
+          monthlyData[monthKey] = { 
+            month: monthDisplay, 
+            expenses: 0, 
+            income: 0,
+            net: 0
+          }
+        }
+        
+        monthlyData[monthKey].expenses += parseFloat(expense.amount) || 0
+      })
+    }
+    
+    // Process income by month
+    if (incomeData) {
+      incomeData.forEach((inc: any) => {
+        if (!inc.date) return
+        
+        const date = new Date(inc.date)
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+        const monthName = date.toLocaleString('default', { month: 'long' })
+        const monthDisplay = `${monthName} ${date.getFullYear()}`
+        
+        if (!monthlyData[monthKey]) {
+          monthlyData[monthKey] = { 
+            month: monthDisplay, 
+            expenses: 0, 
+            income: 0,
+            net: 0
+          }
+        }
+        
+        monthlyData[monthKey].income += parseFloat(inc.amount) || 0
+      })
+    }
+    
+    // Calculate net values and format data
+    Object.values(monthlyData).forEach(month => {
+      month.net = month.income - month.expenses
+    })
+    
+    // Convert to array and sort by month (newest first)
+    const monthlyTotals = Object.entries(monthlyData)
+      .map(([key, values]) => ({
+        monthKey: key,
+        ...values,
+        formatted_expenses: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(values.expenses),
+        formatted_income: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(values.income),
+        formatted_net: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(values.net)
+      }))
+      .sort((a, b) => b.monthKey.localeCompare(a.monthKey))
+    
+    // Process individual transactions
+    const transactions: any[] = []
+    
+    // Add expenses
+    if (expensesData) {
+      expensesData.forEach((expense: any) => {
+        transactions.push({
+          id: expense.id,
+          date: expense.date,
+          formatted_date: new Date(expense.date).toLocaleDateString(),
+          name: expense.name || '',
+          category: expense.expense_categories?.name || 'Uncategorized',
+          category_color: expense.expense_categories?.color || '#888888',
+          amount: -Math.abs(parseFloat(expense.amount) || 0), // Negative for expenses
+          formatted_amount: '-' + new Intl.NumberFormat('en-US', { 
+            style: 'currency', 
+            currency: 'USD' 
+          }).format(expense.amount || 0).replace('-', ''),
+          type: 'expense'
+        })
+      })
+    }
+    
+    // Add income
+    if (incomeData) {
+      incomeData.forEach((inc: any) => {
+        transactions.push({
+          id: inc.id,
+          date: inc.date,
+          formatted_date: new Date(inc.date).toLocaleDateString(),
+          name: inc.name || '',
+          category: inc.income_categories?.name || 'Uncategorized',
+          category_color: inc.income_categories?.color || '#4CAF50',
+          amount: parseFloat(inc.amount) || 0, // Positive for income
+          formatted_amount: new Intl.NumberFormat('en-US', { 
+            style: 'currency', 
+            currency: 'USD' 
+          }).format(inc.amount || 0),
+          type: 'income'
+        })
+      })
+    }
+    
+    // Sort transactions by date (newest first)
+    transactions.sort((a: any, b: any) => {
+      return new Date(b.date).getTime() - new Date(a.date).getTime()
+    })
+    
+    // Calculate totals
+    const totalIncome = incomeData ? incomeData.reduce((sum: number, inc: any) => sum + (parseFloat(inc.amount) || 0), 0) : 0
+    const totalExpenses = expensesData ? expensesData.reduce((sum: number, exp: any) => sum + (parseFloat(exp.amount) || 0), 0) : 0
+    const netCashflow = totalIncome - totalExpenses
+    
+    // Prepare final data structure
+    return {
+      transactions,
+      monthlyTotals,
+      summary: {
+        totalIncome,
+        totalExpenses,
+        netCashflow,
+        formatted_income: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(totalIncome),
+        formatted_expenses: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(totalExpenses),
+        formatted_net: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(netCashflow),
+        period: `${timeFilter.start.toLocaleDateString()} - ${timeFilter.end.toLocaleDateString()}`
+      }
+    }
+  } else {
+    if (expensesDataError) console.error("Error fetching expenses data:", expensesDataError)
+    if (incomeDataError) console.error("Error fetching income data:", incomeDataError)
+    return []
+  }
+}
+
+// Fetch net worth data
+async function fetchNetWorthData(supabase: any, userId: string) {
+  // Fetch accounts to determine assets and liabilities
+  const { data: accounts, error: accountsError } = await supabase
+    .from('accounts')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+  
+  console.log(`Net worth data fetched: ${accounts?.length || 0} accounts`)
+  
+  if (!accountsError && accounts && accounts.length > 0) {
+    // Categorize accounts as assets or liabilities
+    const assets = accounts.filter((account: any) => 
+      account.type === 'checking' || 
+      account.type === 'savings' || 
+      account.type === 'investment' || 
+      account.type === 'cash' ||
+      account.type === 'other_asset'
+    )
+    
+    const liabilities = accounts.filter((account: any) => 
+      account.type === 'credit_card' || 
+      account.type === 'loan' || 
+      account.type === 'mortgage' ||
+      account.type === 'other_liability'
+    )
+    
+    // Process assets
+    const processedAssets = assets.map((asset: any) => {
+      return {
+        id: asset.id,
+        name: asset.name || 'Unnamed Account',
+        type: 'asset',
+        account_type: asset.type || 'other',
+        category: mapAccountTypeToCategory(asset.type) || 'Other',
+        value: parseFloat(asset.current_balance) || 0,
+        formatted_value: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(parseFloat(asset.current_balance) || 0),
+        last_updated: asset.updated_at || asset.created_at || new Date().toISOString(),
+        notes: asset.notes || ''
+      }
+    })
+    
+    // Process liabilities
+    const processedLiabilities = liabilities.map((liability: any) => {
+      return {
+        id: liability.id,
+        name: liability.name || 'Unnamed Account',
+        type: 'liability',
+        account_type: liability.type || 'other',
+        category: mapAccountTypeToCategory(liability.type) || 'Other',
+        value: parseFloat(liability.current_balance) || 0,
+        formatted_value: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(parseFloat(liability.current_balance) || 0),
+        last_updated: liability.updated_at || liability.created_at || new Date().toISOString(),
+        notes: liability.notes || ''
+      }
+    })
+    
+    // Calculate totals
+    const totalAssets = assets.reduce((sum: number, asset: any) => sum + (parseFloat(asset.current_balance) || 0), 0)
+    const totalLiabilities = liabilities.reduce((sum: number, liability: any) => sum + (parseFloat(liability.current_balance) || 0), 0)
+    const netWorth = totalAssets - totalLiabilities
+    
+    // Add summary data
+    return {
+      assets: processedAssets,
+      liabilities: processedLiabilities,
+      summary: {
+        totalAssets,
+        totalLiabilities,
+        netWorth,
+        formatted_assets: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(totalAssets),
+        formatted_liabilities: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(totalLiabilities),
+        formatted_net_worth: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(netWorth),
+        asset_count: assets.length,
+        liability_count: liabilities.length
+      }
+    }
+  } else {
+    if (accountsError) console.error("Error fetching accounts:", accountsError)
+    return []
+  }
+}
+
+// Fetch budget analysis data
+async function fetchBudgetAnalysisData(supabase: any, userId: string, timeFilter: { start: Date, end: Date }) {
+  // Fetch budgets
+  const { data: budgets, error: budgetsError } = await supabase
+    .from('budgets')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+  
+  // Fetch expenses for the time period
+  const { data: expenses, error: expensesError } = await supabase
+    .from('expenses')
+    .select('*, expense_categories(name, color)')
+    .eq('user_id', userId)
+    .gte('date', timeFilter.start.toISOString())
+    .lte('date', timeFilter.end.toISOString())
+  
+  console.log(`Budget analysis data fetched: ${budgets?.length || 0} budgets, ${expenses?.length || 0} expenses`)
+  
+  if (!budgetsError && budgets && budgets.length > 0) {
+    // Process budget data
+    const budgetAnalysis = budgets.map((budget: any) => {
+      // Find expenses for this budget's category
+      const categoryExpenses = expenses?.filter((expense: any) => {
+        return expense.category_id === budget.category_id
+      }) || []
+      
+      // Calculate total spent
+      const totalSpent = categoryExpenses.reduce((sum: number, expense: any) => {
+        return sum + (parseFloat(expense.amount) || 0)
+      }, 0)
+      
+      // Calculate percentage of budget used
+      const budgetAmount = parseFloat(budget.amount) || 0
+      const percentUsed = budgetAmount > 0 ? (totalSpent / budgetAmount * 100) : 0
+      const remaining = budgetAmount - totalSpent
+      
+      return {
+        id: budget.id,
+        name: budget.name || 'Unnamed Budget',
+        category: budget.category_name || 'Uncategorized',
+        budget_amount: budgetAmount,
+        formatted_budget: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(budgetAmount),
+        spent: totalSpent,
+        formatted_spent: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(totalSpent),
+        remaining: remaining,
+        formatted_remaining: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(remaining),
+        percent_used: percentUsed,
+        formatted_percent: `${percentUsed.toFixed(1)}%`,
+        status: percentUsed >= 100 ? 'over' : percentUsed >= 80 ? 'warning' : 'good',
+        expense_count: categoryExpenses.length,
+        period: budget.period || 'monthly'
+      }
+    })
+    
+    // Calculate overall budget metrics
+    const totalBudgeted = budgets.reduce((sum: number, budget: any) => sum + (parseFloat(budget.amount) || 0), 0)
+    const totalSpent = expenses ? expenses.reduce((sum: number, expense: any) => sum + (parseFloat(expense.amount) || 0), 0) : 0
+    const overallPercentUsed = totalBudgeted > 0 ? (totalSpent / totalBudgeted * 100) : 0
+    
+    return {
+      budgets: budgetAnalysis,
+      summary: {
+        total_budgeted: totalBudgeted,
+        formatted_budgeted: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(totalBudgeted),
+        total_spent: totalSpent,
+        formatted_spent: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(totalSpent),
+        remaining: totalBudgeted - totalSpent,
+        formatted_remaining: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(totalBudgeted - totalSpent),
+        percent_used: overallPercentUsed,
+        formatted_percent: `${overallPercentUsed.toFixed(1)}%`,
+        budget_count: budgets.length,
+        period: `${timeFilter.start.toLocaleDateString()} - ${timeFilter.end.toLocaleDateString()}`
+      }
+    }
+  } else {
+    if (budgetsError) console.error("Error fetching budgets:", budgetsError)
+    return []
+  }
+}
+
+// Fetch spending by category data
+async function fetchSpendingCategoriesData(supabase: any, userId: string, timeFilter: { start: Date, end: Date }) {
+  // Fetch expenses with categories
+  const { data: expenses, error: expensesError } = await supabase
+    .from('expenses')
+    .select('*, expense_categories(id, name, color)')
+    .eq('user_id', userId)
+    .gte('date', timeFilter.start.toISOString())
+    .lte('date', timeFilter.end.toISOString())
+  
+  console.log(`Spending categories data fetched: ${expenses?.length || 0} expenses`)
+  
+  if (!expensesError && expenses && expenses.length > 0) {
+    // Calculate total spending
+    const totalSpending = expenses.reduce((sum: number, expense: any) => {
+      return sum + (parseFloat(expense.amount) || 0)
+    }, 0)
+    
+    // Group expenses by category
+    const categoryMap: Record<string, any> = {}
+    
+    expenses.forEach((expense: any) => {
+      const categoryId = expense.category_id || 'uncategorized'
+      const categoryName = expense.expense_categories?.name || 'Uncategorized'
+      const categoryColor = expense.expense_categories?.color || '#888888'
+      const amount = parseFloat(expense.amount) || 0
+      
+      if (!categoryMap[categoryId]) {
+        categoryMap[categoryId] = {
+          id: categoryId,
+          category: categoryName,
+          color: categoryColor,
+          amount: 0,
+          transaction_count: 0,
+          transactions: []
+        }
+      }
+      
+      categoryMap[categoryId].amount += amount
+      categoryMap[categoryId].transaction_count += 1
+      categoryMap[categoryId].transactions.push({
+        id: expense.id,
+        date: expense.date,
+        name: expense.name,
+        amount: amount,
+        formatted_amount: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(amount)
+      })
+    })
+    
+    // Format category data
+    const categories = Object.values(categoryMap).map((category: any) => {
+      const percentOfTotal = totalSpending > 0 ? (category.amount / totalSpending * 100) : 0
+      
+      return {
+        ...category,
+        formatted_amount: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(category.amount),
+        percent_of_total: percentOfTotal,
+        formatted_percent: `${percentOfTotal.toFixed(1)}%`,
+        average_transaction: category.transaction_count > 0 ? 
+          (category.amount / category.transaction_count) : 0,
+        formatted_average: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(category.transaction_count > 0 ? 
+          (category.amount / category.transaction_count) : 0)
+      }
+    }).sort((a: any, b: any) => b.amount - a.amount)
+    
+    return {
+      categories,
+      summary: {
+        total_spending: totalSpending,
+        formatted_total: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(totalSpending),
+        category_count: categories.length,
+        transaction_count: expenses.length,
+        period: `${timeFilter.start.toLocaleDateString()} - ${timeFilter.end.toLocaleDateString()}`
+      }
+    }
+  } else {
+    if (expensesError) console.error("Error fetching expenses for categories:", expensesError)
+    return []
+  }
+}
+
+// Fetch income sources data
+async function fetchIncomeSourcesData(supabase: any, userId: string, timeFilter: { start: Date, end: Date }) {
+  // Fetch all income data with categories and complete details
+  const { data: incomes, error: incomesError } = await supabase
+    .from('incomes')
+    .select('*, income_categories(*)')
+    .eq('user_id', userId)
+    .gte('start_date', timeFilter.start.toISOString())
+    .lte('start_date', timeFilter.end.toISOString())
+    .order('start_date', { ascending: false })
+  
+  // Fetch all income categories to ensure we have complete category data
+  const { data: allCategories, error: categoriesError } = await supabase
+    .from('income_categories')
+    .select('*')
+    .eq('user_id', userId)
+  
+  console.log(`Income sources data fetched: ${incomes?.length || 0} income entries, ${allCategories?.length || 0} categories`)
+  
+  if (!incomesError && incomes && incomes.length > 0) {
+    // Calculate total income
+    const totalIncome = incomes.reduce((sum: number, income: any) => {
+      return sum + (parseFloat(income.amount) || 0)
+    }, 0)
+    
+    // Process all income entries with full details
+    const processedIncomes = incomes.map((income: any) => {
+      // Format date
+      let formattedDate = ''
+      try {
+        if (income.date && !isNaN(new Date(income.date).getTime())) {
+          formattedDate = new Date(income.date).toLocaleDateString()
+        }
+      } catch (error) {
+        // Leave empty if there's an error
+      }
+      
+      // Format amount with currency
+      const formattedAmount = new Intl.NumberFormat('en-US', { 
+        style: 'currency', 
+        currency: 'USD' 
+      }).format(income.amount || 0)
+      
+      return {
+        id: income.id,
+        name: income.name || '',
+        description: income.description || '',
+        amount: parseFloat(income.amount) || 0,
+        formatted_amount: formattedAmount,
+        date: income.date,
+        formatted_date: formattedDate,
+        category_id: income.category_id,
+        category_name: income.income_categories?.name || 'Uncategorized',
+        category_color: income.income_categories?.color || '#4CAF50',
+        payment_method: income.payment_method || '',
+        is_recurring: income.is_recurring || false,
+        frequency: income.frequency || 'one-time',
+        notes: income.notes || '',
+        created_at: income.created_at,
+        updated_at: income.updated_at
+      }
+    })
+    
+    // Group income by source/category
+    const sourceMap: Record<string, any> = {}
+    
+    incomes.forEach((income: any) => {
+      const categoryId = income.category_id || 'uncategorized'
+      const categoryName = income.income_categories?.name || 'Uncategorized'
+      const categoryColor = income.income_categories?.color || '#4CAF50'
+      const amount = parseFloat(income.amount) || 0
+      const isRecurring = income.is_recurring || false
+      const frequency = income.frequency || 'one-time'
+      
+      if (!sourceMap[categoryId]) {
+        sourceMap[categoryId] = {
+          id: categoryId,
+          source: categoryName,
+          color: categoryColor,
+          amount: 0,
+          transaction_count: 0,
+          recurring_count: 0,
+          transactions: [],
+          frequencies: {}
+        }
+      }
+      
+      // Update source totals
+      sourceMap[categoryId].amount += amount
+      sourceMap[categoryId].transaction_count += 1
+      
+      // Track recurring income
+      if (isRecurring) {
+        sourceMap[categoryId].recurring_count += 1
+      }
+      
+      // Track frequency distribution
+      if (!sourceMap[categoryId].frequencies[frequency]) {
+        sourceMap[categoryId].frequencies[frequency] = 0
+      }
+      sourceMap[categoryId].frequencies[frequency] += 1
+      
+      // Add transaction details
+      sourceMap[categoryId].transactions.push({
+        id: income.id,
+        date: income.date,
+        formatted_date: new Date(income.date).toLocaleDateString(),
+        name: income.name || '',
+        description: income.description || '',
+        amount: amount,
+        formatted_amount: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(amount),
+        is_recurring: isRecurring,
+        frequency: frequency,
+        payment_method: income.payment_method || ''
+      })
+    })
+    
+    // Format source data
+    const sources = Object.values(sourceMap).map((source: any) => {
+      const percentOfTotal = totalIncome > 0 ? (source.amount / totalIncome * 100) : 0
+      const recurringPercentage = source.transaction_count > 0 ? 
+        (source.recurring_count / source.transaction_count * 100) : 0
+      
+      // Format frequencies for display
+      const formattedFrequencies = Object.entries(source.frequencies).map(([freq, count]: [string, any]) => ({
+        frequency: freq,
+        count: count,
+        percentage: source.transaction_count > 0 ? (count / source.transaction_count * 100) : 0
+      })).sort((a, b) => b.count - a.count)
+      
+      return {
+        ...source,
+        formatted_amount: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(source.amount),
+        percent_of_total: percentOfTotal,
+        formatted_percent: `${percentOfTotal.toFixed(1)}%`,
+        average_transaction: source.transaction_count > 0 ? 
+          (source.amount / source.transaction_count) : 0,
+        formatted_average: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(source.transaction_count > 0 ? 
+          (source.amount / source.transaction_count) : 0),
+        recurring_percentage: recurringPercentage,
+        formatted_recurring: `${recurringPercentage.toFixed(1)}%`,
+        frequencies: formattedFrequencies
+      }
+    }).sort((a: any, b: any) => b.amount - a.amount)
+    
+    // Get monthly breakdown
+    const monthlyData: Record<string, {amount: number, transactions: number, recurring: number}> = {}
+    
+    incomes.forEach((income: any) => {
+      if (!income.date) return
+      
+      const date = new Date(income.date)
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+      const amount = parseFloat(income.amount) || 0
+      const isRecurring = income.is_recurring || false
+      
+      if (!monthlyData[monthKey]) {
+        monthlyData[monthKey] = {
+          amount: 0,
+          transactions: 0,
+          recurring: 0
+        }
+      }
+      
+      monthlyData[monthKey].amount += amount
+      monthlyData[monthKey].transactions += 1
+      if (isRecurring) {
+        monthlyData[monthKey].recurring += 1
+      }
+    })
+    
+    // Format monthly data
+    const monthlyIncome = Object.entries(monthlyData).map(([key, data]) => {
+      const [year, month] = key.split('-')
+      const date = new Date(parseInt(year), parseInt(month) - 1, 1)
+      const monthName = date.toLocaleString('default', { month: 'long' })
+      
+      return {
+        month: `${monthName} ${year}`,
+        monthKey: key,
+        amount: data.amount,
+        formatted_amount: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(data.amount),
+        transaction_count: data.transactions,
+        recurring_count: data.recurring,
+        recurring_percentage: data.transactions > 0 ? 
+          (data.recurring / data.transactions * 100) : 0,
+        average_per_transaction: data.transactions > 0 ? 
+          (data.amount / data.transactions) : 0,
+        formatted_average: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(data.transactions > 0 ? (data.amount / data.transactions) : 0)
+      }
+    }).sort((a, b) => b.monthKey.localeCompare(a.monthKey))
+    
+    // Calculate frequency distribution across all income
+    const frequencyDistribution: Record<string, {count: number, amount: number}> = {}
+    incomes.forEach((income: any) => {
+      const frequency = income.frequency || 'one-time'
+      const amount = parseFloat(income.amount) || 0
+      
+      if (!frequencyDistribution[frequency]) {
+        frequencyDistribution[frequency] = {
+          count: 0,
+          amount: 0
+        }
+      }
+      
+      frequencyDistribution[frequency].count += 1
+      frequencyDistribution[frequency].amount += amount
+    })
+    
+    // Format frequency distribution
+    const frequencies = Object.entries(frequencyDistribution).map(([frequency, data]) => ({
+      frequency,
+      count: data.count,
+      percentage: incomes.length > 0 ? (data.count / incomes.length * 100) : 0,
+      amount: data.amount,
+      formatted_amount: new Intl.NumberFormat('en-US', { 
+        style: 'currency', 
+        currency: 'USD' 
+      }).format(data.amount),
+      percent_of_total: totalIncome > 0 ? (data.amount / totalIncome * 100) : 0
+    })).sort((a, b) => b.count - a.count)
+    
+    return {
+      incomes: processedIncomes,
+      sources,
+      monthlyIncome,
+      frequencies,
+      categories: allCategories || [],
+      summary: {
+        total_income: totalIncome,
+        formatted_total: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(totalIncome),
+        source_count: sources.length,
+        transaction_count: incomes.length,
+        monthly_average: totalIncome / Math.max(1, monthlyIncome.length),
+        formatted_monthly_average: new Intl.NumberFormat('en-US', { 
+          style: 'currency', 
+          currency: 'USD' 
+        }).format(totalIncome / Math.max(1, monthlyIncome.length)),
+        recurring_count: incomes.filter(inc => inc.is_recurring).length,
+        recurring_percentage: incomes.length > 0 ? 
+          (incomes.filter(inc => inc.is_recurring).length / incomes.length * 100) : 0,
+        period: `${timeFilter.start.toLocaleDateString()} - ${timeFilter.end.toLocaleDateString()}`
+      }
+    }
+  } else {
+    if (incomesError) console.error("Error fetching income sources:", incomesError)
+    if (categoriesError) console.error("Error fetching income categories:", categoriesError)
+    return []
+  }
 }

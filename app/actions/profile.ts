@@ -83,6 +83,27 @@ export async function updateUserProfile(data: ProfileUpdateData): Promise<{
     
     // Process phone update
     if (data.phone !== undefined) {
+      // Only check for duplicates if the phone number is not empty
+      if (data.phone) {
+        // Check if this phone number is already in use by another user
+        const { data: existingUserWithPhone, error: phoneCheckError } = await supabase
+          .from('users')
+          .select('id')
+          .eq('phone', data.phone)
+          .neq('id', user.id) // Exclude current user
+          .maybeSingle()
+        
+        if (existingUserWithPhone) {
+          log('ERROR: Phone number already in use by another user')
+          return { success: false, error: "This phone number is already in use by another user. Please use a different phone number." }
+        }
+        
+        if (phoneCheckError && phoneCheckError.code !== 'PGRST116') { // PGRST116 = not found, which is good
+          log('ERROR checking phone uniqueness:', phoneCheckError.message)
+          // Continue anyway, we'll let the database constraint handle it if there's an issue
+        }
+      }
+      
       updates.phone = data.phone
       log('Phone update:', data.phone)
     }
@@ -179,6 +200,12 @@ export async function updateUserProfile(data: ProfileUpdateData): Promise<{
       
       if (updateError) {
         log('ERROR updating profile:', updateError.message)
+        
+        // Handle specific error cases with user-friendly messages
+        if (updateError.message.includes('users_phone_key')) {
+          return { success: false, error: "This phone number is already in use by another user. Please use a different phone number." }
+        }
+        
         return { success: false, error: `Failed to update profile: ${updateError.message}` }
       }
       

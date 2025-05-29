@@ -4,8 +4,11 @@ import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { createAdminSupabaseClient } from "@/lib/supabase/admin"
 import { getAuthenticatedUser } from "@/lib/auth"
 import { format } from "date-fns"
+import { revalidatePath } from "next/cache"
+import { fetchIncomeData, fetchExpenseData, fetchDebtData, fetchSubscriptionData, fetchReportData as fetchReportDataFields } from "./report-data-provider"
 import { PostgrestError } from "@supabase/supabase-js"
 import { v4 as uuidv4 } from "uuid"
+import { generateReportByFormat } from "@/lib/report-generators-updated"
 
 // Types for report data
 export type ReportType = 
@@ -471,73 +474,268 @@ async function generateReportFile(report: Report): Promise<string> {
     const timeFilter = getTimeRangeFilter(report.time_range)
     
     switch (report.type) {
-      case 'overview':
-        // Fetch overview data (transactions, income, expenses, net worth)
+      case 'income-sources':
+        // Fetch income sources data
         try {
-          const { data: transactions, error: transactionsError } = await supabase
-            .from('transactions')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(100)
+          // Use the fetchIncomeData function to get the data
+          const incomeSourcesData = await fetchIncomeData(timeFilter);
           
-          if (!transactionsError && transactions) {
-            data = transactions
+          // Log what we received
+          console.log('Raw income sources data:', incomeSourcesData);
+          
+          if (incomeSourcesData && Array.isArray(incomeSourcesData)) {
+            // If the data is already an array, use it directly
+            data = incomeSourcesData;
+            console.log('Using income data array with length:', incomeSourcesData.length);
+            
+            console.log('Income sources data prepared for report:', { 
+              dataLength: data.length,
+              firstItem: data.length > 0 ? JSON.stringify(data[0]).substring(0, 100) + '...' : 'none'
+            });
+          } else {
+            console.warn('Income sources data is not in expected format:', typeof incomeSourcesData);
+            data = [];
           }
         } catch (error) {
-          console.log('Error fetching transactions, using empty data set')
+          console.error('Error fetching income sources data:', error);
+          console.log('Using empty data set for income sources');
+          data = [];
+        }
+        break;
+        
+      case 'overview':
+        // Fetch overview data (expenses, income, budgets)
+        try {
+          // Fetch expenses
+          const { data: expenses, error: expensesError } = await supabase
+            .from('expenses')
+            .select('*')
+            .eq('user_id', userId)
+            .gte('date', timeFilter.start.toISOString())
+            .lte('date', timeFilter.end.toISOString())
+            .order('date', { ascending: false })
+            .limit(100)
+          
+          // Fetch income
+          const { data: income, error: incomeError } = await supabase
+            .from('incomes')
+            .select('*')
+            .eq('user_id', userId)
+            .gte('start_date', timeFilter.start.toISOString())
+            .lte('start_date', timeFilter.end.toISOString())
+            .order('start_date', { ascending: false })
+            .limit(100)
+          
+          // Fetch budgets
+          const { data: budgets, error: budgetsError } = await supabase
+            .from('budgets')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
+            .limit(20)
+          
+          if (expenses || income || budgets) {
+            data = {
+              expenses: expenses || [],
+              income: income || [],
+              budgets: budgets || [],
+              summary: {
+                totalExpenses: expenses ? expenses.reduce((sum, exp) => sum + (parseFloat(exp.amount) || 0), 0) : 0,
+                totalIncome: income ? income.reduce((sum, inc) => sum + (parseFloat(inc.amount) || 0), 0) : 0,
+                budgetCount: budgets ? budgets.length : 0
+              }
+            }
+          }
+          
+          console.log('Overview data fetched:', { 
+            expensesCount: expenses?.length || 0,
+            incomeCount: income?.length || 0,
+            budgetsCount: budgets?.length || 0
+          })
+        } catch (error) {
+          console.error('Error fetching overview data:', error)
+          console.log('Using empty data set for overview')
         }
         break
-        
+
       case 'income-expense':
         // Fetch income and expense data
         try {
-          const { data: incomeExpense, error: incomeExpenseError } = await supabase
-            .from('transactions')
-            .select('*')
-            .in('type', ['income', 'expense'])
-            .order('created_at', { ascending: false })
-            .limit(100)
+          // Fetch expenses
+          const { data: expenses, error: expensesError } = await supabase
+            .from('expenses')
+            .select('*, expense_categories(name, color)')
+            .eq('user_id', userId)
+            .gte('date', timeFilter.start.toISOString())
+            .lte('date', timeFilter.end.toISOString())
+            .order('date', { ascending: false })
           
-          if (!incomeExpenseError && incomeExpense) {
-            data = incomeExpense
+          // Fetch income
+          const { data: income, error: incomeError } = await supabase
+            .from('income')
+            .select('*, income_categories(name, color)')
+            .eq('user_id', userId)
+            .gte('date', timeFilter.start.toISOString())
+            .lte('date', timeFilter.end.toISOString())
+            .order('date', { ascending: false })
+          
+          // Combine and process data
+          if ((expenses && !expensesError) || (income && !incomeError)) {
+            // Calculate monthly totals
+            const monthlyData = {};
+            
+            // Process expenses by month
+            expenses?.forEach(expense => {
+              const date = new Date(expense.date);
+              const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+              
+              if (!monthlyData[monthKey]) {
+                monthlyData[monthKey] = { expenses: 0, income: 0 };
+              }
+              
+              monthlyData[monthKey].expenses += parseFloat(expense.amount) || 0;
+            });
+            
+            // Process income by month
+            income?.forEach(inc => {
+              const date = new Date(inc.date);
+              const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+              
+              if (!monthlyData[monthKey]) {
+                monthlyData[monthKey] = { expenses: 0, income: 0 };
+              }
+              
+              monthlyData[monthKey].income += parseFloat(inc.amount) || 0;
+            });
+            
+            data = {
+              expenses: expenses || [],
+              income: income || [],
+              monthlyTotals: Object.entries(monthlyData).map(([month, values]) => ({
+                month,
+                ...values,
+                net: (values.income - values.expenses)
+              })).sort((a, b) => a.month.localeCompare(b.month)),
+              summary: {
+                totalExpenses: expenses ? expenses.reduce((sum, exp) => sum + (parseFloat(exp.amount) || 0), 0) : 0,
+                totalIncome: income ? income.reduce((sum, inc) => sum + (parseFloat(inc.amount) || 0), 0) : 0,
+                netCashflow: (income ? income.reduce((sum, inc) => sum + (parseFloat(inc.amount) || 0), 0) : 0) - 
+                             (expenses ? expenses.reduce((sum, exp) => sum + (parseFloat(exp.amount) || 0), 0) : 0)
+              }
+            };
+            
+            console.log('Income/Expense data fetched:', { 
+              expensesCount: expenses?.length || 0,
+              incomeCount: income?.length || 0,
+              monthsCount: Object.keys(monthlyData).length
+            });
           }
         } catch (error) {
-          console.log('Error fetching income/expense data, using empty data set')
+          console.error('Error fetching income/expense data:', error);
+          console.log('Using empty data set for income/expense');
         }
         break
         
       case 'net-worth':
-        // Fetch net worth data
+        // Fetch net worth data using accounts and their balances
         try {
-          const { data: assets, error: assetsError } = await supabase
-            .from('assets')
+          // Fetch accounts
+          const { data: accounts, error: accountsError } = await supabase
+            .from('accounts')
             .select('*')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
           
-          const { data: liabilities, error: liabilitiesError } = await supabase
-            .from('liabilities')
-            .select('*')
-          
-          if ((!assetsError || !liabilitiesError) && (assets || liabilities)) {
-            data = [...(assets || []), ...(liabilities || [])]
+          if (!accountsError && accounts && accounts.length > 0) {
+            // Categorize accounts as assets or liabilities
+            const assets = accounts.filter(account => 
+              account.type === 'checking' || 
+              account.type === 'savings' || 
+              account.type === 'investment' || 
+              account.type === 'cash' ||
+              account.type === 'other_asset'
+            );
+            
+            const liabilities = accounts.filter(account => 
+              account.type === 'credit_card' || 
+              account.type === 'loan' || 
+              account.type === 'mortgage' ||
+              account.type === 'other_liability'
+            );
+            
+            // Calculate totals
+            const totalAssets = assets.reduce((sum, asset) => sum + (parseFloat(asset.current_balance) || 0), 0);
+            const totalLiabilities = liabilities.reduce((sum, liability) => sum + (parseFloat(liability.current_balance) || 0), 0);
+            const netWorth = totalAssets - totalLiabilities;
+            
+            data = {
+              assets,
+              liabilities,
+              summary: {
+                totalAssets,
+                totalLiabilities,
+                netWorth
+              }
+            };
+            
+            console.log('Net worth data fetched:', { 
+              assetsCount: assets.length, 
+              liabilitiesCount: liabilities.length,
+              netWorth
+            });
           }
         } catch (error) {
-          console.log('Error fetching net worth data, using empty data set')
+          console.error('Error fetching net worth data:', error);
+          console.log('Using empty data set for net worth');
         }
         break
         
       case 'investments':
-        // Fetch investment data
+        // Fetch investment data from accounts and investments tables
         try {
-          const { data: investments, error: investmentsError } = await supabase
-            .from('investments')
+          // Fetch investment accounts
+          const { data: investmentAccounts, error: accountsError } = await supabase
+            .from('accounts')
             .select('*')
+            .eq('user_id', userId)
+            .eq('type', 'investment')
             .order('created_at', { ascending: false })
           
-          if (!investmentsError && investments) {
-            data = investments
+          // Fetch subscriptions (as investments)
+          const { data: subscriptions, error: subscriptionsError } = await supabase
+            .from('subscriptions')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
+          
+          if ((!accountsError && investmentAccounts) || (!subscriptionsError && subscriptions)) {
+            // Calculate total investment value
+            const totalInvestments = investmentAccounts ? 
+              investmentAccounts.reduce((sum, acct) => sum + (parseFloat(acct.current_balance) || 0), 0) : 0;
+            
+            // Calculate total subscription costs
+            const totalSubscriptions = subscriptions ?
+              subscriptions.reduce((sum, sub) => sum + (parseFloat(sub.amount) || 0), 0) : 0;
+            
+            data = {
+              investmentAccounts: investmentAccounts || [],
+              subscriptions: subscriptions || [],
+              summary: {
+                totalInvestments,
+                totalSubscriptions,
+                accountCount: investmentAccounts?.length || 0,
+                subscriptionCount: subscriptions?.length || 0
+              }
+            };
+            
+            console.log('Investment data fetched:', { 
+              accountsCount: investmentAccounts?.length || 0, 
+              subscriptionsCount: subscriptions?.length || 0
+            });
           }
         } catch (error) {
-          console.log('Error fetching investment data, using empty data set')
+          console.error('Error fetching investment data:', error);
+          console.log('Using empty data set for investments');
         }
         break
     }

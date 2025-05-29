@@ -75,6 +75,36 @@ export function prepareReportData(data: any[], reportType: string): any[] {
         percent_change: item.percent_change || '',
         is_increase: item.is_increase || false
       }));
+      
+    case 'income-sources':
+      // Handle income sources report data
+      const dataObj = data as any;
+      if (dataObj.sources && Array.isArray(dataObj.sources)) {
+        // Return the sources array with formatted data
+        return dataObj.sources.map((source: any) => ({
+          id: source.id || '',
+          source: preserveString(source.source),
+          amount: source.amount || 0,
+          formatted_amount: source.formatted_amount || new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(source.amount || 0),
+          percent_of_total: source.percent_of_total || 0,
+          formatted_percent: source.formatted_percent || `${(source.percent_of_total || 0).toFixed(1)}%`,
+          count: source.count || 0,
+          recurring_count: source.recurring_count || 0,
+          recurring_percentage: source.recurring_percentage || 0
+        }));
+      } else if (Array.isArray(data)) {
+        // If data is already an array (fallback)
+        return data.map(source => ({
+          id: source.id || '',
+          source: preserveString(source.source || source.name || ''),
+          amount: source.amount || 0,
+          formatted_amount: source.formatted_amount || new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(source.amount || 0),
+          percent_of_total: source.percent_of_total || 0,
+          formatted_percent: source.formatted_percent || `${(source.percent_of_total || 0).toFixed(1)}%`,
+          count: source.count || 0
+        }));
+      }
+      return [];
 
     case 'overview':
       return data.map(item => ({
@@ -365,6 +395,16 @@ function getReportHeaders(reportType: string, data?: any[]): Array<{ key: string
       ];
       
       return incomeExpenseHeaders;
+      
+    case 'income-sources':
+      return [
+        { key: 'source', label: 'Income Source' },
+        { key: 'formatted_amount', label: 'Amount' },
+        { key: 'formatted_percent', label: 'Percent of Total' },
+        { key: 'count', label: 'Number of Entries' },
+        { key: 'recurring_count', label: 'Recurring Entries' },
+        { key: 'recurring_percentage', label: 'Recurring %' }
+      ];
 
     case 'overview':
       const overviewHeaders = [
