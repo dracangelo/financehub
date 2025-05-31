@@ -2,7 +2,7 @@
 
 import { useEffect } from "react"
 import { useRouter, usePathname } from "next/navigation"
-import { getClientAuthenticatedUser } from "@/lib/auth"
+import { getAuthenticatedUser } from "@/lib/auth"
 import { ThemeToggle } from "@/components/theme-toggle"
 
 export default function AuthLayout({
@@ -24,25 +24,15 @@ export default function AuthLayout({
       '/reset-password'
     ]
     
-    // If we're on a public auth route, don't check authentication
-    if (publicAuthRoutes.some(route => pathname.startsWith(route))) {
+    // If pathname is not available yet or we're on a public auth route, don't check authentication
+    if (!pathname || publicAuthRoutes.some(route => pathname.startsWith(route))) {
       return
     }
     
     const checkAuth = async () => {
       try {
-        const { data: { user }, error } = await getClientAuthenticatedUser()
+        const user = await getAuthenticatedUser()
         
-        if (error) {
-          // Don't log AuthSessionMissingError on public routes
-          if (typeof error === 'object' && 'message' in error && 
-              typeof error.message === 'string' && 
-              !error.message.includes("Auth session missing")) {
-            console.error("Auth error:", error)
-          }
-          return
-        }
-
         if (user && pathname !== '/dashboard') {
           // Prevent infinite redirects by checking if we're already on the dashboard
           router.push('/dashboard')

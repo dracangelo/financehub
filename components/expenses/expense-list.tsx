@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Edit, Trash2, MapPin, Receipt, CalendarClock, Clock, Tag, AlertTriangle, Filter, Search, X, DollarSign, FileText, Shield, Split, RepeatIcon } from "lucide-react"
 import { format } from "date-fns"
 import Link from "next/link"
-import { getExpenses, deleteExpense, updateExpense, LocationSearchParams, searchExpensesByLocation } from "@/app/actions/expenses"
+import { getExpenses, deleteExpense, updateExpense, searchExpensesByLocation } from "@/app/actions/expenses"
 import { useToast } from "@/components/ui/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { useRouter } from "next/navigation"
@@ -36,28 +36,25 @@ const formatRecurrenceText = (recurrence: string): string => {
 };
 
 const ExpenseItem = ({ expense, onDelete }: { expense: any; onDelete: (id: string) => void }) => {
-  // Debug the expense object to see its structure
+  // Initialize splits as an empty array if it doesn't exist
+  const splits = expense.splits && Array.isArray(expense.splits) ? expense.splits : [];
+  
+  // Initialize categories as an empty array if it doesn't exist
+  const categories = expense.category_ids || [];
+  
+  // Handle location data safely
+  const expLocationName = expense.location_name || null;
+  const latitude = expense.latitude || null;
+  const longitude = expense.longitude || null;
+  
+  // For debugging
   console.log('Expense object:', expense);
-  console.log('Splits:', expense.splits);
-  
-  // Explicitly log the splits to see their structure
-  if (expense.splits) {
-    if (Array.isArray(expense.splits)) {
-      console.log('Splits is an array with length:', expense.splits.length);
-      expense.splits.forEach((split: any, i: number) => {
-        console.log(`Split ${i}:`, split);
-      });
-    } else {
-      console.log('Splits is not an array:', typeof expense.splits);
-    }
-  } else {
-    console.log('No splits property found on expense');
-  }
-  
+  console.log('Splits:', splits);
+  console.log('Categories:', categories);
   console.log('Location data:', {
-    location_name: expense.location_name,
-    latitude: expense.latitude,
-    longitude: expense.longitude
+    location_name: expLocationName,
+    latitude: latitude,
+    longitude: longitude
   });
   
   // The database stores the category as text, but our constants use UUIDs
@@ -79,7 +76,7 @@ const ExpenseItem = ({ expense, onDelete }: { expense: any; onDelete: (id: strin
   
   // Format location data if available
   const hasLocation = expense.latitude !== null && expense.latitude !== undefined && expense.longitude !== null && expense.longitude !== undefined;
-  const [locationName, setLocationName] = useState<string | null>(expense.location_name || null);
+  const [displayLocationName, setDisplayLocationName] = useState<string | null>(expLocationName || null);
   const [locationCoords, setLocationCoords] = useState<{lat: number, lng: number} | null>(null);
   
   // Parse location data
@@ -100,20 +97,20 @@ const ExpenseItem = ({ expense, onDelete }: { expense: any; onDelete: (id: strin
   
   // Get location name from coordinates if not already provided
   useEffect(() => {
-    if (!locationCoords || locationName) return;
+    if (!locationCoords || displayLocationName) return;
     
     getAddressFromCoordinates(locationCoords.lat, locationCoords.lng)
       .then(address => {
         if (address) {
           // Just use the first part of the address (usually the place name)
           const placeName = address.split(',')[0];
-          setLocationName(placeName);
+          setDisplayLocationName(placeName);
         }
       })
       .catch(error => {
         console.error("Error getting address from coordinates:", error);
       });
-  }, [locationCoords, locationName]);
+  }, [locationCoords, displayLocationName]);
   
   // Debug split expenses and refresh data when needed
   useEffect(() => {
@@ -162,10 +159,10 @@ const ExpenseItem = ({ expense, onDelete }: { expense: any; onDelete: (id: strin
               </span>
               
               {/* Display location if available */}
-              {(expense.location_name || locationName) && (
+              {(expense.location_name || displayLocationName) && (
                 <span className="inline-flex items-center">
                   <MapPin className="w-3 h-3 mr-1" />
-                  {expense.location_name || locationName}
+                  {expense.location_name || displayLocationName}
                 </span>
               )}
               
@@ -189,17 +186,22 @@ const ExpenseItem = ({ expense, onDelete }: { expense: any; onDelete: (id: strin
             </div>
             
             {/* Split expenses section - separate from the main details for better visibility */}
-            {expense.splits && Array.isArray(expense.splits) && expense.splits.length > 0 && (
-              <div className="mt-3 space-y-1">
-                <h4 className="text-sm font-semibold text-indigo-700">Split Details:</h4>
-                {expense.splits.map((split: any, index: number) => (
-                  <div key={split.id || index} className="flex items-center text-indigo-600 bg-indigo-50 p-2 rounded-md">
-                    <Split className="w-4 h-4 mr-2" />
-                    <div>
-                      <span className="font-medium">Split with <strong>{split.shared_with_name || split.split_with_name}</strong></span>
-                      <div className="text-sm">
-                        They owe you <strong>{formatCurrency(split.amount)}</strong>
-                        {split.notes && <span className="italic"> ({split.notes})</span>}
+            {/* Display split expenses if any */}
+            {splits && splits.length > 0 && (
+              <div className="mt-2 space-y-2 border-l-2 pl-3 border-blue-200">
+                <div className="flex items-center text-xs text-blue-600">
+                  <Split className="w-3 h-3 mr-1" />
+                  Split with {splits.length} {splits.length === 1 ? 'person' : 'people'}
+                </div>
+                {splits.map((split: any, index: number) => (
+                  <div key={index} className="text-xs">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <div>
+                          <span>{split.shared_with_name || 'Someone'} owes you </span>
+                          <strong>{formatCurrency(split.amount)}</strong>
+                          {split.notes && <span className="italic"> ({split.notes})</span>}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -209,21 +211,43 @@ const ExpenseItem = ({ expense, onDelete }: { expense: any; onDelete: (id: strin
             
             {/* Display categories as badges */}
             <div className="mt-1 flex flex-wrap gap-1">
-              {expense.categories && expense.categories.map((category: any, index: number) => (
-                <Badge 
-                  key={index}
-                  variant="outline" 
-                  className="ml-1" 
-                  style={{ 
-                    borderColor: categoryColor,
-                    color: categoryColor,
-                    fontWeight: 'normal'
-                  }}
-                >
-                  <Tag className="w-3 h-3 mr-1" />
-                  {category.name}
-                </Badge>
-              ))}
+              {/* First try to use category_ids array if available */}
+              {Array.isArray(expense.category_ids) && expense.category_ids.length > 0 ? (
+                expense.category_ids.map((catId: string, index: number) => {
+                  const cat = ALL_CATEGORIES.find(c => c.id === catId);
+                  return cat ? (
+                    <Badge 
+                      key={index}
+                      variant="outline" 
+                      className="ml-1" 
+                      style={{ 
+                        borderColor: cat.color || categoryColor,
+                        color: cat.color || categoryColor,
+                        fontWeight: 'normal'
+                      }}
+                    >
+                      <Tag className="w-3 h-3 mr-1" />
+                      {cat.name}
+                    </Badge>
+                  ) : null;
+                })
+              ) : (
+                /* Fallback to single category if category_ids is not available */
+                categoryId && (
+                  <Badge 
+                    variant="outline" 
+                    className="ml-1" 
+                    style={{ 
+                      borderColor: categoryColor,
+                      color: categoryColor,
+                      fontWeight: 'normal'
+                    }}
+                  >
+                    <Tag className="w-3 h-3 mr-1" />
+                    {categoryName}
+                  </Badge>
+                )
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">

@@ -1,4 +1,4 @@
-import { createClient } from './server';
+import { createServerSupabaseClient } from './server-utils';
 
 /**
  * Refreshes the user's session token if it's expired or about to expire
@@ -6,23 +6,31 @@ import { createClient } from './server';
  */
 export async function refreshSession() {
   try {
-    const supabase = await createClient();
+    const supabase = await createServerSupabaseClient();
     
     if (!supabase) {
       console.error('Failed to create Supabase client for token refresh');
       return null;
     }
 
-    // Get the current session
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    // Use getUser() instead of getSession() for better security
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
     
-    if (sessionError) {
-      console.error('Error getting session:', sessionError);
+    if (userError) {
+      console.error('Error getting user:', userError);
       return null;
     }
 
-    // If no session, nothing to refresh
-    if (!session) {
+    // If no user, nothing to refresh
+    if (!user) {
+      return null;
+    }
+
+    // Get the session after verifying the user
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError || !session) {
+      console.error('Error getting session:', sessionError);
       return null;
     }
 

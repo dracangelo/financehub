@@ -9,7 +9,8 @@
     "prebuild": "node scripts/fix-missing-pages.js",
     "start": "next start",
     "lint": "next lint",
-    "update-schema": "node scripts/update-schema.js"
+    "update-schema": "node scripts/update-schema.js",
+    "db:migrate": "tsx scripts/apply-migrations.ts"
   },
   "dependencies": {
     "@emotion/is-prop-valid": "latest",
@@ -77,6 +78,7 @@
     "next": "15.2.4",
     "next-themes": "latest",
     "pdfmake": "^0.2.19",
+    "pg": "^8.16.0",
     "react": "^18.2.0",
     "react-confetti": "^6.4.0",
     "react-day-picker": "8.10.1",

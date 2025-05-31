@@ -5,7 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { InfoIcon, BarChart3Icon, PieChartIcon, TrendingUpIcon } from "lucide-react"
 import { DollarSign, TrendingUp, AlertTriangle, CheckCircle2 } from "lucide-react"
 import { getClientSupabaseClient } from "@/lib/supabase/client"
-import { getClientAuthenticatedUser } from "@/lib/auth"
+import { getAuthenticatedUser } from "@/lib/auth"
 import { 
   BarChart, 
   Bar, 
@@ -66,7 +66,7 @@ export function SubscriptionROICalculator() {
       setError(null)
       
       // Get authenticated user
-      const { data: { user } } = await getClientAuthenticatedUser()
+      const user = await getAuthenticatedUser()
       if (!user) {
         throw new Error("Not authenticated")
       }

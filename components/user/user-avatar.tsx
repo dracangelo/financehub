@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { User, UserCircle } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
-import { getClientAuthenticatedUser } from "@/lib/auth"
+import { getAuthenticatedUser } from "@/lib/auth"
 import { getClientSupabaseClient } from "@/lib/supabase/client"
 
 interface UserAvatarProps {
@@ -26,6 +26,10 @@ export function UserAvatar({
   const [error, setError] = useState(false)
   const [imagePreloaded, setImagePreloaded] = useState(false)
   const supabase = getClientSupabaseClient()
+  if (!supabase) {
+    console.error('Supabase client not available')
+    return null
+  }
 
   // Size classes for the avatar
   const sizeClasses = {
@@ -65,10 +69,13 @@ export function UserAvatar({
       try {
         console.log('[UserAvatar] Fetching user profile...')
         // Get authenticated user using the centralized auth method
-        const { data, error: authError } = await getClientAuthenticatedUser()
-        const user = data?.user
+        const user = await getAuthenticatedUser()
+        if (!user) {
+          console.log('[UserAvatar] No authenticated user found')
+          return
+        }
         
-        if (user && isMounted) {
+        if (isMounted) {
           console.log('[UserAvatar] User authenticated:', user.id)
           
           // First try to get the profile directly from the database

@@ -1,483 +1,802 @@
 "use server"
 
-import { createServerSupabaseClient } from "@/lib/supabase/server"
-import { getAuthenticatedUser } from "@/lib/auth"
+import { getAuthenticatedUser } from '@/lib/auth'
+import { createServerSupabaseClient as createServerSupabaseClientHelper } from '@/lib/supabase/server'
 import { ReportType, TimeRange } from "./reports"
 import { formatCurrency } from '@/lib/utils'
+import { createClient } from "@supabase/supabase-js"
+import type { Database } from "@/lib/supabase/database.types"
 
-// Fetch data for reports based on type and time range
-export async function fetchReportData(reportType: ReportType, timeRange: TimeRange) {
-  const supabase = await createServerSupabaseClient()
-  
-  if (!supabase) {
-    throw new Error("Failed to initialize Supabase client")
-  }
-  
-  const user = await getAuthenticatedUser()
-  
-  if (!user) {
-    throw new Error("Authentication required")
-  }
-  
-  // Get time range filter
-  const timeFilter = getTimeRangeFilter(timeRange)
-  let reportData: any = null
-  
-  try {
-    console.log(`Fetching data for ${reportType} report with time range ${timeRange}`)
-    console.log(`Date range: ${timeFilter.start.toISOString()} to ${timeFilter.end.toISOString()}`)
-    
-    switch (reportType) {
-      case 'overview':
-        reportData = await fetchOverviewData(supabase, user.id, timeFilter)
-        break
-      case 'income-expense':
-        reportData = await fetchIncomeExpenseData(supabase, user.id, timeFilter)
-        break
-      case 'net-worth':
-        reportData = await fetchNetWorthData(supabase, user.id)
-        break
-      case 'budget-analysis':
-        reportData = await fetchBudgetAnalysisData(supabase, user.id, timeFilter)
-        break
-      case 'spending-categories':
-        reportData = await fetchSpendingCategoriesData(supabase, user.id, timeFilter)
-        break
-      case 'income-sources':
-        // Use our updated fetchIncomeData function from report-data-provider
-        try {
-          const { fetchIncomeData } = await import('./report-data-provider')
-          reportData = await fetchIncomeData(timeFilter)
-          console.log('Using updated fetchIncomeData function for income-sources report')
-        } catch (error) {
-          console.error('Error importing fetchIncomeData, falling back to fetchIncomeSourcesData:', error)
-          reportData = await fetchIncomeSourcesData(supabase, user.id, timeFilter)
-        }
-        break
-      case 'expense-trends':
-        // Use our updated fetchExpenseData function from report-data-provider
-        try {
-          const { fetchExpenseData } = await import('./report-data-provider')
-          reportData = await fetchExpenseData(timeFilter)
-          console.log('Using updated fetchExpenseData function for expense-trends report')
-        } catch (error) {
-          console.error('Error importing fetchExpenseData:', error)
-          reportData = []
-        }
-        break
-      case 'debt-analysis':
-        // Use our updated fetchDebtData function from report-data-provider
-        try {
-          const { fetchDebtData } = await import('./report-data-provider')
-          reportData = await fetchDebtData()
-          console.log('Using updated fetchDebtData function for debt-analysis report')
-        } catch (error) {
-          console.error('Error importing fetchDebtData:', error)
-          reportData = []
-        }
-        break
-      case 'subscriptions':
-        // Use our updated fetchSubscriptionData function from report-data-provider
-        try {
-          const { fetchSubscriptionData } = await import('./report-data-provider')
-          reportData = await fetchSubscriptionData()
-          console.log('Using updated fetchSubscriptionData function for subscriptions report')
-        } catch (error) {
-          console.error('Error importing fetchSubscriptionData:', error)
-          reportData = []
-        }
-        break
-      // Handle other report types with the default case
-      case 'budget-analysis':
-      case 'spending-categories':
-      case 'investments':
-      case 'overview':
-      case 'income-expense':
-      case 'net-worth':
-      default:
-        console.warn(`Unknown report type: ${reportType}`)
-        reportData = []
-    }
-    
-    console.log(`Returning data for ${reportType} report:`, 
-      reportData ? (Array.isArray(reportData) ? 
-        `${reportData.length} items` : 'Object with data') : 'No data')
-    
-    return reportData
-  } catch (error) {
-    console.error(`Error fetching data for ${reportType} report:`, error)
-    return []
-  }
-}
+// Create a type for our Supabase client
+type SupabaseClient = ReturnType<typeof createClient<Database>>
 
-// Helper function to get date range from time range
-function getTimeRangeFilter(timeRange: TimeRange): { start: Date, end: Date } {
-  const end = new Date()
-  let start = new Date()
+// Define base types for our data
+type BaseTransaction = {
+  id: string;
+  amount: string | number;
+  date?: string;
+  description?: string;
+  user_id: string;
+};
+
+type Expense = BaseTransaction & {
+  category_id?: string;
+  category_name?: string;
+  category_color?: string;
+  expense_categories?: {
+    id: string;
+    name: string;
+    color?: string;
+  };
+  name?: string;
+};
+
+type Income = BaseTransaction & {
+  name: string;
+  category_id?: string;
+  category_name?: string;
+  income_categories?: {
+    id: string;
+    name: string;
+    color?: string;
+  };
+  start_date?: string;
+};
+
+type Transaction = {
+  id: string;
+  type: 'income' | 'expense';
+  amount: number;
+  date: string;
+  description: string;
+  category?: string;
+};
+
+type MonthlyData = {
+  month: string;
+  income: number;
+  expenses: number;
+};
+
+type CategoryData = {
+  id: string;
+  name: string;
+  amount: number;
+  color: string;
+};
+
+type ReportData = {
+  totalExpenses: number;
+  totalIncome: number;
+  netIncome: number;
+  monthlyData: MonthlyData[];
+  categoryData: CategoryData[];
+  recentTransactions: Transaction[];
+};
+
+// Helper function to get time range filter
+function getTimeRangeFilter(timeRange: TimeRange): { start: Date; end: Date } {
+  const now = new Date()
+  const start = new Date(now)
   
   switch (timeRange) {
     case '7d':
-      start.setDate(end.getDate() - 7)
+      start.setDate(now.getDate() - 7)
       break
     case '30d':
-      start.setDate(end.getDate() - 30)
+      start.setDate(now.getDate() - 30)
       break
     case '90d':
-      start.setDate(end.getDate() - 90)
+      start.setDate(now.getDate() - 90)
       break
     case '1y':
-      start.setFullYear(end.getFullYear() - 1)
+      start.setFullYear(now.getFullYear() - 1)
       break
     case 'ytd':
-      start = new Date(end.getFullYear(), 0, 1) // January 1st of current year
+      start.setMonth(0, 1) // January 1st of current year
       break
     case 'all':
-      start = new Date(2000, 0, 1) // Far in the past
-      break
     default:
-      start.setDate(end.getDate() - 30) // Default to 30 days
+      // Default to 1 year if no range is specified
+      start.setFullYear(now.getFullYear() - 1)
   }
   
-  return { start, end }
+  return { start, end: now }
 }
 
-// Helper function to map account types to categories
-function mapAccountTypeToCategory(accountType: string): string {
-  switch (accountType) {
-    case 'checking':
-    case 'savings':
-      return 'Cash'
-    case 'investment':
-      return 'Investments'
-    case 'credit_card':
-      return 'Credit Cards'
-    case 'loan':
-    case 'mortgage':
-      return 'Loans'
-    case 'cash':
-      return 'Cash'
-    default:
-      return 'Other'
-  }
+// Type definitions for report data - Using the ones defined at the top of the file
+
+
+
+
+
+// Helper function to create a server-side Supabase client
+async function createServerSupabaseClient() {
+  return await createServerSupabaseClientHelper()
 }
 
-// Fetch overview data (expenses, income, budgets)
-async function fetchOverviewData(supabase: any, userId: string, timeFilter: { start: Date, end: Date }) {
-  // Fetch expenses data
-  const { data: expenses, error: expensesError } = await supabase
-    .from('expenses')
-    .select('*, expense_categories(name, color)')
-    .eq('user_id', userId)
-    .gte('date', timeFilter.start.toISOString())
-    .lte('date', timeFilter.end.toISOString())
-    .order('date', { ascending: false })
-  
-  // Fetch income data
-  const { data: income, error: incomeError } = await supabase
-    .from('incomes')
-    .select('*, income_categories(name, color)')
-    .eq('user_id', userId)
-    .gte('start_date', timeFilter.start.toISOString())
-    .lte('start_date', timeFilter.end.toISOString())
-    .order('start_date', { ascending: false })
-  
-  // Fetch budgets
-  const { data: budgets, error: budgetsError } = await supabase
-    .from('budgets')
-    .select('*')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(20)
-  
-  console.log(`Overview data fetched: ${expenses?.length || 0} expenses, ${income?.length || 0} income items, ${budgets?.length || 0} budgets`)
-  
-  if ((expenses && !expensesError) || (income && !incomeError)) {
-    // Process and combine the data
-    const combinedData: any[] = []
-    
-    // Process expenses
-    if (expenses && expenses.length > 0) {
-      expenses.forEach((expense: any) => {
-        // Format date
-        let formattedDate = ''
-        try {
-          if (expense.date && !isNaN(new Date(expense.date).getTime())) {
-            formattedDate = new Date(expense.date).toLocaleDateString()
-          }
-        } catch (error) {
-          // Leave empty if there's an error
-        }
-        
-        // Format amount with currency
-        const formattedAmount = new Intl.NumberFormat('en-US', { 
-          style: 'currency', 
-          currency: 'USD' 
-        }).format(expense.amount || 0)
-        
-        combinedData.push({
-          id: expense.id,
-          date: expense.date,
-          formatted_date: formattedDate,
-          name: expense.name || '',
-          category: expense.expense_categories?.name || 'Uncategorized',
-          category_color: expense.expense_categories?.color || '#888888',
-          amount: -Math.abs(parseFloat(expense.amount) || 0), // Negative for expenses
-          formatted_amount: '-' + formattedAmount.replace('-', ''),
-          type: 'expense',
-          notes: expense.notes || '',
-          payment_method: expense.payment_method || '',
-          recurring: expense.is_recurring || false
-        })
-      })
-    }
-    
-    // Process income
-    if (income && income.length > 0) {
-      income.forEach((inc: any) => {
-        // Format date
-        let formattedDate = ''
-        try {
-          if (inc.date && !isNaN(new Date(inc.date).getTime())) {
-            formattedDate = new Date(inc.date).toLocaleDateString()
-          }
-        } catch (error) {
-          // Leave empty if there's an error
-        }
-        
-        // Format amount with currency
-        const formattedAmount = new Intl.NumberFormat('en-US', { 
-          style: 'currency', 
-          currency: 'USD' 
-        }).format(inc.amount || 0)
-        
-        combinedData.push({
-          id: inc.id,
-          date: inc.date,
-          formatted_date: formattedDate,
-          name: inc.name || '',
-          category: inc.income_categories?.name || 'Uncategorized',
-          category_color: inc.income_categories?.color || '#4CAF50',
-          amount: parseFloat(inc.amount) || 0, // Positive for income
-          formatted_amount: formattedAmount,
-          type: 'income',
-          notes: inc.notes || '',
-          payment_method: inc.payment_method || '',
-          recurring: inc.is_recurring || false
-        })
-      })
-    }
-    
-    // Sort by date (newest first)
-    const sortedData = combinedData.sort((a: any, b: any) => {
-      return new Date(b.date).getTime() - new Date(a.date).getTime()
-    })
-    
-    // Add summary data
-    const result: any = [...sortedData]
-    
-    if (sortedData.length > 0) {
-      const totalIncome = income ? income.reduce((sum: number, inc: any) => sum + (parseFloat(inc.amount) || 0), 0) : 0
-      const totalExpenses = expenses ? expenses.reduce((sum: number, exp: any) => sum + (parseFloat(exp.amount) || 0), 0) : 0
-      
-      result.summary = {
-        totalIncome,
-        totalExpenses,
-        netCashflow: totalIncome - totalExpenses,
-        budgetCount: budgets?.length || 0,
-        period: `${timeFilter.start.toLocaleDateString()} - ${timeFilter.end.toLocaleDateString()}`
-      }
-    }
-    
-    return result
-  } else {
-    if (expensesError) console.error("Error fetching expenses:", expensesError)
-    if (incomeError) console.error("Error fetching income:", incomeError)
-    return []
-  }
-}
+// Helper function to fetch overview data
+async function fetchOverviewData(supabase: SupabaseClient, userId: string, timeFilter: { start: Date; end: Date }) {
+  try {
+    // Fetch expenses and income data in parallel
+    const [expensesData, incomeData] = await Promise.all([
+      supabase
+        .from('expenses')
+        .select('*')
+        .eq('user_id', userId)
+        .gte('date', timeFilter.start.toISOString())
+        .lte('date', timeFilter.end.toISOString()),
+      supabase
+        .from('incomes')
+        .select('*')
+        .eq('user_id', userId)
+        .gte('date', timeFilter.start.toISOString())
+        .lte('date', timeFilter.end.toISOString())
+    ]);
 
-// Fetch income and expense data
-async function fetchIncomeExpenseData(supabase: any, userId: string, timeFilter: { start: Date, end: Date }) {
-  // Fetch expenses data
-  const { data: expensesData, error: expensesDataError } = await supabase
-    .from('expenses')
-    .select('*, expense_categories(name, color)')
-    .eq('user_id', userId)
-    .gte('date', timeFilter.start.toISOString())
-    .lte('date', timeFilter.end.toISOString())
-    .order('date', { ascending: false })
-  
-  // Fetch income data
-  const { data: incomeData, error: incomeDataError } = await supabase
-    .from('incomes')
-    .select('*, income_categories(name, color)')
-    .eq('user_id', userId)
-    .gte('start_date', timeFilter.start.toISOString())
-    .lte('start_date', timeFilter.end.toISOString())
-    .order('start_date', { ascending: false })
-  
-  console.log(`Income/Expense data fetched: ${expensesData?.length || 0} expenses, ${incomeData?.length || 0} income items`)
-  
-  if ((expensesData && !expensesDataError) || (incomeData && !incomeDataError)) {
-    // Calculate monthly totals
-    const monthlyData: Record<string, {month: string, expenses: number, income: number, net: number}> = {}
-    
-    // Process expenses by month
-    if (expensesData) {
-      expensesData.forEach((expense: any) => {
-        if (!expense.date) return
-        
-        const date = new Date(expense.date)
-        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-        const monthName = date.toLocaleString('default', { month: 'long' })
-        const monthDisplay = `${monthName} ${date.getFullYear()}`
-        
-        if (!monthlyData[monthKey]) {
-          monthlyData[monthKey] = { 
-            month: monthDisplay, 
-            expenses: 0, 
-            income: 0,
-            net: 0
-          }
-        }
-        
-        monthlyData[monthKey].expenses += parseFloat(expense.amount) || 0
-      })
-    }
-    
-    // Process income by month
-    if (incomeData) {
-      incomeData.forEach((inc: any) => {
-        if (!inc.date) return
-        
-        const date = new Date(inc.date)
-        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-        const monthName = date.toLocaleString('default', { month: 'long' })
-        const monthDisplay = `${monthName} ${date.getFullYear()}`
-        
-        if (!monthlyData[monthKey]) {
-          monthlyData[monthKey] = { 
-            month: monthDisplay, 
-            expenses: 0, 
-            income: 0,
-            net: 0
-          }
-        }
-        
-        monthlyData[monthKey].income += parseFloat(inc.amount) || 0
-      })
-    }
-    
-    // Calculate net values and format data
-    Object.values(monthlyData).forEach(month => {
-      month.net = month.income - month.expenses
-    })
-    
-    // Convert to array and sort by month (newest first)
-    const monthlyTotals = Object.entries(monthlyData)
-      .map(([key, values]) => ({
-        monthKey: key,
-        ...values,
-        formatted_expenses: new Intl.NumberFormat('en-US', { 
-          style: 'currency', 
-          currency: 'USD' 
-        }).format(values.expenses),
-        formatted_income: new Intl.NumberFormat('en-US', { 
-          style: 'currency', 
-          currency: 'USD' 
-        }).format(values.income),
-        formatted_net: new Intl.NumberFormat('en-US', { 
-          style: 'currency', 
-          currency: 'USD' 
-        }).format(values.net)
-      }))
-      .sort((a, b) => b.monthKey.localeCompare(a.monthKey))
-    
-    // Process individual transactions
-    const transactions: any[] = []
-    
-    // Add expenses
-    if (expensesData) {
-      expensesData.forEach((expense: any) => {
-        transactions.push({
-          id: expense.id,
-          date: expense.date,
-          formatted_date: new Date(expense.date).toLocaleDateString(),
-          name: expense.name || '',
-          category: expense.expense_categories?.name || 'Uncategorized',
-          category_color: expense.expense_categories?.color || '#888888',
-          amount: -Math.abs(parseFloat(expense.amount) || 0), // Negative for expenses
-          formatted_amount: '-' + new Intl.NumberFormat('en-US', { 
-            style: 'currency', 
-            currency: 'USD' 
-          }).format(expense.amount || 0).replace('-', ''),
-          type: 'expense'
-        })
-      })
-    }
-    
-    // Add income
-    if (incomeData) {
-      incomeData.forEach((inc: any) => {
-        transactions.push({
-          id: inc.id,
-          date: inc.date,
-          formatted_date: new Date(inc.date).toLocaleDateString(),
-          name: inc.name || '',
-          category: inc.income_categories?.name || 'Uncategorized',
-          category_color: inc.income_categories?.color || '#4CAF50',
-          amount: parseFloat(inc.amount) || 0, // Positive for income
-          formatted_amount: new Intl.NumberFormat('en-US', { 
-            style: 'currency', 
-            currency: 'USD' 
-          }).format(inc.amount || 0),
-          type: 'income'
-        })
-      })
-    }
-    
-    // Sort transactions by date (newest first)
-    transactions.sort((a: any, b: any) => {
-      return new Date(b.date).getTime() - new Date(a.date).getTime()
-    })
-    
+    const expenses = expensesData.data || [];
+    const incomes = incomeData.data || [];
+
     // Calculate totals
-    const totalIncome = incomeData ? incomeData.reduce((sum: number, inc: any) => sum + (parseFloat(inc.amount) || 0), 0) : 0
-    const totalExpenses = expensesData ? expensesData.reduce((sum: number, exp: any) => sum + (parseFloat(exp.amount) || 0), 0) : 0
-    const netCashflow = totalIncome - totalExpenses
+    const totalExpenses = expenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
+    const totalIncome = incomes.reduce((sum, inc) => sum + (Number(inc.amount) || 0), 0);
+    const netIncome = totalIncome - totalExpenses;
+
+    // Get recent transactions (last 5)
+    const recentTransactions: Transaction[] = [
+      ...expenses.map(exp => ({
+        id: exp.id,
+        type: 'expense' as const,
+        amount: Number(exp.amount) || 0,
+        date: exp.date || new Date().toISOString(),
+        description: exp.description || 'Expense',
+        category: exp.category_id
+      })),
+      ...incomes.map(inc => ({
+        id: inc.id,
+        type: 'income' as const,
+        amount: Number(inc.amount) || 0,
+        date: inc.date || new Date().toISOString(),
+        description: inc.description || 'Income',
+        category: inc.category_id
+      }))
+    ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 5);
+
+    // Generate monthly data
+    const monthlyData = getMonthlyData(expenses, incomes, timeFilter);
     
-    // Prepare final data structure
+    // Get category data
+    const categoryData = getCategoryData(expenses);
+
     return {
-      transactions,
-      monthlyTotals,
-      summary: {
-        totalIncome,
-        totalExpenses,
-        netCashflow,
-        formatted_income: new Intl.NumberFormat('en-US', { 
-          style: 'currency', 
-          currency: 'USD' 
-        }).format(totalIncome),
-        formatted_expenses: new Intl.NumberFormat('en-US', { 
-          style: 'currency', 
-          currency: 'USD' 
-        }).format(totalExpenses),
-        formatted_net: new Intl.NumberFormat('en-US', { 
-          style: 'currency', 
-          currency: 'USD' 
-        }).format(netCashflow),
-        period: `${timeFilter.start.toLocaleDateString()} - ${timeFilter.end.toLocaleDateString()}`
+      totalExpenses,
+      totalIncome,
+      netIncome,
+      monthlyData,
+      categoryData,
+      recentTransactions
+    };
+  } catch (error) {
+    console.error('Error in fetchOverviewData:', error);
+    throw error;
+  }
+}
+
+
+
+// Helper function to generate monthly data
+function getMonthlyData(
+  expenses: any[],
+  incomes: any[],
+  timeFilter: { start: Date; end: Date }
+): MonthlyData[] {
+  const monthlyData: Record<string, MonthlyData> = {};
+  const currentDate = new Date(timeFilter.start);
+  const endDate = new Date(timeFilter.end);
+
+  // Initialize all months in the range
+  while (currentDate <= endDate) {
+    const monthKey = currentDate.toISOString().slice(0, 7);
+    const monthName = currentDate.toLocaleString('default', { month: 'long' });
+    const year = currentDate.getFullYear();
+    
+    if (!monthlyData[monthKey]) {
+      monthlyData[monthKey] = {
+        month: `${monthName} ${year}`,
+        income: 0,
+        expenses: 0
+      };
+    }
+    
+    currentDate.setMonth(currentDate.getMonth() + 1);
+  }
+
+  // Process expenses
+  expenses.forEach(exp => {
+    if (!exp.date) return;
+    const date = new Date(exp.date);
+    const monthKey = date.toISOString().slice(0, 7);
+    
+    if (monthlyData[monthKey]) {
+      monthlyData[monthKey].expenses += Number(exp.amount) || 0;
+    }
+  });
+
+  // Process incomes
+  incomes.forEach(inc => {
+    if (!inc.date) return;
+    const date = new Date(inc.date);
+    const monthKey = date.toISOString().slice(0, 7);
+    
+    if (monthlyData[monthKey]) {
+      monthlyData[monthKey].income += Number(inc.amount) || 0;
+    }
+  });
+
+  return Object.values(monthlyData).sort((a, b) => {
+    return new Date(a.month).getTime() - new Date(b.month).getTime();
+  });
+}
+
+// Helper function to get category data from expenses
+function getCategoryData(expenses: any[]): CategoryData[] {
+  const categoryMap: Record<string, CategoryData> = {};
+
+  expenses.forEach(exp => {
+    try {
+      // Handle both direct category properties and nested expense_categories object
+      const categoryId = exp.category_id || exp.expense_categories?.id || 'uncategorized';
+      const categoryName = exp.category_name || exp.expense_categories?.name || 'Uncategorized';
+      const categoryColor = exp.category_color || exp.expense_categories?.color || getDefaultColorForCategory(categoryId);
+      const amount = parseFloat(exp.amount) || 0;
+
+      if (!categoryMap[categoryId]) {
+        categoryMap[categoryId] = {
+          id: categoryId,
+          name: categoryName,
+          amount: 0,
+          color: categoryColor
+        };
+      }
+
+      categoryMap[categoryId].amount += amount;
+    } catch (error) {
+      console.error('Error processing expense category:', exp, error);
+    }
+  });
+
+  return Object.values(categoryMap).sort((a, b) => b.amount - a.amount);
+}
+
+// Generate a consistent color based on a string input
+function getDefaultColorForCategory(input: string): string {
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) {
+    hash = input.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 70%, 60%)`;
+}
+
+// Main function to fetch report data
+export async function fetchReportData(reportType: ReportType, timeRange: TimeRange) {
+  try {
+    // Create a server-side Supabase client
+    const supabase = await createServerSupabaseClient();
+    
+    if (!supabase) {
+      throw new Error('Failed to create Supabase client');
+    }
+    
+    // Get the authenticated user using the centralized auth function
+    const user = await getAuthenticatedUser();
+    
+    if (!user) {
+      console.error('User not authenticated');
+      throw new Error('User not authenticated');
+    }
+    
+    const userId = user.id;
+    
+    // Get the time range filter
+    const timeFilter = getTimeRangeFilter(timeRange);
+    
+    // Route to the appropriate fetch function based on report type
+    switch (reportType) {
+      case 'overview':
+        return await fetchOverviewData(supabase, userId, timeFilter);
+      case 'income-expense':
+        try {
+          console.log('Fetching report data for period:', {
+            reportType,
+            start: timeFilter.start.toISOString(),
+            end: timeFilter.end.toISOString(),
+            userId
+          });
+          
+          // Fetch income data with date range filtering
+          const incomeQuery = await supabase
+            .from('incomes')
+            .select('*, income_categories!inner(*)')
+            .eq('user_id', userId)
+            .gte('start_date', timeFilter.start.toISOString())
+            .lte('end_date', timeFilter.end.toISOString())
+            .order('start_date', { ascending: false });
+
+          if (incomeQuery.error) {
+            console.error('Error fetching income data:', incomeQuery.error);
+            throw incomeQuery.error;
+          }
+          console.log(`Fetched ${incomeQuery.data?.length || 0} income records`);
+
+          // Fetch expense data with date range filtering
+          const expensesQuery = await supabase
+            .from('expenses')
+            .select('*, expense_categories!inner(*)')
+            .eq('user_id', userId)
+            .gte('expense_date', timeFilter.start.toISOString())
+            .lte('expense_date', timeFilter.end.toISOString())
+            .order('expense_date', { ascending: false });
+            
+          if (expensesQuery.error) {
+            console.error('Error fetching expenses data:', expensesQuery.error);
+            throw expensesQuery.error;
+          }
+          console.log(`Fetched ${expensesQuery.data?.length || 0} expense records`);
+          
+          // If no data found, return empty results
+          if ((!incomeQuery.data || incomeQuery.data.length === 0) && 
+              (!expensesQuery.data || expensesQuery.data.length === 0)) {
+            console.log('No income or expense data found for the selected period');
+            return {
+              income: 0,
+              expenses: 0,
+              net: 0,
+              incomeData: [],
+              expenseData: [],
+              incomeByCategory: {},
+              expensesByCategory: {},
+              transactions: [],
+              timeRange: {
+                start: timeFilter.start.toISOString(),
+                end: timeFilter.end.toISOString()
+              }
+            };
+          }
+
+          // Process income data
+          const processedIncomes = incomeQuery.data?.map(inc => ({
+            id: inc.id,
+            name: inc.source_name,
+            amount: parseFloat(inc.amount) || 0,
+            date: inc.start_date,
+            category: inc.income_categories?.name || 'Uncategorized',
+            type: 'income'
+          })) || [];
+
+          // Process expense data
+          const processedExpenses = expensesQuery.data?.map(exp => ({
+            id: exp.id,
+            name: exp.name,
+            amount: parseFloat(exp.amount) || 0,
+            date: exp.expense_date,
+            category: exp.expense_categories?.name || 'Uncategorized',
+            type: 'expense'
+          })) || [];
+
+          // Calculate totals
+          const totalIncome = processedIncomes.reduce((sum, inc) => sum + inc.amount, 0);
+          const totalExpenses = processedExpenses.reduce((sum, exp) => sum + exp.amount, 0);
+          const net = totalIncome - totalExpenses;
+
+          // Group by category for charts
+          const incomeByCategory = groupByCategory(processedIncomes);
+          const expensesByCategory = groupByCategory(processedExpenses);
+
+          // Combine all transactions and sort by date
+          const allTransactions = [...processedIncomes, ...processedExpenses]
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+            .map(t => ({
+              ...t,
+              formattedAmount: new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD'
+              }).format(t.amount)
+            }));
+
+          // Format the response to match the expected structure
+          return {
+            totalIncome,
+            totalExpenses,
+            netIncome: net,
+            monthlyData: getMonthlyData(processedExpenses, processedIncomes, timeFilter),
+            categoryData: getCategoryData(processedExpenses),
+            recentTransactions: allTransactions.slice(0, 10),
+            incomeData: processedIncomes,
+            expenseData: processedExpenses,
+            incomeByCategory,
+            expensesByCategory,
+            transactions: allTransactions,
+            timeRange: {
+              start: timeFilter.start.toISOString(),
+              end: timeFilter.end.toISOString()
+            },
+            // Add formatted values for display
+            formattedTotalIncome: new Intl.NumberFormat('en-US', {
+              style: 'currency',
+              currency: 'USD'
+            }).format(totalIncome),
+            formattedTotalExpenses: new Intl.NumberFormat('en-US', {
+              style: 'currency',
+              currency: 'USD'
+            }).format(totalExpenses),
+            formattedNet: new Intl.NumberFormat('en-US', {
+              style: 'currency',
+              currency: 'USD'
+            }).format(net)
+          };
+        } catch (error) {
+          console.error('Error processing income-expense data:', error);
+          throw error;
+        }
+      case 'expense-trends':
+        try {
+          console.log('Fetching expense trends data for period:', {
+            start: timeFilter.start.toISOString(),
+            end: timeFilter.end.toISOString(),
+            userId
+          });
+
+          // Fetch expense data with date range filtering
+          const { data: expensesData, error: expensesError } = await supabase
+            .from('expenses')
+            .select('*, expense_categories!inner(*)')
+            .eq('user_id', userId)
+            .gte('expense_date', timeFilter.start.toISOString())
+            .lte('expense_date', timeFilter.end.toISOString())
+            .order('expense_date', { ascending: false });
+
+          if (expensesError) {
+            console.error('Error fetching expenses data:', expensesError);
+            throw expensesError;
+          }
+          console.log(`Fetched ${expensesData?.length || 0} expense records`);
+
+          if (!expensesData || expensesData.length === 0) {
+            console.log('No expense data found for the selected period');
+            return [];
+          }
+
+
+          // Process expense data for the report
+          const processedExpenses = expensesData.map((expense: any) => {
+            const amount = parseFloat(expense.amount) || 0;
+            const formattedAmount = new Intl.NumberFormat('en-US', {
+              style: 'currency',
+              currency: 'USD'
+            }).format(amount);
+            
+            // Handle categories (some are comma-separated)
+            const categories = (expense.category || 'Uncategorized')
+              .split(',')
+              .map((cat: string) => cat.trim())
+              .filter(Boolean);
+
+            return {
+              id: expense.id || `exp-${Math.random().toString(36).substr(2, 9)}`,
+              name: expense.name || 'Unnamed Expense',
+              amount,
+              formatted_amount: formattedAmount,
+              date: expense.expense_date,
+              formatted_date: expense.formatted_expense_date || 
+                (expense.expense_date ? new Date(expense.expense_date).toLocaleDateString() : 'N/A'),
+              category: categories[0] || 'Uncategorized',
+              all_categories: categories,
+              frequency: expense.frequency || 'none',
+              warranty_expiry: expense.warranty_expiry || '',
+              formatted_warranty_expiry: expense.formatted_warranty_expiry || 'N/A'
+            };
+          });
+
+          // Group expenses by category with warranty information
+          const categoryMap = new Map();
+          let totalAmount = 0;
+          let totalTransactions = 0;
+          const allTransactions: any[] = [];
+
+          // First, process each expense and add to categories
+          processedExpenses.forEach((expense: any) => {
+            const categories = expense.all_categories || [expense.category || 'Uncategorized'];
+            const amount = parseFloat(expense.amount) || 0;
+            
+            // Add to each category this expense belongs to
+            categories.forEach((categoryName: string) => {
+              if (!categoryMap.has(categoryName)) {
+                categoryMap.set(categoryName, {
+                  id: `cat-${categoryName.toLowerCase().replace(/\s+/g, '-')}`,
+                  name: categoryName,
+                  total: 0,
+                  count: 0,
+                  color: getDefaultColorForCategory(categoryName),
+                  transactions: []
+                });
+              }
+              
+              const category = categoryMap.get(categoryName);
+              category.total += amount;
+              category.count += 1;
+              
+              // Only add the transaction to the first category to avoid duplicates
+              if (categories[0] === categoryName) {
+                category.transactions.push({
+                  id: expense.id,
+                  name: expense.name,
+                  amount: expense.amount,
+                  formatted_amount: expense.formatted_amount,
+                  date: expense.date,
+                  formatted_date: expense.formatted_date,
+                  frequency: expense.frequency,
+                  warranty_expiry: expense.warranty_expiry,
+                  formatted_warranty_expiry: expense.formatted_warranty_expiry
+                });
+              }
+            });
+            
+            // Add to all transactions
+            allTransactions.push({
+              id: expense.id,
+              name: expense.name,
+              amount: expense.amount,
+              formatted_amount: expense.formatted_amount,
+              date: expense.date,
+              formatted_date: expense.formatted_date,
+              category: expense.category,
+              all_categories: [...(expense.all_categories || [expense.category])],
+              frequency: expense.frequency,
+              warranty_expiry: expense.warranty_expiry,
+              formatted_warranty_expiry: expense.formatted_warranty_expiry || 'N/A'
+            });
+            
+            totalAmount += amount;
+            totalTransactions += 1;
+          });
+
+          // Sort transactions within each category by date (newest first)
+          categoryMap.forEach(category => {
+            category.transactions.sort((a: any, b: any) => 
+              new Date(b.date).getTime() - new Date(a.date).getTime()
+            );
+          });
+
+          // Convert map to array and calculate percentages
+          const categories = Array.from(categoryMap.values()).map((category: any) => ({
+            ...category,
+            formatted_total: new Intl.NumberFormat('en-US', {
+              style: 'currency',
+              currency: 'USD'
+            }).format(category.total),
+            percent_of_total: totalAmount > 0 ? (category.total / totalAmount) * 100 : 0,
+            formatted_percent: totalAmount > 0 ? `${((category.total / totalAmount) * 100).toFixed(1)}%` : '0.0%',
+            average_amount: category.count > 0 ? category.total / category.count : 0,
+            formatted_average: new Intl.NumberFormat('en-US', {
+              style: 'currency',
+              currency: 'USD'
+            }).format(category.count > 0 ? category.total / category.count : 0)
+          }));
+
+          // Sort categories by total amount (descending)
+          categories.sort((a: any, b: any) => b.total - a.total);
+          
+          // Sort all transactions by date (newest first)
+          const sortedTransactions = [...allTransactions].sort((a, b) => 
+            new Date(b.date).getTime() - new Date(a.date).getTime()
+          );
+
+          console.log('Processed expense trends data:', {
+            totalCategories: categories.length,
+            totalTransactions: sortedTransactions.length,
+            totalAmount,
+            sampleCategory: categories[0],
+            sampleTransaction: sortedTransactions[0]
+          });
+
+          // Return the structured data for the report
+          return {
+            categories,
+            transactions: sortedTransactions,
+            total_amount: totalAmount,
+            formatted_total: new Intl.NumberFormat('en-US', {
+              style: 'currency',
+              currency: 'USD'
+            }).format(totalAmount),
+            total_transactions: totalTransactions,
+            time_range: {
+              start: timeFilter.start.toISOString(),
+              end: timeFilter.end.toISOString(),
+              formatted_start: timeFilter.start.toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+              }),
+              formatted_end: timeFilter.end.toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+              })
+            },
+            generated_at: new Date().toISOString(),
+            formatted_generated_at: new Date().toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            })
+          };
+        } catch (error) {
+          console.error('Error processing expense trends data:', error);
+          return [];
+        }
+      case 'net-worth':
+        return await fetchNetWorthData(supabase, userId);
+      case 'budget-analysis':
+        return await fetchBudgetAnalysisData(supabase, userId, timeFilter);
+      case 'spending-categories':
+        return await fetchSpendingCategoriesData(supabase, userId, timeFilter);
+      case 'income-sources': {
+        try {
+          const { data: incomeData, error } = await supabase
+            .from('incomes')
+            .select('*, income_categories!inner(*)')
+            .eq('user_id', userId)
+            .order('start_date', { ascending: false });
+
+          if (error) {
+            console.error('Error fetching income sources:', error);
+            return []; // Return empty array to trigger "no data" message
+          }
+
+          if (!incomeData || incomeData.length === 0) {
+            console.log('No income data found for user:', userId);
+            return [];
+          }
+
+
+          // Process income data for the report
+          const processedIncomes = incomeData.map(income => ({
+            id: income.id,
+            source: income.source_name || 'Unnamed Source',
+            amount: parseFloat(income.amount) || 0,
+            category: income.income_categories?.name || 'Uncategorized',
+            frequency: income.recurrence || 'one_time',
+            start_date: income.start_date,
+            formatted_date: income.start_date ? new Date(income.start_date).toLocaleDateString() : 'N/A',
+            formatted_amount: new Intl.NumberFormat('en-US', {
+              style: 'currency',
+              currency: 'USD'
+            }).format(parseFloat(income.amount) || 0)
+          }));
+          
+          // Calculate total for percentage calculations
+          const totalIncome = processedIncomes.reduce((sum: number, item: any) => sum + item.amount, 0);
+          
+          // Group by source to combine duplicates and calculate counts
+          const sourceMap = new Map();
+          
+          processedIncomes.forEach((income: any) => {
+            if (!sourceMap.has(income.source)) {
+              sourceMap.set(income.source, {
+                ...income,
+                count: 0,
+                recurring_count: 0,
+                total_amount: 0
+              });
+            }
+            const source = sourceMap.get(income.source);
+            source.count += 1;
+            source.total_amount += income.amount;
+            if (income.frequency !== 'one_time') {
+              source.recurring_count += 1;
+            }
+          });
+
+          // Convert map to array and calculate percentages
+          const sources = Array.from(sourceMap.values()).map((source: any) => ({
+            ...source,
+            amount: source.total_amount,
+            formatted_amount: new Intl.NumberFormat('en-US', {
+              style: 'currency',
+              currency: 'USD'
+            }).format(source.total_amount),
+            percent_of_total: totalIncome > 0 ? (source.total_amount / totalIncome) * 100 : 0,
+            formatted_percent: totalIncome > 0 ? `${((source.total_amount / totalIncome) * 100).toFixed(1)}%` : '0.0%',
+            recurring_percentage: source.count > 0 ? (source.recurring_count / source.count) * 100 : 0
+          }));
+
+          console.log('Processed income sources for report:', {
+            totalSources: sources.length,
+            totalIncome,
+            sampleSource: sources[0]
+          });
+
+          // Return the array of income sources
+          return sources;
+        } catch (error) {
+          console.error('Error processing income sources:', error);
+          return [];
+        }
+      }
+      default: {
+        const errorMessage = `Unsupported report type: ${reportType}`;
+        console.error(errorMessage);
+        return {
+          error: 'Unsupported report type',
+          message: `The report type '${reportType}' is not supported.`,
+          supportedTypes: ['overview', 'income-expense', 'expense-trends', 'income-sources', 'spending-categories', 'budget-analysis', 'net-worth']
+        };
       }
     }
-  } else {
-    if (expensesDataError) console.error("Error fetching expenses data:", expensesDataError)
-    if (incomeDataError) console.error("Error fetching income data:", incomeDataError)
-    return []
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Error in fetchReportData (${reportType}):`, errorMessage);
+    
+    // Return a user-friendly error response
+    return {
+      error: `Failed to generate ${reportType} report`,
+      details: errorMessage,
+      timestamp: new Date().toISOString()
+    };
+  }
+}
+
+// Helper function to group transactions by category
+function groupByCategory(transactions: any[]) {
+  return transactions.reduce((acc, curr) => {
+    const category = curr.category || 'Uncategorized';
+    if (!acc[category]) {
+      acc[category] = 0;
+    }
+    acc[category] += curr.amount;
+    return acc;
+  }, {} as Record<string, number>);
+}
+
+// This function is kept for backward compatibility but the logic is now in fetchReportData
+async function fetchIncomeExpenseData(supabase: any, userId: string, timeFilter: any) {
+  try {
+    const result = await fetchReportData('income-expense', timeFilter);
+    return result || {
+      income: 0,
+      expenses: 0,
+      net: 0,
+      incomeData: [],
+      expenseData: [],
+      incomeByCategory: {},
+      expensesByCategory: {},
+      transactions: [],
+      timeRange: {
+        start: timeFilter.start.toISOString(),
+        end: timeFilter.end.toISOString()
+      }
+    };
+  } catch (error) {
+    console.error('Error in fetchIncomeExpenseData:', error);
+    throw error;
   }
 }
 
 // Fetch net worth data
-async function fetchNetWorthData(supabase: any, userId: string) {
+async function fetchNetWorthData(
+  supabase: ReturnType<typeof createServerSupabaseClient>,
+  userId: string
+): Promise<{
+  totalAssets: number;
+  totalLiabilities: number;
+  netWorth: number;
+  assets: Array<{ name: string; amount: number; type: string }>;
+  liabilities: Array<{ name: string; amount: number; type: string }>;
+}> {
   // Fetch accounts to determine assets and liabilities
   const { data: accounts, error: accountsError } = await supabase
     .from('accounts')
@@ -576,7 +895,23 @@ async function fetchNetWorthData(supabase: any, userId: string) {
 }
 
 // Fetch budget analysis data
-async function fetchBudgetAnalysisData(supabase: any, userId: string, timeFilter: { start: Date, end: Date }) {
+async function fetchBudgetAnalysisData(
+  supabase: ReturnType<typeof createServerSupabaseClient>,
+  userId: string,
+  timeFilter: { start: Date; end: Date }
+): Promise<{
+  budgets: Array<{
+    id: string;
+    name: string;
+    amount: number;
+    spent: number;
+    remaining: number;
+    progress: number;
+    category: string;
+  }>;
+  totalBudget: number;
+  totalSpent: number;
+}> {
   // Fetch budgets
   const { data: budgets, error: budgetsError } = await supabase
     .from('budgets')
@@ -675,7 +1010,11 @@ async function fetchBudgetAnalysisData(supabase: any, userId: string, timeFilter
 }
 
 // Fetch spending by category data
-async function fetchSpendingCategoriesData(supabase: any, userId: string, timeFilter: { start: Date, end: Date }) {
+async function fetchSpendingCategoriesData(
+  supabase: ReturnType<typeof createServerSupabaseClient>,
+  userId: string,
+  timeFilter: { start: Date; end: Date }
+): Promise<ReportData> {
   // Fetch expenses with categories
   const { data: expenses, error: expensesError } = await supabase
     .from('expenses')
@@ -698,7 +1037,9 @@ async function fetchSpendingCategoriesData(supabase: any, userId: string, timeFi
     expenses.forEach((expense: any) => {
       const categoryId = expense.category_id || 'uncategorized'
       const categoryName = expense.expense_categories?.name || 'Uncategorized'
-      const categoryColor = expense.expense_categories?.color || '#888888'
+      // Use a default color if color is not available
+      const categoryColor = expense.expense_categories?.color || 
+        (expense.expense_categories?.id ? getDefaultColorForCategory(expense.expense_categories.id) : '#888888')
       const amount = parseFloat(expense.amount) || 0
       
       if (!categoryMap[categoryId]) {
@@ -732,18 +1073,12 @@ async function fetchSpendingCategoriesData(supabase: any, userId: string, timeFi
       
       return {
         ...category,
-        formatted_amount: new Intl.NumberFormat('en-US', { 
-          style: 'currency', 
-          currency: 'USD' 
-        }).format(category.amount),
+        formatted_amount: formatCurrency(category.amount),
         percent_of_total: percentOfTotal,
         formatted_percent: `${percentOfTotal.toFixed(1)}%`,
         average_transaction: category.transaction_count > 0 ? 
           (category.amount / category.transaction_count) : 0,
-        formatted_average: new Intl.NumberFormat('en-US', { 
-          style: 'currency', 
-          currency: 'USD' 
-        }).format(category.transaction_count > 0 ? 
+        formatted_average: formatCurrency(category.transaction_count > 0 ? 
           (category.amount / category.transaction_count) : 0)
       }
     }).sort((a: any, b: any) => b.amount - a.amount)
@@ -752,10 +1087,7 @@ async function fetchSpendingCategoriesData(supabase: any, userId: string, timeFi
       categories,
       summary: {
         total_spending: totalSpending,
-        formatted_total: new Intl.NumberFormat('en-US', { 
-          style: 'currency', 
-          currency: 'USD' 
-        }).format(totalSpending),
+        formatted_total: formatCurrency(totalSpending),
         category_count: categories.length,
         transaction_count: expenses.length,
         period: `${timeFilter.start.toLocaleDateString()} - ${timeFilter.end.toLocaleDateString()}`
@@ -768,7 +1100,26 @@ async function fetchSpendingCategoriesData(supabase: any, userId: string, timeFi
 }
 
 // Fetch income sources data
-async function fetchIncomeSourcesData(supabase: any, userId: string, timeFilter: { start: Date, end: Date }) {
+async function fetchIncomeSourcesData(
+  supabase: ReturnType<typeof createServerSupabaseClient>,
+  userId: string,
+  timeFilter: { start: Date; end: Date }
+): Promise<{
+  categories: Array<{
+    id: string;
+    name: string;
+    amount: number;
+    color: string;
+    percent: number;
+    transactions: Array<{
+      id: string;
+      date: string;
+      description: string;
+      amount: number;
+    }>;
+  }>;
+  total: number;
+}> {
   // Fetch all income data with categories and complete details
   const { data: incomes, error: incomesError } = await supabase
     .from('incomes')

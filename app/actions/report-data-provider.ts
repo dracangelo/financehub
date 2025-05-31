@@ -36,21 +36,61 @@ export async function fetchIncomeData(timeRange: { start: Date, end: Date }) {
       return []
     }
     
-    // Filter by date range in memory if needed
+    // Filter income sources based on their frequency and start/end dates
     const filteredIncome = incomeSources?.filter((income: any) => {
-      if (!income.start_date) return true; // Include if no start date
+      if (!income.start_date) return false; // Exclude incomes with no start date
+      
       const startDate = new Date(income.start_date);
-      return startDate >= timeRange.start && startDate <= timeRange.end;
+      const endDate = income.end_date ? new Date(income.end_date) : null;
+      
+      // For one-time incomes, only include if the payment date is within the report period
+      if (income.recurrence === 'none' || income.recurrence === 'one_time') {
+        return startDate >= timeRange.start && startDate <= timeRange.end;
+      }
+      
+      // For recurring incomes, check if any occurrence falls within the report period
+      // First, check if the income is active during the report period at all
+      const isActiveInPeriod = (!endDate || endDate >= timeRange.start) && 
+                              startDate <= timeRange.end;
+      
+      if (!isActiveInPeriod) return false;
+      
+      // For active recurring incomes, include them if they have any occurrence in the report period
+      // based on their frequency
+      const reportStart = timeRange.start;
+      const reportEnd = timeRange.end;
+      
+      // If no end date, include if start date is before or during report period
+      if (!endDate) return startDate <= reportEnd;
+      
+      // For incomes with both start and end dates, check if any occurrence falls in the period
+      const start = Math.max(startDate.getTime(), reportStart.getTime());
+      const end = Math.min(endDate.getTime(), reportEnd.getTime());
+      
+      if (start > end) return false; // No overlap
+      
+      // For recurring incomes, we'll include them if they're active during the period
+      // The exact occurrence calculation would be complex, so we'll be inclusive
+      // and let the report viewer see all active recurring incomes
+      return true;
     }) || [];
     
     console.log(`Found ${incomeSources?.length || 0} income sources, filtered to ${filteredIncome.length} within date range`)
+    
+    // Log a sample income entry to debug field names
+    if (filteredIncome.length > 0) {
+      console.log('Sample income entry structure:', JSON.stringify(filteredIncome[0], null, 2));
+    }
     
     const formattedIncome = filteredIncome.map((income: any) => {
       // Get category name from the joined income_categories data
       const categoryName = income.income_categories?.name || 'Other';
       
+      // Use the source_name field if available, fallback to title or description
+      const incomeName = income.source_name || income.title || income.description || 'Unnamed Income';
+      
       return {
-        name: income.title || 'Unnamed Income', // Using title instead of name
+        name: incomeName,
         frequency: income.recurrence || 'monthly', // Using recurrence instead of frequency
         amount: income.amount || 0,
         category: categoryName,

@@ -34,8 +34,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import { createExpense, updateExpense, createSplitExpense } from "@/app/actions/expenses";
-import { getSplitExpensesByExpenseId, updateSplitExpense, deleteSplitExpense } from "@/app/actions/split-expenses";
+import { createExpense, updateExpense } from "@/app/actions/expenses";
+import { getSplitExpensesByExpenseId, updateSplitExpense, deleteSplitExpense, createSplitExpense } from "@/app/actions/split-expenses";
 import { uploadReceipt } from "@/lib/receipt-utils";
 import { getUsersForSplitExpense } from "@/lib/split-expense-utils";
 import { Expense, ExpenseCategory, RecurrenceFrequency } from "@/types/expense";
@@ -383,6 +383,14 @@ export function ExpenseForm({
     if (isSubmitting) return; // Prevent multiple submissions
     setIsSubmitting(true);
     setRateLimitError(false);
+    
+    // Show loading toast
+    const toastId = toast({
+      title: isEditing ? "Updating expense..." : "Creating expense...",
+      description: "Please wait while we process your request.",
+      variant: "default",
+      duration: 5000,
+    });
 
     try {
       // Prepare the expense data
@@ -407,15 +415,17 @@ export function ExpenseForm({
       // Create or update the expense
       try {
         if (isEditing && expense?.id) {
-          await updateExpense(expense.id, expenseData);
+          const updateResult = await updateExpense(expense.id, expenseData);
+          if (!updateResult.data) {
+            throw new Error(updateResult.error?.message || "Failed to update expense");
+          }
           expenseId = expense.id;
         } else {
-          const result = await createExpense(expenseData);
-          expenseId = result?.id;
-        }
-
-        if (!expenseId) {
-          throw new Error("Failed to get expense ID");
+          const createResult = await createExpense(expenseData);
+          if (!createResult.data) {
+            throw new Error(createResult.error?.message || "Failed to create expense");
+          }
+          expenseId = createResult.data.id;
         }
       } catch (error) {
         if (error instanceof Error && error.message.includes("over_request_rate_limit")) {
@@ -487,9 +497,9 @@ export function ExpenseForm({
                 // No existing splits, create a new one
                 const newSplitData = {
                   expense_id: expenseId,
-                  shared_with_user: data.split_with_user,
+                  shared_with_name: data.split_with_user, // Changed to match API expectation
                   amount: Number(data.split_amount),
-                  note: data.split_note || null
+                  notes: data.split_note || "" // Changed from note to notes to match API
                 };
                 
                 console.log("Creating new split expense:", newSplitData);
@@ -508,9 +518,9 @@ export function ExpenseForm({
             // New expense with split
             const newSplitData = {
               expense_id: expenseId,
-              shared_with_user: data.split_with_user,
+              shared_with_name: data.split_with_user, // Changed to match API expectation
               amount: Number(data.split_amount),
-              note: data.split_note || null
+              notes: data.split_note || "" // Changed from note to notes to match API
             };
             
             console.log("Creating new split expense for new expense:", newSplitData);
@@ -742,40 +752,58 @@ export function ExpenseForm({
           <FormField
             control={form.control}
             name="expense_date"
-            render={({ field }) => (
-              <FormItem className="flex flex-col">
-                <FormLabel>Date <span className="text-red-500">*</span></FormLabel>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <FormControl>
-                      <Button
-                        variant={"outline"}
-                        className={cn(
-                          "w-full pl-3 text-left font-normal",
-                          !field.value && "text-muted-foreground"
-                        )}
-                      >
-                        {field.value ? (
-                          format(field.value, "PPP")
-                        ) : (
-                          <span>Pick a date</span>
-                        )}
-                        <Calendar className="ml-auto h-4 w-4 opacity-50" />
-                      </Button>
-                    </FormControl>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <CalendarComponent
-                      mode="single"
-                      selected={field.value}
-                      onSelect={field.onChange}
-                      initialFocus
+            render={({ field }) => {
+              const [dateValue, setDateValue] = useState<string>(
+                field.value ? format(field.value, 'yyyy-MM-dd') : ''
+              );
+
+              const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+                const value = e.target.value;
+                setDateValue(value);
+                if (value) {
+                  const date = new Date(value);
+                  if (!isNaN(date.getTime())) {
+                    field.onChange(date);
+                  }
+                }
+              };
+
+              return (
+                <FormItem className="flex flex-col">
+                  <FormLabel>Date <span className="text-red-500">*</span></FormLabel>
+                  <div className="flex gap-2">
+                    <Input
+                      type="date"
+                      value={dateValue}
+                      onChange={handleDateChange}
+                      className="w-full"
                     />
-                  </PopoverContent>
-                </Popover>
-                <FormMessage />
-              </FormItem>
-            )}
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className="px-3"
+                        >
+                          <Calendar className="h-4 w-4" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="end">
+                        <CalendarComponent
+                          mode="single"
+                          selected={field.value}
+                          onSelect={(date) => {
+                            field.onChange(date);
+                            setDateValue(date ? format(date, 'yyyy-MM-dd') : '');
+                          }}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <FormMessage />
+                </FormItem>
+              );
+            }}
           />
 
           {/* Location */}
@@ -913,41 +941,63 @@ export function ExpenseForm({
               <FormField
                 control={form.control}
                 name="warranty_expiration_date"
-                render={({ field }) => (
-                  <FormItem className="flex flex-col">
-                    <FormLabel>Warranty Expiry</FormLabel>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant={"outline"}
-                            className={cn(
-                              "w-full pl-3 text-left font-normal",
-                              !field.value && "text-muted-foreground"
-                            )}
-                          >
-                            {field.value ? (
-                              format(field.value, "PPP")
-                            ) : (
-                              <span>Set warranty date</span>
-                            )}
-                            <Calendar className="ml-auto h-4 w-4 opacity-50" />
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <CalendarComponent
-                          mode="single"
-                          selected={field.value || undefined}
-                          onSelect={field.onChange}
-                          initialFocus
-                          disabled={(date) => date < new Date()}
+                render={({ field }) => {
+                  const [dateValue, setDateValue] = useState<string>(
+                    field.value ? format(field.value, 'yyyy-MM-dd') : ''
+                  );
+
+                  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+                    const value = e.target.value;
+                    setDateValue(value);
+                    if (value) {
+                      const date = new Date(value);
+                      if (!isNaN(date.getTime())) {
+                        field.onChange(date);
+                      }
+                    } else {
+                      field.onChange(null);
+                    }
+                  };
+
+                  return (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Warranty Expiry</FormLabel>
+                      <div className="flex gap-2">
+                        <Input
+                          type="date"
+                          value={dateValue}
+                          onChange={handleDateChange}
+                          className="w-full"
+                          min={format(new Date(), 'yyyy-MM-dd')}
                         />
-                      </PopoverContent>
-                    </Popover>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className="px-3"
+                              type="button"
+                            >
+                              <Calendar className="h-4 w-4" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="end">
+                            <CalendarComponent
+                              mode="single"
+                              selected={field.value || undefined}
+                              onSelect={(date) => {
+                                field.onChange(date || null);
+                                setDateValue(date ? format(date, 'yyyy-MM-dd') : '');
+                              }}
+                              initialFocus
+                              disabled={(date) => date < new Date()}
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
               />
             </div>
           </div>

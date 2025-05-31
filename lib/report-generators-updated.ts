@@ -44,14 +44,19 @@ export function prepareReportData(data: any, reportType: string): any[] {
 
   switch (reportType) {
     case 'income':
+    case 'income-sources':
       // Handle income data with the specific fields requested
       const incomeData = Array.isArray(data) ? data : data.income || [];
       return incomeData.map(item => ({
         name: preserveString(item.name),
         frequency: preserveString(item.frequency),
-        amount: item.formatted_amount || new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(item.amount || 0),
-        category: preserveString(item.category || item.type),
-        start_date: item.formatted_start_date || safeFormatDate(item.start_date)
+        amount: item.amount || 0,
+        category: preserveString(item.category),
+        start_date: item.start_date || '',
+        formatted_amount: item.formatted_amount || new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(item.amount || 0),
+        formatted_date: item.formatted_date || safeFormatDate(item.start_date),
+        recurring_entry: item.frequency !== 'none' ? 'Yes' : 'No',
+        recurring_percentage: item.frequency !== 'none' ? '100%' : '0%'
       }));
 
     case 'expenses':
@@ -356,9 +361,19 @@ function getReportHeaders(reportType: string): Array<{ key: string, label: strin
       return [
         { key: 'name', label: 'Name' },
         { key: 'frequency', label: 'Frequency' },
-        { key: 'amount', label: 'Amount' },
+        { key: 'formatted_amount', label: 'Amount' },
         { key: 'category', label: 'Category' },
-        { key: 'start_date', label: 'Start Date' }
+        { key: 'formatted_date', label: 'Start Date' }
+      ];
+      
+    case 'income-sources':
+      return [
+        { key: 'name', label: 'Income Source' },
+        { key: 'formatted_amount', label: 'Amount' },
+        { key: 'category', label: 'Category' },
+        { key: 'frequency', label: 'Frequency' },
+        { key: 'recurring_entry', label: 'Recurring Entry' },
+        { key: 'recurring_percentage', label: 'Recurring %' }
       ];
 
     case 'expenses':

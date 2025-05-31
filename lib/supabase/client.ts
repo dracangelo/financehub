@@ -6,7 +6,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
 // Check if environment variables are set
-if (!supabaseUrl || !supabaseAnonKey) {
+if ((!supabaseUrl || !supabaseAnonKey) && typeof window !== 'undefined') {
   console.error('Missing Supabase environment variables')
 }
 
@@ -18,8 +18,8 @@ const SESSION_KEY = 'supabase.auth.token'
 const REFRESH_KEY = 'supabase.auth.refreshToken'
 
 /**
- * Enhanced client creation with better session handling
- * This resolves issues with 'Auth session missing' errors
+ * Enhanced client creation with better session handling and security
+ * Uses getUser() for secure authentication and falls back to getSession() if needed
  */
 export function createClientSupabaseClient() {
   // Only create the client in browser environments
@@ -37,18 +37,20 @@ export function createClientSupabaseClient() {
   try {
     // Create a new client if one doesn't exist
     if (!browserSupabaseClient) {
-      // Create the client with session recovery
+      // Create the client with session recovery and secure defaults
       browserSupabaseClient = createBrowserClient<Database>(
         supabaseUrl,
         supabaseAnonKey,
         {
           auth: {
             persistSession: true,
-            storage: localStorage,
+            storage: typeof window !== 'undefined' ? window.localStorage : undefined,
             autoRefreshToken: true,
             detectSessionInUrl: true,
-            // Add a flow type to handle session recovery errors
-            flowType: 'pkce'
+            // Use PKCE flow for better security
+            flowType: 'pkce',
+            // Add debug logging in development
+            debug: process.env.NODE_ENV === 'development'
           },
           global: {
             headers: {

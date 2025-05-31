@@ -1,12 +1,23 @@
 import { redirect } from "next/navigation"
-import { createServerSupabaseClient } from "./supabase/server"
+import { createServerSupabaseClient } from "@/lib/supabase/server-utils"
 import { getClientSupabaseClient } from "./supabase/client"
 import { ensureUserExists } from "./services/user-service"
 import { cache } from "react"
+import { getAuthenticatedUser as getClientAuthUser } from "./supabase/client-auth"
+import type { User } from "@supabase/supabase-js"
 
-// Server-side authentication with caching to prevent multiple calls
-export const getAuthenticatedUser = cache(async () => {
+/**
+ * Get the authenticated user, either from the client or server
+ * Uses getUser() for secure authentication with fallback to getSession()
+ */
+export const getAuthenticatedUser = cache(async (): Promise<User | null> => {
   try {
+    // On the client side, use the client auth utilities
+    if (typeof window !== 'undefined') {
+      return getClientAuthUser()
+    }
+
+    // Server-side authentication
     const supabase = await createServerSupabaseClient()
     if (!supabase) {
       console.error("Failed to create Supabase client")
@@ -14,155 +25,68 @@ export const getAuthenticatedUser = cache(async () => {
     }
     
     try {
-      // Use getUser for secure authentication by contacting the Supabase Auth server
-      const { data, error } = await supabase.auth.getUser()
+      // First try to get the user (most secure method)
+      const { data: userData, error: userError } = await supabase.auth.getUser()
       
-      if (error) {
-        // Don't throw an error for auth session missing - this is expected for unauthenticated users
-        if (error.message.includes("Auth session missing")) {
-          return null
-        }
-        
-        // Handle expired tokens gracefully
-        if (error.message.includes("invalid JWT") || 
-            error.message.includes("token is expired") || 
-            error.message.includes("token has invalid claims")) {
-          console.log("Token expired or invalid, treating as unauthenticated")
-          return null
-        }
-        
-        console.error("Authentication error:", error.message)
-        return null
+      if (userError || !userData?.user) {
+        console.warn('Error getting user, falling back to session:', userError?.message)
+        // Fall back to getSession for backward compatibility
+        const { data: sessionData } = await supabase.auth.getSession()
+        return sessionData?.session?.user || null
       }
+
+      // If we have user data, ensure the user exists in our database
+      const userId = userData.user.id;
+      const userEmail = userData.user.email;
       
-      // If we have a user, ensure they exist in the public.users table
-      if (data && data.user && data.user.email) {
-        try {
-          // Check if user exists in the public.users table
-          const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('id')
-            .eq('id', data.user.id)
-            .maybeSingle()
-          
-          if (userError) {
-            console.error("Error checking if user exists:", userError.message)
-          } else if (!userData) {
-            // If user doesn't exist in the public.users table, create a new record
-            // Generate a username based on email
-            const emailPrefix = data.user.email.split('@')[0]
-            const username = `${emailPrefix}${Math.floor(Math.random() * 1000)}`
-            
-            // Create a new user record
-            const { error: insertError } = await supabase
-              .from('users')
-              .insert({
-                id: data.user.id,
-                username,
-                email: data.user.email,
-                is_email_verified: data.user.email_confirmed_at ? true : false,
-                mfa_enabled: false,
-                is_biometrics_enabled: false,
-                suspicious_login_flag: false,
-                session_timeout_minutes: 30,
-                emergency_access_enabled: false,
-                has_consented: false,
-                privacy_level: 'standard',
-                local_data_only: false,
-                allow_data_analysis: true,
-                data_retention_policy: '1y',
-                locale: 'en-US',
-                currency_code: 'USD',
-                timezone: 'UTC',
-                theme: 'system',
-                date_format: 'YYYY-MM-DD',
-                notification_preferences: {},
-                onboarding_completed: false,
-                user_role: 'user',
-                permission_scope: {},
-                marketing_opt_in: false,
-                last_login_at: new Date().toISOString(),
-                last_active_at: new Date().toISOString()
-              })
-            
-            if (insertError) {
-              console.error("Error creating user record:", insertError.message)
-            }
-          }
-        } catch (dbError) {
-          // If there's an error with the database operations, log it but still return the user
-          console.error("Database error in getAuthenticatedUser:", dbError)
+      if (!userId || !userEmail) {
+        console.error('Missing user ID or email in auth data');
+        return null;
+      }
+
+      // Ensure the user exists in our database with just the email
+      try {
+        const ensureResult = await ensureUserExists(userId, userEmail);
+        if (!ensureResult) {
+          console.error('Error ensuring user exists');
+          return null;
         }
-        
-        return data.user
+      } catch (ensureError) {
+        console.error('Error in ensureUserExists:', ensureError);
+        return null;
       }
-      
-      // No valid user data
-      return null
-    } catch (authError) {
-      // Catch any JWT or token-related errors and handle them gracefully
-      if (authError instanceof Error && 
-          (authError.message.includes("invalid JWT") || 
-           authError.message.includes("token is expired") || 
-           authError.message.includes("token has invalid claims"))) {
-        console.log("Caught token error, treating as unauthenticated:", authError.message)
-        return null
-      }
-      
-      // Re-throw other errors
-      throw authError
+
+      return userData.user;
+    } catch (innerError) {
+      console.error('Error in getAuthenticatedUser inner try:', innerError);
+      return null;
     }
   } catch (error) {
-    // Catch any unexpected errors
-    console.error("Error getting authenticated user:", error)
-    return null
+    console.error('Error in getAuthenticatedUser:', error);
+    return null;
   }
-})
+});
 
-// Client-side authentication
-export async function getClientAuthenticatedUser() {
-  try {
-    const supabase = getClientSupabaseClient()
-    if (!supabase) {
-      console.error("Failed to get Supabase client")
-      return { data: { user: null }, error: new Error("Failed to get Supabase client") }
+// For backward compatibility
+export const getCurrentUser = getAuthenticatedUser;
+
+/**
+ * Require authentication for protected routes
+ * @param redirectTo The path to redirect to if not authenticated (default: '/login')
+ * @returns The authenticated user or null if not authenticated
+ */
+export async function requireAuth(redirectTo: string = '/login'): Promise<User | null> {
+  const user = await getAuthenticatedUser();
+  
+  if (!user) {
+    // Using redirect() in a server component or server action
+    if (typeof window === 'undefined') {
+      redirect(redirectTo);
+    } else {
+      // Client-side redirect
+      window.location.href = redirectTo;
     }
-    
-    // Use getUser for secure authentication by contacting the Supabase Auth server
-    const { data, error } = await supabase.auth.getUser()
-    
-    if (error) {
-      console.error("Authentication error:", error.message)
-      return { data: { user: null }, error }
-    }
-    
-    // If we have a user, ensure they exist in the public.users table
-    if (data && data.user && data.user.email) {
-      await ensureUserExists(data.user.id, data.user.email)
-    }
-    
-    return { data, error }
-  } catch (error) {
-    console.error("Error getting client authenticated user:", error)
-    return { data: { user: null }, error }
   }
-}
-
-// Alias for getAuthenticatedUser to maintain compatibility
-export const getCurrentUser = getAuthenticatedUser
-
-export async function requireAuth() {
-  try {
-    const user = await getAuthenticatedUser()
-
-    if (!user) {
-      // Add a query parameter to help track redirect sources
-      redirect("/login?from=require_auth")
-    }
-
-    return user
-  } catch (error) {
-    console.error("Error in requireAuth:", error)
-    redirect("/login?from=error")
-  }
+  
+  return user;
 }

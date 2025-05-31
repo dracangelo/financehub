@@ -129,20 +129,31 @@ export const updateUserSettings = async (userId: string, settings: Partial<UserS
 
 export const createUserRecord = async (userId: string, username: string, email: string): Promise<{ success: boolean; error?: string }> => {
   try {
-    // For user creation during registration, we need to bypass RLS
-    // This is a special case where we need to handle the auth flow differently
-    // Instead of trying to create the user record immediately, we'll delay it
-    // until after the user is fully authenticated
-    
-    // We'll mark this as successful for now and handle the actual user record creation
-    // when the user first logs in
+    const supabase = await createServerSupabaseClient();
+    if (!supabase) {
+      console.error("[Server] Failed to create Supabase client");
+      return { success: false, error: "Failed to create Supabase client" };
+    }
+
+    const { error } = await supabase
+      .from('users')
+      .insert({
+        id: userId,
+        username,
+        email,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+
+    if (error) {
+      console.error("[Server] Error creating user record:", error.message);
+      return { success: false, error: error.message };
+    }
+
     return { success: true };
-    
-    // Note: The actual user record creation will be handled by the ensureUserExists function
-    // which will be called when the user logs in for the first time
   } catch (error) {
-    console.error("Error in createUserRecord:", error);
-    return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
+    console.error("[Server] Error in createUserRecord:", error);
+    return { success: false, error: "An unexpected error occurred" };
   }
 };
 
@@ -193,20 +204,16 @@ export const updateLastActiveTimestamp = async (userId: string): Promise<void> =
   }
 };
 
-/**
- * Ensures a user record exists in the public.users table.
- * If the user doesn't exist, creates a new record with default values.
- * This is useful for handling existing authenticated users who don't have a record in the public.users table yet.
- */
 export const ensureUserExists = async (userId: string, email: string): Promise<boolean> => {
   try {
-    const supabase = getClientSupabaseClient();
+    // Use server-side Supabase client
+    const supabase = await createServerSupabaseClient();
     if (!supabase) {
-      console.error("Failed to get Supabase client");
+      console.error("[Server] Failed to create Supabase client");
       return false;
     }
     
-    // Check if user exists in the public.users table
+    // Rest of the function remains the same
     const { data, error } = await supabase
       .from('users')
       .select('id')
@@ -214,13 +221,11 @@ export const ensureUserExists = async (userId: string, email: string): Promise<b
       .maybeSingle();
     
     if (error) {
-      console.error("Error checking if user exists:", error.message);
+      console.error("[Server] Error checking if user exists:", error.message);
       return false;
     }
     
-    // If user doesn't exist, create a new record
     if (!data) {
-      // Generate a username based on email
       const emailPrefix = email.split('@')[0];
       const username = `${emailPrefix}${Math.floor(Math.random() * 1000)}`;
       
@@ -230,7 +235,7 @@ export const ensureUserExists = async (userId: string, email: string): Promise<b
     
     return true;
   } catch (error) {
-    console.error("Error in ensureUserExists:", error);
+    console.error("[Server] Error in ensureUserExists:", error);
     return false;
   }
 };
