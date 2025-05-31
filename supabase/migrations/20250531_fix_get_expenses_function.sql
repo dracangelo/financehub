@@ -1,9 +1,4 @@
--- Add missing columns to expenses table
-ALTER TABLE public.expenses
-ADD COLUMN IF NOT EXISTS category_ids UUID[] DEFAULT '{}'::UUID[],
-ADD COLUMN IF NOT EXISTS expense_id UUID DEFAULT gen_random_uuid();
-
--- Create or replace the get_expenses_by_period function
+-- Fix the get_expenses_by_period function to handle date type correctly
 CREATE OR REPLACE FUNCTION public.get_expenses_by_period(
   p_user_id UUID,
   p_period_type TEXT,

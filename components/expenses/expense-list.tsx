@@ -56,6 +56,7 @@ const ExpenseItem = ({ expense, onDelete }: { expense: any; onDelete: (id: strin
     latitude: latitude,
     longitude: longitude
   });
+  console.log('Recurrence:', expense.recurrence);
   
   // The database stores the category as text, but our constants use UUIDs
   // Get the category name and color using our helper function
@@ -133,7 +134,7 @@ const ExpenseItem = ({ expense, onDelete }: { expense: any; onDelete: (id: strin
   }, [expense.id, expense.splits]);
 
   return (
-    <Card className="relative overflow-hidden">
+    <Card className={`relative overflow-hidden ${expense.is_impulse ? 'border-red-500 border-2' : ''}`}>
       {/* Category color indicator */}
       <div 
         className="absolute top-0 left-0 w-1 h-full" 
@@ -143,7 +144,28 @@ const ExpenseItem = ({ expense, onDelete }: { expense: any; onDelete: (id: strin
       <CardContent className="p-4 pl-6">
         <div className="flex items-start justify-between">
           <div className="space-y-1">
-            <h3 className={`font-medium ${expense.is_impulse ? 'text-red-500' : ''}`}>{expense.merchant}</h3>
+            <div className="flex flex-col">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className={`font-medium ${expense.is_impulse ? 'text-red-500 font-bold' : ''}`}>
+                    {expense.merchant}
+                  </h3>
+                  
+                  {/* Always show recurrence (frequency) if it exists */}
+                  {expense.recurrence && expense.recurrence !== 'none' && (
+                    <Badge variant="outline" className="bg-purple-100 text-purple-800 border-purple-300">
+                      <RepeatIcon className="w-3 h-3 mr-1" />
+                      {formatRecurrenceText(expense.recurrence)}
+                    </Badge>
+                  )}
+                  
+                  {/* Show impulse badge */}
+                  {expense.is_impulse && (
+                    <Badge variant="outline" className="bg-red-100 text-red-800 border-red-300">
+                      Impulse
+                    </Badge>
+                  )}
+                </div>
+              </div>
             <div className="text-sm text-muted-foreground flex flex-wrap gap-2">
               {expense.notes && (
                 <span className="inline-flex items-center">
@@ -160,7 +182,7 @@ const ExpenseItem = ({ expense, onDelete }: { expense: any; onDelete: (id: strin
               
               {/* Display location if available */}
               {(expense.location_name || displayLocationName) && (
-                <span className="inline-flex items-center">
+                <span className="inline-flex items-center bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full text-xs">
                   <MapPin className="w-3 h-3 mr-1" />
                   {expense.location_name || displayLocationName}
                 </span>
@@ -174,13 +196,7 @@ const ExpenseItem = ({ expense, onDelete }: { expense: any; onDelete: (id: strin
                 </span>
               )}
               
-              {/* Display recurring expense information if available */}
-              {expense.recurrence && expense.recurrence !== 'none' && (
-                <span className="inline-flex items-center text-purple-600">
-                  <RepeatIcon className="w-3 h-3 mr-1" />
-                  {formatRecurrenceText(expense.recurrence)}
-                </span>
-              )}
+              {/* Frequency information is now displayed next to the merchant name */}
               
               {/* End of basic expense details */}
             </div>

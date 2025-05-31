@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { getExpensesByPeriod } from "@/app/actions/expenses"
-import { format, subMonths, startOfMonth, endOfMonth, parseISO, isSameMonth } from "date-fns"
+import { format, parseISO, isSameMonth, subMonths, startOfMonth, endOfMonth } from "date-fns"
 import { cn } from "@/lib/utils"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Badge } from "@/components/ui/badge"
-import { BarChart, TrendingUp, TrendingDown } from "lucide-react"
+import { BarChartIcon, LineChartIcon, TrendingUp, TrendingDown } from "lucide-react"
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts"
 
 interface InteractiveTimelineProps {
   className?: string
@@ -18,6 +19,7 @@ interface TimelineData {
   date: string
   amount: number
   count: number
+  month: string
   categories: {
     [key: string]: {
       name: string
@@ -26,6 +28,8 @@ interface TimelineData {
     }
   }
 }
+
+type ChartType = 'bar' | 'line'
 
 export function InteractiveTimeline({ className }: InteractiveTimelineProps) {
   const [expenses, setExpenses] = useState<any[]>([])
@@ -36,6 +40,8 @@ export function InteractiveTimeline({ className }: InteractiveTimelineProps) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [maxAmount, setMaxAmount] = useState(0)
   const [trend, setTrend] = useState<'up' | 'down' | 'neutral'>('neutral')
+  const [chartType, setChartType] = useState<ChartType>('bar')
+  const [averageSpending, setAverageSpending] = useState(0)
 
   useEffect(() => {
     const fetchExpenses = async () => {
@@ -52,7 +58,7 @@ export function InteractiveTimeline({ className }: InteractiveTimelineProps) {
         setExpenses(data)
         
         // Process data for timeline
-        const months = []
+        const months: TimelineData[] = []
         const now = new Date()
         let monthsToShow = 3
         
@@ -67,82 +73,64 @@ export function InteractiveTimeline({ className }: InteractiveTimelineProps) {
           const start = startOfMonth(monthDate)
           const end = endOfMonth(monthDate)
           
-          const monthExpenses = data.filter(expense => {
-            // Add null check and handle both date and spent_at fields
-            if (!expense.date && !expense.spent_at) return false;
-            
+          // Find the expense period that matches this month
+          const monthExpenses = data.filter(expensePeriod => {
             try {
-              // Try to parse the date, handling both date and spent_at fields
-              const dateString = expense.date || expense.spent_at;
-              const expenseDate = typeof dateString === 'string' ? parseISO(dateString) : new Date(dateString);
-              return expenseDate >= start && expenseDate <= end;
+              // Parse the period start date
+              const periodStartDate = parseISO(expensePeriod.period_start)
+              // Check if this period falls within our month
+              return isSameMonth(periodStartDate, monthDate)
             } catch (error) {
-              console.error("Error parsing date:", error, expense);
-              return false;
+              console.error("Error parsing date:", error, expensePeriod)
+              return false
             }
           })
           
-          const amount = monthExpenses.reduce((sum, expense) => sum + expense.amount, 0)
+          // Use total from the period data instead of calculating from individual expenses
+          const amount = monthExpenses.length > 0 ? monthExpenses[0].total : 0
           
-          // Group by category
+          // Since we don't have category data in the new format, we'll use a simplified approach
           const categories: { [key: string]: { name: string, amount: number, color: string } } = {}
           
-          monthExpenses.forEach(expense => {
-            if (expense.category) {
-              const categoryId = expense.category.id || expense.category
-              const categoryName = typeof expense.category === 'string' 
-                ? expense.category 
-                : (expense.category.name || 'Uncategorized')
-              const categoryColor = typeof expense.category === 'string' 
-                ? '#888888' 
-                : (expense.category.color || '#888888')
-                
-              if (!categories[categoryId]) {
-                categories[categoryId] = {
-                  name: categoryName,
-                  amount: 0,
-                  color: categoryColor
-                }
-              }
-              categories[categoryId].amount += expense.amount
-            } else {
-              // Handle uncategorized expenses
-              const categoryId = 'uncategorized'
-              if (!categories[categoryId]) {
-                categories[categoryId] = {
-                  name: 'Uncategorized',
-                  amount: 0,
-                  color: '#888888'
-                }
-              }
-              categories[categoryId].amount += expense.amount
+          // If we have expense data for this month, create a generic category entry
+          if (monthExpenses.length > 0) {
+            categories['expenses'] = {
+              name: 'Expenses',
+              amount: amount,
+              color: '#94a3b8'
             }
-          })
+          }
           
           months.push({
             date: format(start, "yyyy-MM"),
+            month: format(start, "MMM yyyy"),
             amount,
-            count: monthExpenses.length,
+            count: monthExpenses.length > 0 ? monthExpenses[0].count : 0,
             categories
           })
         }
         
         // Sort by date (oldest to newest)
-        months.sort((a, b) => a.date.localeCompare(b.date))
+        months.sort((a: TimelineData, b: TimelineData) => a.date.localeCompare(b.date))
         
         // Calculate spending trend
         if (months.length >= 2) {
-          const currentMonth = months[months.length - 1].amount;
-          const previousMonth = months[months.length - 2].amount;
+          const currentMonth = months[months.length - 1].amount
+          const previousMonth = months[months.length - 2].amount
           
           if (currentMonth > previousMonth) {
-            setTrend('up');
+            setTrend('up')
           } else if (currentMonth < previousMonth) {
-            setTrend('down');
+            setTrend('down')
           } else {
-            setTrend('neutral');
+            setTrend('neutral')
           }
         }
+        
+        // Calculate average spending
+        const totalSpending = months.reduce((sum, month) => sum + month.amount, 0)
+        const avg = months.length > 0 ? totalSpending / months.length : 0
+        setAverageSpending(avg)
         
         setTimelineData(months)
         setMaxAmount(Math.max(...months.map(m => m.amount), 1))
@@ -207,135 +195,200 @@ export function InteractiveTimeline({ className }: InteractiveTimelineProps) {
               {trend === 'down' ? (
                 <>
                   <TrendingDown className="h-3 w-3" />
-                  <span>Decreasing</span>
+                  <span>Spending Down</span>
                 </>
               ) : (
                 <>
                   <TrendingUp className="h-3 w-3" />
-                  <span>Increasing</span>
+                  <span>Spending Up</span>
                 </>
               )}
             </Badge>
           )}
         </div>
-        <Tabs defaultValue="3m" onValueChange={(value) => setSelectedPeriod(value as "3m" | "6m" | "1y")}>
-          <TabsList>
-            <TabsTrigger value="3m">3 Months</TabsTrigger>
-            <TabsTrigger value="6m">6 Months</TabsTrigger>
-            <TabsTrigger value="1y">1 Year</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="flex items-center gap-2">
+          <div className="flex border rounded-md p-1">
+            <button 
+              onClick={() => setChartType('bar')} 
+              className={cn(
+                "p-1 rounded", 
+                chartType === 'bar' ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+              )}
+              title="Bar Chart"
+            >
+              <BarChartIcon className="h-4 w-4" />
+            </button>
+            <button 
+              onClick={() => setChartType('line')} 
+              className={cn(
+                "p-1 rounded", 
+                chartType === 'line' ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+              )}
+              title="Line Chart"
+            >
+              <LineChartIcon className="h-4 w-4" />
+            </button>
+          </div>
+          <Tabs defaultValue="3m" value={selectedPeriod} onValueChange={(v) => setSelectedPeriod(v as any)}>
+            <TabsList>
+              <TabsTrigger value="3m">3 Months</TabsTrigger>
+              <TabsTrigger value="6m">6 Months</TabsTrigger>
+              <TabsTrigger value="1y">1 Year</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
       </CardHeader>
       <CardContent>
-        <div className="h-64 flex items-end space-x-2">
-          {timelineData.map((month) => (
-            <TooltipProvider key={month.date}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div 
-                    className={cn(
-                      "flex-1 flex flex-col items-center cursor-pointer",
-                      selectedDate === month.date && "ring-2 ring-primary ring-offset-2 rounded-t"
-                    )}
-                    onMouseEnter={() => setHoveredDate(month.date)}
-                    onMouseLeave={() => setHoveredDate(null)}
-                    onClick={() => setSelectedDate(selectedDate === month.date ? null : month.date)}
-                  >
-                    <div 
-                      className={cn(
-                        "w-full rounded-t-sm transition-all",
-                        selectedDate === month.date ? "bg-primary" : "bg-blue-500"
-                      )}
-                      style={{ 
-                        height: `${(month.amount / maxAmount) * 100}%`,
-                        minHeight: month.amount > 0 ? "4px" : "0"
+        <div className="h-72 relative">
+          {timelineData.length === 0 ? (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-muted-foreground">No spending data available</p>
+            </div>
+          ) : (
+            <>
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  {chartType === 'bar' ? (
+                    <BarChart
+                      data={timelineData}
+                      margin={{ top: 10, right: 10, left: 0, bottom: 20 }}
+                      onClick={(data) => {
+                        if (data && data.activePayload && data.activePayload[0]) {
+                          const clickedData = data.activePayload[0].payload as TimelineData;
+                          setSelectedDate(selectedDate === clickedData.date ? null : clickedData.date);
+                        }
                       }}
-                    ></div>
-                    <div className="text-xs text-gray-500 mt-1 transform -rotate-45 origin-top-left whitespace-nowrap">
-                      {formatMonth(month.date)}
-                    </div>
+                    >
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.2} />
+                      <XAxis 
+                        dataKey="month" 
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 12 }}
+                      />
+                      <YAxis 
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 12 }}
+                        tickFormatter={(value) => `$${value}`}
+                      />
+                      <Tooltip 
+                        formatter={(value) => [`$${value}`, 'Spending']}
+                        labelFormatter={(label) => `${label}`}
+                      />
+                      <ReferenceLine 
+                        y={averageSpending} 
+                        stroke="#888" 
+                        strokeDasharray="3 3"
+                        label={{ value: 'Avg', position: 'right', fill: '#888', fontSize: 10 }}
+                      />
+                      <Bar 
+                        dataKey="amount" 
+                        fill="#3b82f6"
+                        radius={[4, 4, 0, 0]}
+                        animationDuration={500}
+                      />
+                    </BarChart>
+                  ) : (
+                    <LineChart
+                      data={timelineData}
+                      margin={{ top: 10, right: 10, left: 0, bottom: 20 }}
+                      onClick={(data) => {
+                        if (data && data.activePayload && data.activePayload[0]) {
+                          const clickedData = data.activePayload[0].payload as TimelineData;
+                          setSelectedDate(selectedDate === clickedData.date ? null : clickedData.date);
+                        }
+                      }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.2} />
+                      <XAxis 
+                        dataKey="month" 
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 12 }}
+                      />
+                      <YAxis 
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 12 }}
+                        tickFormatter={(value) => `$${value}`}
+                      />
+                      <Tooltip 
+                        formatter={(value) => [`$${value}`, 'Spending']}
+                        labelFormatter={(label) => `${label}`}
+                      />
+                      <ReferenceLine 
+                        y={averageSpending} 
+                        stroke="#888" 
+                        strokeDasharray="3 3"
+                        label={{ value: 'Avg', position: 'right', fill: '#888', fontSize: 10 }}
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey="amount" 
+                        stroke="#3b82f6" 
+                        strokeWidth={2}
+                        dot={{ r: 4, fill: "#3b82f6" }}
+                        activeDot={{ r: 6, fill: "#2563eb" }}
+                        animationDuration={500}
+                      />
+                    </LineChart>
+                  )}
+                </ResponsiveContainer>
+              </div>
+              
+              {selectedDate && (
+                <div className="mt-4 pt-4 border-t">
+                  <h3 className="font-medium mb-2">
+                    {formatMonth(selectedDate)} Details
+                  </h3>
+                  <div className="space-y-2">
+                    {(() => {
+                      const selectedMonth = timelineData.find(m => m.date === selectedDate)
+                      if (!selectedMonth) return null
+                      
+                      return (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium">Total Spending:</span>
+                            <span className="font-semibold">{formatCurrency(selectedMonth.amount)}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium">Number of Expenses:</span>
+                            <span>{selectedMonth.count}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium">Average per Expense:</span>
+                            <span>{selectedMonth.count > 0 ? formatCurrency(selectedMonth.amount / selectedMonth.count) : '$0.00'}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium">Compared to Average:</span>
+                            <div className="flex items-center gap-1">
+                              {selectedMonth.amount > averageSpending ? (
+                                <>
+                                  <TrendingUp className="h-3 w-3 text-destructive" />
+                                  <span className="text-destructive">{formatCurrency(selectedMonth.amount - averageSpending)} above avg</span>
+                                </>
+                              ) : selectedMonth.amount < averageSpending ? (
+                                <>
+                                  <TrendingDown className="h-3 w-3 text-success" />
+                                  <span className="text-success">{formatCurrency(averageSpending - selectedMonth.amount)} below avg</span>
+                                </>
+                              ) : (
+                                <span>At average</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })()}
                   </div>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="p-0 bg-transparent border-0 shadow-none">
-                  <Card className="w-64 shadow-lg">
-                    <CardHeader className="p-3 pb-1">
-                      <CardTitle className="text-sm">{formatMonth(month.date)}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-3 pt-0">
-                      <div className="flex justify-between items-center text-sm font-medium">
-                        <span>Total spent:</span>
-                        <span>{formatCurrency(month.amount)}</span>
-                      </div>
-                      <div className="flex justify-between items-center text-xs text-muted-foreground">
-                        <span>Transactions:</span>
-                        <span>{month.count}</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
-        
-        {selectedDate && (
-          <div className="mt-4 p-4 bg-card rounded-md border shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-medium text-lg">{formatMonth(selectedDate)}</h3>
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className="flex items-center gap-1">
-                  <BarChart className="h-3 w-3" />
-                  <span>{timelineData.find(m => m.date === selectedDate)?.count || 0} transactions</span>
-                </Badge>
-                <Badge variant="secondary" className="font-medium">
-                  {formatCurrency(timelineData.find(m => m.date === selectedDate)?.amount || 0)}
-                </Badge>
-              </div>
-            </div>
-            
-            <div className="mt-2">
-              <h4 className="text-sm font-medium mb-2">Spending by Category:</h4>
-              <div className="space-y-2">
-                {Object.values(timelineData.find(m => m.date === selectedDate)?.categories || {})
-                  .sort((a, b) => b.amount - a.amount)
-                  .map((category, i) => {
-                    const percentage = timelineData.find(m => m.date === selectedDate)?.amount
-                      ? Math.round((category.amount / (timelineData.find(m => m.date === selectedDate)?.amount || 1)) * 100)
-                      : 0;
-                    
-                    return (
-                      <div key={i} className="space-y-1">
-                        <div className="flex items-center justify-between text-sm">
-                          <div className="flex items-center">
-                            <div 
-                              className="w-3 h-3 rounded-full mr-2" 
-                              style={{ backgroundColor: category.color }}
-                            ></div>
-                            <span>{category.name}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground">{percentage}%</span>
-                            <span className="font-medium">{formatCurrency(category.amount)}</span>
-                          </div>
-                        </div>
-                        <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-                          <div 
-                            className="h-full rounded-full" 
-                            style={{ 
-                              width: `${percentage}%`,
-                              backgroundColor: category.color 
-                            }}
-                          ></div>
-                        </div>
-                      </div>
-                    );
-                  })
-                }
-              </div>
-            </div>
-          </div>
-        )}
       </CardContent>
     </Card>
   )
-} 
+}

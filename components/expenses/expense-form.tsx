@@ -134,6 +134,7 @@ export function ExpenseForm({
   // Location search state
   const [locationEnabled, setLocationEnabled] = useState(false);
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
+  const [fileName, setFileName] = useState<string>('');
   const [showSplitOptions, setShowSplitOptions] = useState(false);
   const [availableUsers, setAvailableUsers] = useState(users);
   
@@ -349,19 +350,42 @@ export function ExpenseForm({
 
   // Handle receipt image selection
   const handleReceiptChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files && event.target.files[0]) {
-      const file = event.target.files[0];
-      const reader = new FileReader();
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      const file = files[0];
       
+      // Check file size - 5MB limit (5 * 1024 * 1024 bytes)
+      const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in bytes
+      if (file.size > MAX_FILE_SIZE) {
+        // Clear the file input
+        if (event.target) {
+          event.target.value = '';
+        }
+        
+        // Show error toast
+        toast({
+          title: "File Too Large",
+          description: "The file exceeds the 5MB size limit. Please upload a smaller file.",
+          variant: "destructive",
+        });
+        
+        setFileName('');
+        return;
+      }
+      
+      // Set filename and create preview
+      setFileName(file.name);
+      const reader = new FileReader();
       reader.onloadend = () => {
         setReceiptPreview(reader.result as string);
       };
-      
       reader.readAsDataURL(file);
       form.setValue("receipt_image", file);
+    } else {
+      setFileName('');
     }
   };
-
+  
   // Toggle split expense options
   const toggleSplitOptions = () => {
     setShowSplitOptions(!showSplitOptions);
@@ -441,9 +465,16 @@ export function ExpenseForm({
           await uploadReceipt(fileInputRef.current.files[0], expenseId);
         } catch (uploadError) {
           console.error("Error uploading receipt:", uploadError);
+          
+          // Check if it's a file size error
+          const errorMessage = uploadError instanceof Error ? uploadError.message : String(uploadError);
+          const isFileSizeError = errorMessage.includes("5MB limit");
+          
           toast({
-            title: "Receipt Upload Failed",
-            description: "The expense was saved, but we couldn't upload the receipt.",
+            title: isFileSizeError ? "File Too Large" : "Receipt Upload Failed",
+            description: isFileSizeError 
+              ? "The file exceeds the 5MB size limit. Please upload a smaller file." 
+              : "The expense was saved, but we couldn't upload the receipt.",
             variant: "destructive",
           });
         }

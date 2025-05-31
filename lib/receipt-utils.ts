@@ -9,6 +9,12 @@ import { v4 as uuidv4 } from "uuid"
  */
 export async function uploadReceipt(file: File, expenseId: string) {
   try {
+    // Check file size - 5MB limit (5 * 1024 * 1024 bytes)
+    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in bytes
+    if (file.size > MAX_FILE_SIZE) {
+      throw new Error("File size exceeds the 5MB limit. Please upload a smaller file.")
+    }
+    
     const supabase = await createServerSupabaseClient()
     const user = await getAuthenticatedUser()
     

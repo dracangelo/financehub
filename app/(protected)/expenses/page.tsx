@@ -1,17 +1,12 @@
 "use client"
 
 import { useState } from "react"
-import { InteractiveTimeline } from "@/components/expenses/interactive-timeline"
 import { ExpenseList } from "@/components/expenses/expense-list"
 import { Button } from "@/components/ui/button"
 import { Plus, BarChart, List } from "lucide-react"
 import Link from "next/link"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-
-// Import visualization components
-
-
-import { ExpenseCalendar } from "@/components/expenses/expense-calendar"
+import { ExpenseAnalytics } from "@/components/expenses/expense-analytics"
 
 export default function ExpensesPage() {
   const [activeTab, setActiveTab] = useState("list")
@@ -45,13 +40,7 @@ export default function ExpensesPage() {
         </TabsContent>
         
         <TabsContent value="analytics" className="mt-6 space-y-6">
-          <div className="grid grid-cols-1 gap-6">
-            <InteractiveTimeline />
-          </div>
-          
-          <div className="grid grid-cols-1 gap-6">
-            <ExpenseCalendar />
-          </div>
+          <ExpenseAnalytics />
         </TabsContent>
       </Tabs>
     </div>

@@ -85,7 +85,7 @@
     "react-dom": "^18.2.0",
     "react-hook-form": "latest",
     "react-resizable-panels": "^2.1.7",
-    "recharts": "latest",
+    "recharts": "^2.15.3",
     "sonner": "^1.7.1",
     "supabase": "^2.20.12",
     "tailwind-merge": "^2.5.5",

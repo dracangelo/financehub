@@ -420,7 +420,7 @@ export async function searchExpensesByLocation(
 export async function getExpensesByPeriod(
   period: 'day' | 'week' | 'month' | 'year',
   limit: number = 12
-): Promise<Array<{ period: string; total: number; count: number }>> {
+): Promise<Array<{ period_start: string; period_end: string; total: number; count: number }>> {
   try {
     const supabase = await createServerSupabaseClient()
 
@@ -433,20 +433,87 @@ export async function getExpensesByPeriod(
 
     const userId = sessionData.session.user.id
     
-    const { data: expenses, error: queryError } = await supabase.rpc('get_expenses_by_period', {
-      user_id: userId,
-      period_type: period,
-      max_periods: limit
-    })
-
-    if (queryError) {
-      console.error('Error getting expenses by period:', queryError)
+    // Instead of using the database function, we'll implement the logic in JavaScript
+    // First, get all expenses for the user
+    const { data: userExpenses, error: expensesError } = await supabase
+      .from('expenses')
+      .select('id, amount, expense_date, category_ids')
+      .eq('user_id', userId)
+      .order('expense_date', { ascending: false })
+    
+    if (expensesError) {
+      console.error('Error fetching expenses:', expensesError)
       return []
     }
-
-    return expenses || []
+    
+    if (!userExpenses || userExpenses.length === 0) {
+      return []
+    }
+    
+    // Generate date ranges based on the period type and limit
+    const dateRanges = generateDateRanges(period, limit)
+    
+    // Group expenses by period
+    const result = dateRanges.map(range => {
+      const expensesInPeriod = userExpenses.filter(expense => {
+        const expenseDate = new Date(expense.expense_date)
+        return expenseDate >= range.startDate && expenseDate < range.endDate
+      })
+      
+      const total = expensesInPeriod.reduce((sum, expense) => sum + (expense.amount || 0), 0)
+      
+      return {
+        period_start: range.startDate.toISOString().split('T')[0],
+        period_end: range.endDate.toISOString().split('T')[0],
+        total,
+        count: expensesInPeriod.length
+      }
+    })
+    
+    return result
   } catch (error) {
     console.error('Error in getExpensesByPeriod:', error)
     return []
   }
+}
+
+/**
+ * Helper function to generate date ranges based on period type and limit
+ */
+function generateDateRanges(periodType: 'day' | 'week' | 'month' | 'year', maxPeriods: number) {
+  const ranges = []
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  
+  for (let i = 0; i < maxPeriods; i++) {
+    let startDate = new Date(today)
+    let endDate = new Date(today)
+    
+    if (periodType === 'day') {
+      startDate.setDate(today.getDate() - i)
+      endDate.setDate(today.getDate() - i + 1)
+    } else if (periodType === 'week') {
+      startDate.setDate(today.getDate() - (7 * i))
+      endDate.setDate(today.getDate() - (7 * i) + 7)
+    } else if (periodType === 'month') {
+      startDate.setMonth(today.getMonth() - i)
+      startDate.setDate(1)
+      endDate.setMonth(today.getMonth() - i + 1)
+      endDate.setDate(1)
+    } else if (periodType === 'year') {
+      startDate.setFullYear(today.getFullYear() - i)
+      startDate.setMonth(0)
+      startDate.setDate(1)
+      endDate.setFullYear(today.getFullYear() - i + 1)
+      endDate.setMonth(0)
+      endDate.setDate(1)
+    }
+    
+    ranges.push({
+      startDate,
+      endDate
+    })
+  }
+  
+  return ranges
 }
