@@ -127,6 +127,15 @@ export default async function DashboardPage() {
     const totalExpenses = combinedTransactions
       .filter(transaction => !transaction.is_income)
       .reduce((sum, transaction) => sum + transaction.amount, 0)
+      
+    // Calculate recurring income and expenses for projections
+    const recurringIncome = combinedTransactions
+      .filter(transaction => transaction.is_income && transaction.recurrence && transaction.recurrence !== 'none')
+      .reduce((sum, transaction) => sum + transaction.amount, 0)
+      
+    const recurringExpenses = combinedTransactions
+      .filter(transaction => !transaction.is_income && transaction.recurrence && transaction.recurrence !== 'none')
+      .reduce((sum, transaction) => sum + transaction.amount, 0)
 
     // Format category spending data for the financial summary
     const formattedCategorySpending = categorySpending
@@ -226,7 +235,10 @@ export default async function DashboardPage() {
             <IncomeExpenseChart 
               data={incomeExpenseData} 
               totalIncome={totalIncome} 
-              totalExpenses={totalExpenses} 
+              totalExpenses={totalExpenses}
+              recurringIncome={recurringIncome}
+              recurringExpenses={recurringExpenses}
+              projectMonths={6} // Project 6 months into the future
             />
           </TabsContent>
           

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts"
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from "recharts"
 import { formatCurrency } from "@/lib/utils/formatting" // Updated import
 import { addMonths, format } from "date-fns"
 
@@ -180,6 +180,12 @@ export function IncomeExpenseChart({
   const netSavings = totalIncome - totalExpenses
   const savingsRate = totalIncome > 0 ? (netSavings / totalIncome) * 100 : 0
 
+  // Custom colors for actual and projected data
+  const ACTUAL_INCOME_COLOR = "#22c55e" // Green
+  const ACTUAL_EXPENSE_COLOR = "#ef4444" // Red
+  const PROJECTED_INCOME_COLOR = "#3b82f6" // Blue
+  const PROJECTED_EXPENSE_COLOR = "#a855f7" // Purple
+
   return (
     <Card className="w-full">
       <CardHeader>
@@ -221,6 +227,26 @@ export function IncomeExpenseChart({
           </div>
         </div>
 
+        {/* Legend for projected data */}
+        <div className="flex flex-wrap gap-4 mb-4 text-sm">
+          <div className="flex items-center">
+            <div className="w-4 h-4 mr-2 bg-green-500 rounded-sm"></div>
+            <span>Actual Income</span>
+          </div>
+          <div className="flex items-center">
+            <div className="w-4 h-4 mr-2 bg-red-500 rounded-sm"></div>
+            <span>Actual Expenses</span>
+          </div>
+          <div className="flex items-center">
+            <div className="w-4 h-4 mr-2 bg-blue-500 rounded-sm"></div>
+            <span>Projected Income</span>
+          </div>
+          <div className="flex items-center">
+            <div className="w-4 h-4 mr-2 bg-purple-500 rounded-sm"></div>
+            <span>Projected Expenses</span>
+          </div>
+        </div>
+
         {/* Monthly Bar Chart */}
         <div className="h-[300px] mb-6">
           <ResponsiveContainer width="100%" height="100%">
@@ -236,10 +262,12 @@ export function IncomeExpenseChart({
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis 
                 dataKey="month" 
-                tick={{ fill: (props) => {
-                  const item = filteredData.find(d => d.month === props.payload.value);
-                  return item?.is_projected ? '#6b7280' : '#000';
-                }}}
+                tick={{ 
+                  fill: (props) => {
+                    const item = filteredData.find(d => d.month === props.payload.value);
+                    return item?.is_projected ? '#6b7280' : '#000';
+                  }
+                }}
                 tickFormatter={(value) => {
                   const item = filteredData.find(d => d.month === value);
                   return item?.is_projected ? `${value} (Projected)` : value;
@@ -259,8 +287,16 @@ export function IncomeExpenseChart({
                 }}
               />
               <Legend />
-              <Bar dataKey="income" name="Income" fill="#22c55e" />
-              <Bar dataKey="expenses" name="Expenses" fill="#ef4444" />
+              <Bar 
+                dataKey="income" 
+                name="Income" 
+                fill={(data) => data.is_projected ? PROJECTED_INCOME_COLOR : ACTUAL_INCOME_COLOR} 
+              />
+              <Bar 
+                dataKey="expenses" 
+                name="Expenses" 
+                fill={(data) => data.is_projected ? PROJECTED_EXPENSE_COLOR : ACTUAL_EXPENSE_COLOR} 
+              />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -292,8 +328,8 @@ export function IncomeExpenseChart({
                 labelFormatter={() => 'Financial Breakdown'}
               />
               <Legend />
-              <Bar dataKey="income" name="Income" fill="#22c55e" />
-              <Bar dataKey="expenses" name="Expenses" fill="#ef4444" />
+              <Bar dataKey="income" name="Income" fill={ACTUAL_INCOME_COLOR} />
+              <Bar dataKey="expenses" name="Expenses" fill={ACTUAL_EXPENSE_COLOR} />
             </BarChart>
           </ResponsiveContainer>
         </div>
