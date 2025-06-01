@@ -5,7 +5,7 @@ export default function VerifyLoading() {
   return (
     <Card className="w-full max-w-md">
       <CardHeader>
-        <CardTitle className="text-2xl">FinanceHub Verification</CardTitle>
+        <CardTitle className="text-2xl">Dripcheck Verification</CardTitle>
         <CardDescription>Loading email verification services...</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col items-center py-8 space-y-4">

@@ -1,4 +1,4 @@
-# FinanceHub Changelog
+# Dripcheck Changelog
 
 ## Recent Updates (May 2025)
 

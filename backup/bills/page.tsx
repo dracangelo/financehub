@@ -5,7 +5,7 @@ import { PageHeader } from '@/components/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export const metadata: Metadata = {
-  title: 'Bills | FinanceHub',
+  title: 'Bills | Dripcheck',
   description: 'Manage your recurring bills and payments',
 };
 

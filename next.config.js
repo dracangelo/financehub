@@ -9,17 +9,6 @@ module.exports = {
   images: {
     unoptimized: true,
   },
-  // Configuration for experimental features
-  experimental: {
-    // Increase body size limit for server actions to 5MB
-    serverActions: {
-      bodySizeLimit: '5mb',
-    },
-    // Build optimizations
-    webpackBuildWorker: true,
-    parallelServerBuildTraces: true,
-    parallelServerCompiles: true,
-  },
   // Explicitly handle the problematic pages
   rewrites: async () => {
     return [
@@ -38,4 +27,9 @@ module.exports = {
     ];
   },
   // Disable strict mode for routes to help with build issues
+  experimental: {
+    webpackBuildWorker: true,
+    parallelServerBuildTraces: true,
+    parallelServerCompiles: true,
+  },
 };

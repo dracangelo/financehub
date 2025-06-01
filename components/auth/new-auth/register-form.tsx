@@ -87,7 +87,7 @@ export function RegisterForm() {
           </DialogHeader>
           <div className="space-y-4 text-sm">
             <p>
-              By using the FinanceHub service, you agree to these terms and conditions.
+              By using the Dripcheck service, you agree to these terms and conditions.
             </p>
             <p>
               <strong>1. Account Security</strong>: You are responsible for maintaining the security of your account credentials.

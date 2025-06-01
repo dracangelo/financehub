@@ -49,8 +49,8 @@ export default function AuthLayout({
     <div className="min-h-screen flex flex-col">
       <header className="flex items-center justify-between p-4 border-b">
         <div className="flex items-center space-x-2">
-          <span className="font-bold text-xl">FinanceHub</span>
-          <span className="text-xs text-muted-foreground">Personal Finance Management</span>
+          <span className="font-bold text-xl">Dripcheck</span>
+          <span className="text-xs text-muted-foreground">Flaunting Responsibly</span>
         </div>
         <ThemeToggle />
       </header>
@@ -58,7 +58,7 @@ export default function AuthLayout({
         <div className="w-full max-w-md">{children}</div>
       </main>
       <footer className="py-4 text-center text-sm text-muted-foreground">
-        <p>&copy; {new Date().getFullYear()} FinanceHub. All rights reserved.</p>
+        <p>&copy; {new Date().getFullYear()} Dripcheck. All rights reserved.</p>
       </footer>
     </div>
   )

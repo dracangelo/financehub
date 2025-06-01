@@ -1,4 +1,4 @@
-// Database setup script for FinanceHub
+// Database setup script for Dripcheck
 // This script will run the SQL files in the supabase/db directory to set up the database schema
 
 const fs = require('fs');

@@ -183,12 +183,20 @@ export default async function NetWorthPage() {
                   <CardTitle className="text-sm font-medium">{liability.category}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">${liability.amount.toLocaleString()}</div>
+                  <div className="text-2xl font-bold">
+                    {liability.category === "Other Liabilities" ? 
+                      `$${netWorthData.totalLiabilities.toLocaleString()}` : 
+                      `$${liability.amount.toLocaleString()}`
+                    }
+                  </div>
                   <div className="text-xs text-muted-foreground mt-1">
-                    {((liability.amount / netWorthData.totalLiabilities) * 100).toFixed(1)}% of total liabilities
+                    {liability.category === "Other Liabilities" ? 
+                      "100.0% of total liabilities" :
+                      `${((liability.amount / netWorthData.totalLiabilities) * 100).toFixed(1)}% of total liabilities`
+                    }
                   </div>
                   <Progress 
-                    value={(liability.amount / netWorthData.totalLiabilities) * 100} 
+                    value={liability.category === "Other Liabilities" ? 100 : (liability.amount / netWorthData.totalLiabilities) * 100} 
                     className="h-2 mt-2 bg-red-200" 
                   />
                 </CardContent>

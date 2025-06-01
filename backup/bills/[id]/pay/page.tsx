@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import PaymentForm from './components/payment-form';
 
 export const metadata: Metadata = {
-  title: 'Record Payment | FinanceHub',
+  title: 'Record Payment | Dripcheck',
   description: 'Record a payment for your bill',
 };
 

@@ -3,7 +3,7 @@ import BillForm from '../components/bill-form';
 import { PageHeader } from '@/components/page-header';
 
 export const metadata: Metadata = {
-  title: 'Add New Bill | FinanceHub',
+  title: 'Add New Bill | Dripcheck',
   description: 'Add a new bill to track and manage',
 };
 

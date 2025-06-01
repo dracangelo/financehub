@@ -1,6 +1,6 @@
 # Secure Authentication System
 
-This directory contains a completely revamped authentication system for the FinanceHub application, designed with security and simplicity in mind.
+This directory contains a completely revamped authentication system for the Dripcheck application, designed with security and simplicity in mind.
 
 ## Features
 

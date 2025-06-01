@@ -496,7 +496,7 @@ export async function sendEmailNotification(params: SendEmailParams) {
     /*
     const msg = {
       to: userEmail,
-      from: 'noreply@financehub.com',
+      from: 'noreply@dripcheck.com',
       subject: params.subject,
       text: params.message,
       html: params.html || params.message,

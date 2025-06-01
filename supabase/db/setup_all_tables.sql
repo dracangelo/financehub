@@ -1,4 +1,4 @@
--- Setup all database tables and schemas for FinanceHub
+-- Setup all database tables and schemas for Dripcheck
 -- This script will run all the SQL files in the db directory
 
 -- First, create extensions

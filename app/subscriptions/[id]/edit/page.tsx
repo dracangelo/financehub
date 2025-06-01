@@ -4,7 +4,7 @@ import { getSubscriptionById, updateSubscription } from '@/app/actions/subscript
 import SubscriptionForm from '@/components/subscription/subscription-form';
 
 export const metadata: Metadata = {
-  title: 'Edit Subscription | FinanceHub',
+  title: 'Edit Subscription | Dripcheck',
   description: 'Edit your subscription details',
 };
 

@@ -5,7 +5,7 @@ export default function Loading() {
   return (
     <Card className="w-full max-w-md">
       <CardHeader>
-        <CardTitle className="text-2xl">Welcome to FinanceHub</CardTitle>
+        <CardTitle className="text-2xl">Welcome to Dripcheck</CardTitle>
         <CardDescription>Loading authentication services...</CardDescription>
       </CardHeader>
       <CardContent className="flex justify-center py-8">

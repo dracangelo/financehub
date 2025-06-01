@@ -1,10 +1,10 @@
-# FinanceHub: Ultimate Personal Finance Tracker
+# Dripcheck: Ultimate Personal Finance Tracker
 
 
 
 ## 📊 Overview
 
-FinanceHub is a comprehensive personal finance management application designed to help users take control of their financial life. Built with Next.js, TypeScript, and Supabase, it offers a wide range of features from expense tracking to investment management, all in a secure and user-friendly interface.
+Dripcheck is a comprehensive personal finance management application designed to help users take control of their financial life. Built with Next.js, TypeScript, and Supabase, it offers a wide range of features from expense tracking to investment management, all in a secure and user-friendly interface.
 
 ## 🌟 Key Features
 
@@ -239,8 +239,8 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 📞 Support
 
-If you encounter any issues or have questions, please open an issue on GitHub or contact the development team at support@financehub.example.com.
+If you encounter any issues or have questions, please open an issue on GitHub or contact the development team at support@dripcheck.example.com.
 
 ---
 
-Built with ❤️ by the FinanceHub Team
+Built with ❤️ by the Dripcheck Team

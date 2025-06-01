@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import DeleteConfirmation from './components/delete-confirmation';
 
 export const metadata: Metadata = {
-  title: 'Delete Bill | FinanceHub',
+  title: 'Delete Bill | Dripcheck',
   description: 'Delete a bill from your account',
 };
 

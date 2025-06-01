@@ -817,7 +817,7 @@ function getMockWatchlistItems(userId: string) {
     return crypto.createHash('md5').update(`${userId}-watchlist-${index}`).digest('hex')
   }
 
-  // Include some ESG-friendly stocks to align with the FinanceHub ESG focus
+  // Include some ESG-friendly stocks to align with the Dripcheck ESG focus
   return [
     {
       id: generateId(1),

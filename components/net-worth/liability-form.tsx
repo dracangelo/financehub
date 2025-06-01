@@ -170,7 +170,11 @@ export function LiabilityForm({ liability, onSuccess, onCancel }: LiabilityFormP
                   step="0.01" 
                   placeholder="0.00" 
                   {...field} 
-                  value={field.value === null ? '' : field.value}
+                  value={field.value === null || field.value === undefined ? '' : field.value}
+                  onChange={(e) => {
+                    const value = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                    field.onChange(value);
+                  }}
                 />
               </FormControl>
               <FormDescription>

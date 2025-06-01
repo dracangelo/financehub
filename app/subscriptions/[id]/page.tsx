@@ -9,7 +9,7 @@ import {
 import SubscriptionDetail from '@/components/subscription/subscription-detail';
 
 export const metadata: Metadata = {
-  title: 'Subscription Details | FinanceHub',
+  title: 'Subscription Details | Dripcheck',
   description: 'View and manage your subscription details',
 };
 

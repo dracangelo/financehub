@@ -11,7 +11,7 @@ import Link from 'next/link';
 import ClientSubscriptionManager from '@/components/subscription/client-subscription-manager';
 
 export const metadata: Metadata = {
-  title: 'Subscriptions | FinanceHub',
+  title: 'Subscriptions | Dripcheck',
   description: 'Manage your subscriptions and recurring payments',
 };
 

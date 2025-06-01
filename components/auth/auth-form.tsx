@@ -241,7 +241,7 @@ export function AuthForm({ defaultTab = "login" }: { defaultTab?: "login" | "reg
           </DialogHeader>
           <div className="space-y-4 py-4 text-sm">
             <h3 className="font-medium">1. Acceptance of Terms</h3>
-            <p>By accessing or using FinanceHub, you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use our service.</p>
+            <p>By accessing or using Dripcheck, you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use our service.</p>
             
             <h3 className="font-medium">2. User Accounts</h3>
             <p>You are responsible for maintaining the confidentiality of your account information and for all activities that occur under your account. You agree to notify us immediately of any unauthorized use of your account.</p>
@@ -250,13 +250,13 @@ export function AuthForm({ defaultTab = "login" }: { defaultTab?: "login" | "reg
             <p>You agree not to use the service for any illegal or unauthorized purpose. You must not violate any laws in your jurisdiction.</p>
             
             <h3 className="font-medium">4. Intellectual Property</h3>
-            <p>The service and its original content, features, and functionality are owned by FinanceHub and are protected by international copyright, trademark, and other intellectual property laws.</p>
+            <p>The service and its original content, features, and functionality are owned by Dripcheck and are protected by international copyright, trademark, and other intellectual property laws.</p>
             
             <h3 className="font-medium">5. Termination</h3>
             <p>We may terminate or suspend your account and access to the service immediately, without prior notice or liability, for any reason.</p>
             
             <h3 className="font-medium">6. Limitation of Liability</h3>
-            <p>In no event shall FinanceHub be liable for any indirect, incidental, special, consequential or punitive damages, including without limitation, loss of profits, data, use, goodwill, or other intangible losses.</p>
+            <p>In no event shall Dripcheck be liable for any indirect, incidental, special, consequential or punitive damages, including without limitation, loss of profits, data, use, goodwill, or other intangible losses.</p>
             
             <h3 className="font-medium">7. Changes to Terms</h3>
             <p>We reserve the right to modify or replace these terms at any time. It is your responsibility to check these terms periodically for changes.</p>

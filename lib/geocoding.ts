@@ -27,7 +27,7 @@ export async function searchLocationByName(query: string): Promise<LocationResul
       {
         headers: {
           'Accept': 'application/json',
-          'User-Agent': 'FinanceHub/1.0' // Required by Nominatim usage policy
+          'User-Agent': 'Dripcheck/1.0' // Required by Nominatim usage policy
         }
       }
     );
@@ -75,7 +75,7 @@ export async function getAddressFromCoordinates(
       {
         headers: {
           'Accept': 'application/json',
-          'User-Agent': 'FinanceHub/1.0'
+          'User-Agent': 'Dripcheck/1.0'
         }
       }
     );

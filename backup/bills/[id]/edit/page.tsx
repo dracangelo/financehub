@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import BillForm from '../../components/bill-form';
 
 export const metadata: Metadata = {
-  title: 'Edit Bill | FinanceHub',
+  title: 'Edit Bill | Dripcheck',
   description: 'Edit your bill details',
 };
 

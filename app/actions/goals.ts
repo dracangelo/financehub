@@ -1,6 +1,6 @@
 "use server"
 
-import { createClient } from "@/lib/supabase/server"
+import { createServerClient } from "@/lib/supabase/server"
 import { getCurrentUser } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
 
@@ -79,7 +79,7 @@ export async function getGoals() {
       return { error: "Not authenticated", goals: [] }
     }
 
-    const supabase = await createClient()
+    const supabase = await createServerClient()
     if (!supabase) {
       console.error("Failed to create Supabase client")
       return { error: "Database connection error", goals: [] }
@@ -128,7 +128,7 @@ export async function getGoalStatistics() {
       return { error: "Not authenticated", stats: null }
     }
 
-    const supabase = await createClient()
+    const supabase = await createServerClient()
     if (!supabase) {
       console.error("Failed to create Supabase client")
       return { error: "Database connection error", stats: null }
@@ -235,7 +235,7 @@ export async function getGoalById(goalId: string) {
       return { error: "Not authenticated", goal: null }
     }
 
-    const supabase = await createClient()
+    const supabase = await createServerClient()
     if (!supabase) {
       console.error("Failed to create Supabase client")
       return { error: "Database connection error", goal: null }
@@ -302,7 +302,7 @@ export async function createGoal(formData: FormData) {
       return { error: "Not authenticated", goal: null }
     }
 
-    const supabase = await createClient()
+    const supabase = await createServerClient()
     if (!supabase) {
       console.error("Failed to create Supabase client")
       return { error: "Database connection error", goal: null }
@@ -393,7 +393,7 @@ export async function updateGoal(goalId: string, formData: FormData) {
       return { error: "Not authenticated", goal: null }
     }
 
-    const supabase = await createClient()
+    const supabase = await createServerClient()
     if (!supabase) {
       console.error("Failed to create Supabase client")
       return { error: "Database connection error", goal: null }
@@ -536,7 +536,7 @@ export async function createMilestone(goalId: string, formData: FormData) {
       return { error: "Not authenticated", success: false }
     }
 
-    const supabase = await createClient()
+    const supabase = await createServerClient()
     if (!supabase) {
       console.error("Failed to create Supabase client")
       return { error: "Database connection error", success: false }
@@ -599,7 +599,7 @@ export async function updateMilestone(milestoneId: string, formData: FormData) {
       return { error: "Not authenticated", success: false }
     }
 
-    const supabase = await createClient()
+    const supabase = await createServerClient()
     if (!supabase) {
       console.error("Failed to create Supabase client")
       return { error: "Database connection error", success: false }
@@ -666,7 +666,7 @@ export async function updateMilestoneStatus(milestoneId: string, isAchieved: boo
       return { error: "Not authenticated", success: false }
     }
 
-    const supabase = await createClient()
+    const supabase = await createServerClient()
     if (!supabase) {
       console.error("Failed to create Supabase client")
       return { error: "Database connection error", success: false }
@@ -722,7 +722,7 @@ export async function deleteMilestone(milestoneId: string) {
       return { error: "Not authenticated", success: false }
     }
 
-    const supabase = await createClient()
+    const supabase = await createServerClient()
     if (!supabase) {
       console.error("Failed to create Supabase client")
       return { error: "Database connection error", success: false }
@@ -774,7 +774,7 @@ export async function deleteGoal(goalId: string) {
       return { error: "Not authenticated", success: false }
     }
 
-    const supabase = await createClient()
+    const supabase = await createServerClient()
     if (!supabase) {
       console.error("Failed to create Supabase client")
       return { error: "Database connection error", success: false }
@@ -821,7 +821,7 @@ export async function addGoalContribution(goalId: string, formData: FormData) {
       return { error: "Not authenticated", success: false }
     }
 
-    const supabase = await createClient()
+    const supabase = await createServerClient()
     if (!supabase) {
       console.error("Failed to create Supabase client")
       return { error: "Database connection error", success: false }

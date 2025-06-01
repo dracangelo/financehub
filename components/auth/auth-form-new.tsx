@@ -250,7 +250,7 @@ export function AuthForm({ defaultTab = "login" }: { defaultTab?: "login" | "reg
           </DialogHeader>
           <div className="space-y-4 text-sm">
             <p>
-              By using the FinanceHub service, you agree to these terms and conditions.
+              By using the Dripcheck service, you agree to these terms and conditions.
             </p>
             <p>
               <strong>1. Account Security</strong>: You are responsible for maintaining the security of your account credentials.
@@ -313,7 +313,7 @@ export function AuthForm({ defaultTab = "login" }: { defaultTab?: "login" | "reg
     <>
       <Card className="w-full max-w-md mx-auto">
         <CardHeader>
-          <CardTitle className="text-2xl text-center">FinanceHub</CardTitle>
+          <CardTitle className="text-2xl text-center">Dripcheck</CardTitle>
           <CardDescription className="text-center">
             {activeTab === "login" ? "Sign in to your account" : "Create a new account"}
           </CardDescription>

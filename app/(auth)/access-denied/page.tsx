@@ -12,11 +12,11 @@ export default function AccessDeniedPage() {
             <ShieldAlert className="h-12 w-12 text-destructive" />
           </div>
           <CardTitle className="text-2xl">Access Denied</CardTitle>
-          <CardDescription>You don't have permission to access this FinanceHub resource.</CardDescription>
+          <CardDescription>You don't have permission to access this Dripcheck resource.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 text-center">
           <p className="text-muted-foreground">
-            This area may require additional permissions or authentication to access FinanceHub's premium features.
+            This area may require additional permissions or authentication to access Dripcheck's premium features.
           </p>
           <div className="rounded-md bg-amber-50 p-4 border border-amber-200">
             <h3 className="font-medium text-amber-800 mb-2">Possible reasons:</h3>

@@ -36,7 +36,7 @@ export async function GET() {
       {
         user_id: user.id,
         notification_type: "General Alert",
-        message: "Welcome to FinanceHub! Your financial dashboard is ready.",
+        message: "Welcome to Dripcheck! Your financial dashboard is ready.",
         link: "/dashboard",
         is_read: false,
         created_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(), // 2 hours ago
