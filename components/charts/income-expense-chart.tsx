@@ -238,8 +238,24 @@ export function IncomeExpenseChart({
     
     console.log('Generated Projected Data:', projectedData.length, 'items')
 
-    // Combine actual and projected data
-    const combinedData = [...actualData, ...projectedData].sort((a, b) => {
+    // Create a continuous timeline with unique months
+    // First, create a map of all unique months
+    const monthsMap = new Map<string, ChartDataItem>();
+    
+    // Add actual data to the map first
+    actualData.forEach(item => {
+      monthsMap.set(item.month, item);
+    });
+    
+    // Add projected data, but only for months that don't already exist in actual data
+    projectedData.forEach(item => {
+      if (!monthsMap.has(item.month)) {
+        monthsMap.set(item.month, item);
+      }
+    });
+    
+    // Convert map back to array and sort by date
+    const combinedData = Array.from(monthsMap.values()).sort((a, b) => {
       try {
         // Parse month strings to ensure correct sorting
         const monthMap: Record<string, number> = {
@@ -379,7 +395,7 @@ export function IncomeExpenseChart({
       return (
         <div className="bg-white p-4 border border-gray-200 rounded-lg shadow-lg">
           <p className="font-semibold text-gray-800 mb-2 border-b pb-1">
-            {month} {year} {isProjected ? '(Projected)' : ''}
+            {month} {year}
           </p>
           <div className="space-y-2">
             <p className="text-sm font-medium">
@@ -507,13 +523,8 @@ export function IncomeExpenseChart({
                 dataKey="month" 
                 tick={{ fill: '#374151', fontSize: 12, fontWeight: 500 }}
                 tickFormatter={(value) => {
-                  const item = filteredData.find(d => d.month === value);
-                  if (item && (item.isProjected || item.is_projected)) {
-                    // Format projected months more clearly
-                    const [month, year] = value.split(' ');
-                    return `${month} (Proj)`;
-                  }
-                  // For actual months, just show the month name
+                  // Just show the month name consistently for both actual and projected data
+                  // The color coding of the bars will distinguish between actual and projected
                   const [month] = value.split(' ');
                   return month;
                 }}
