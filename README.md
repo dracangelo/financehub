@@ -104,7 +104,7 @@ Dripcheck is a comprehensive personal finance management application designed to
 
 1. Clone the repository
    ```bash
-   git clone https://github.com/yourusername/financehub.git
+   git clone https://github.com/dracangelo/financehub.git
    cd financehub
    ```
 

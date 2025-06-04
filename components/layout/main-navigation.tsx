@@ -66,14 +66,8 @@ export function MainNavigation({
     }
   }, [pathname]);
 
-  // Close sidebar when navigating on mobile - MODIFIED to use a ref to prevent immediate closing
-  useEffect(() => {
-    if (hasNavigated.current && onClose && window.innerWidth < 768) {
-      onClose();
-    } else {
-      hasNavigated.current = true;
-    }
-  }, [pathname, onClose]);
+  // Remove the auto-close on pathname change
+  // This will prevent the sidebar from closing immediately on navigation
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -130,11 +124,22 @@ export function MainNavigation({
           </ul>
         ) : (
           <>
+            {/* Desktop Navigation */}
             <div className="hidden md:block">
-              <NavItems className="mb-4" />
+              <NavItems items={navItems} onItemClick={() => window.innerWidth < 768 && onClose?.()} />
             </div>
+            
+            {/* Mobile Navigation */}
             <div className="md:hidden">
-              <MobileNav items={navItems} onItemClick={onClose} />
+              <MobileNav 
+                items={navItems} 
+                onItemClick={() => {
+                  // Only close if we're not already on the page
+                  if (window.innerWidth < 768) {
+                    setTimeout(() => onClose?.(), 100);
+                  }
+                }} 
+              />
             </div>
           </>
         )}
