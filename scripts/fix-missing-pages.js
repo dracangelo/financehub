@@ -58,6 +58,37 @@ if (!fs.existsSync(nojekyllPath)) {
   console.log('Created .nojekyll file');
 }
 
+// Ensure placeholder API directory exists and create placeholder route
+const placeholderApiDir = path.join(rootDir, 'app', 'api', 'placeholder');
+ensureDirectoryExists(placeholderApiDir);
+
+const placeholderApiRoutePath = path.join(placeholderApiDir, 'route.ts');
+const placeholderApiRouteContent = `// app/api/placeholder/route.ts
+import { NextResponse } from 'next/server';
+
+export async function GET() {
+  return NextResponse.json({ message: 'This endpoint is not implemented or is a placeholder.' }, { status: 404 });
+}
+
+export async function POST() {
+  return NextResponse.json({ message: 'This endpoint is not implemented or is a placeholder.' }, { status: 404 });
+}
+
+export async function PUT() {
+  return NextResponse.json({ message: 'This endpoint is not implemented or is a placeholder.' }, { status: 404 });
+}
+
+export async function DELETE() {
+  return NextResponse.json({ message: 'This endpoint is not implemented or is a placeholder.' }, { status: 404 });
+}
+
+export async function PATCH() {
+  return NextResponse.json({ message: 'This endpoint is not implemented or is a placeholder.' }, { status: 404 });
+}
+`;
+fs.writeFileSync(placeholderApiRoutePath, placeholderApiRouteContent);
+console.log(`Created placeholder API route: ${placeholderApiRoutePath}`);
+
 // Create a next.config.js file that includes the missing pages
 const nextConfigPath = path.join(rootDir, 'next.config.js');
 const nextConfigContent = `/** @type {import('next').NextConfig} */
@@ -68,12 +99,22 @@ module.exports = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  images: {
-    unoptimized: true,
-  },
+
   // Explicitly handle the problematic pages
   rewrites: async () => {
     return [
+      {
+        source: '/budgeting/ai-generator',
+        destination: '/', // Or a specific placeholder page if you have one
+      },
+      {
+        source: '/api/finnhub/profile',
+        destination: '/api/placeholder',
+      },
+      {
+        source: '/api/recurring-patterns',
+        destination: '/api/placeholder',
+      },
       {
         source: '/access-denied',
         destination: '/',

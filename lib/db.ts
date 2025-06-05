@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createServerClient as createClient } from '@/lib/supabase/server'
 
 // Export the createClient function directly
 export const getSupabase = createClient

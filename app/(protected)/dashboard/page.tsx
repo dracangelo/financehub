@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 import { getRecentTransactions, getMonthlyIncomeExpenseData, getTransactionStats, getFinancialCalendarData, getCombinedTransactions } from "@/app/actions/transactions"
 import { getAccountSummary } from "@/app/actions/accounts"
 import { getCategorySpending } from "@/app/actions/categories"

@@ -1,6 +1,6 @@
 "use server"
 
-import { createClient } from "@/lib/supabase/server"
+import { createServerClient as createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
 import { getCurrentUser } from "@/lib/auth"
 import { redirect } from "next/navigation"

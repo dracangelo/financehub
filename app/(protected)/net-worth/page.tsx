@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { TrendingUp, DollarSign, ArrowUpRight, ArrowDownRight } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Progress } from "@/components/ui/progress"
+export const dynamic = 'force-dynamic';
 import { getNetWorth } from "@/app/actions/net-worth"
 import { NetWorthChart } from "@/components/net-worth/net-worth-chart"
 import { AssetList } from "@/components/net-worth/asset-list"

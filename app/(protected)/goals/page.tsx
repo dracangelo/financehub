@@ -7,6 +7,9 @@ import { GoalsOverview } from "@/components/goals/goals-overview"
 import { Button } from "@/components/ui/button"
 import { Plus, Target } from "lucide-react"
 import Link from "next/link"
+import { Suspense } from "react"
+
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: "Financial Goals",

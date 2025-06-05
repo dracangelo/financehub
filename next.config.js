@@ -6,12 +6,22 @@ module.exports = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  images: {
-    unoptimized: true,
-  },
+
   // Explicitly handle the problematic pages
   rewrites: async () => {
     return [
+      {
+        source: '/budgeting/ai-generator',
+        destination: '/', // Or a specific placeholder page if you have one
+      },
+      {
+        source: '/api/finnhub/profile',
+        destination: '/api/placeholder',
+      },
+      {
+        source: '/api/recurring-patterns',
+        destination: '/api/placeholder',
+      },
       {
         source: '/access-denied',
         destination: '/',
