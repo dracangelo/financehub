@@ -225,6 +225,18 @@ export function prepareReportData(data: any, reportType: string): any[] {
           warranty_expiry: typeof item.warranty_expiry === 'string' ? item.warranty_expiry : ''
         }));
 
+    case 'net-worth':
+      // Data for net-worth is already prepared in app/actions/reports.ts
+      // to be an array of Asset and Liability objects with a 'record_type' field.
+      // We just need to ensure consistent field names for the report.
+      return (data as any[]).map((item: Record<string, any>) => ({
+        name: item.name || '',
+        category: item.category || '', // This was 'type' from the accounts table
+        record_type: item.record_type || (item.value !== undefined ? 'Asset' : 'Liability'),
+        // Use 'value' for assets and 'amount' for liabilities, mapped to a common field 'current_value'
+        current_value: item.value !== undefined ? (parseFloat(String(item.value)) || 0) : (parseFloat(String(item.amount)) || 0),
+      }));
+
     default:
       return data;
   }
@@ -407,6 +419,15 @@ function getReportHeaders(reportType: string, data?: any[]): Array<{ key: string
         { key: 'interest_rate', label: 'Interest Rate (%)' },
         { key: 'minimum_payment', label: 'Minimum Payment' }
       ];
+
+    case 'net-worth':
+      return [
+        { key: 'name', label: 'Name' },
+        { key: 'category', label: 'Category' },
+        { key: 'record_type', label: 'Type (Asset/Liability)' },
+        { key: 'current_value', label: 'Current Value' }
+      ];
+
     default:
       // Dynamic headers based on data structure
       if (!data || !data.length) return [];

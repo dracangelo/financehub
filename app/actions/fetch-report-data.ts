@@ -635,8 +635,28 @@ export async function fetchReportData(reportType: ReportType, timeRange: TimeRan
           console.error('Error processing expense trends data:', error);
           return [];
         }
-      case 'net-worth':
-        return await fetchNetWorthData(supabase, userId);
+case 'net-worth':
+        console.log('Fetching net-worth report data for time range:', timeRange);
+        const netWorthData = await fetchNetWorthData(supabase, userId);
+        return {
+          assets: netWorthData.assets.map(asset => ({
+            name: asset.name,
+            category: asset.type, // 'type' from accounts table (e.g., 'checking', 'savings')
+            value: asset.amount    // 'amount' from fetchNetWorthData is the value of the asset
+          })),
+          liabilities: netWorthData.liabilities.map(liability => ({
+            name: liability.name,
+            category: liability.type, // 'type' from accounts table (e.g., 'credit_card', 'loan')
+            amount: liability.amount  // 'amount' from fetchNetWorthData is the amount of the liability
+          })),
+          totalAssets: netWorthData.totalAssets,
+          totalLiabilities: netWorthData.totalLiabilities,
+          netWorth: netWorthData.netWorth,
+          timeRange: {
+             start: timeFilter.start.toISOString(),
+             end: timeFilter.end.toISOString()
+          }
+        };
       case 'budget-analysis':
         return await fetchBudgetAnalysisData(supabase, userId, timeFilter);
       case 'spending-categories':
@@ -840,58 +860,60 @@ async function fetchNetWorthData(
   totalAssets: number;
   totalLiabilities: number;
   netWorth: number;
-  assets: Array<{ name: string; amount: number; type: string }>;
-  liabilities: Array<{ name: string; amount: number; type: string }>;
+  assets: Array<{ name: string; amount: number; type: string }>; // 'type' is category
+  liabilities: Array<{ name: string; amount: number; type: string }>; // 'type' is category
 }> {
-  // Fetch accounts to determine assets and liabilities
-  const { data: accounts, error: accountsError } = await supabase
-    .from('accounts')
-    .select('*')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-  
-  console.log(`Net worth data fetched: ${accounts?.length || 0} accounts`)
-  
-  if (!accountsError && accounts && accounts.length > 0) {
-    // Categorize accounts as assets or liabilities
-    const assets = accounts.filter((account: any) => 
-      account.type === 'checking' || 
-      account.type === 'savings' || 
-      account.type === 'investment' || 
-      account.type === 'cash' ||
-      account.type === 'other_asset'
-    );
-    
-    const liabilities = accounts.filter((account: any) => 
-      account.type === 'credit_card' || 
-      account.type === 'loan' || 
-      account.type === 'mortgage' ||
-      account.type === 'other_liability'
-    );
-    
+  try {
+    // Fetch assets
+    const { data: fetchedAssets, error: assetsError } = await supabase
+      .from('assets')
+      .select('*') // Select all to get name, asset_type, value, etc.
+      .eq('user_id', userId);
+
+    if (assetsError) {
+      console.error('Error fetching assets for net worth report:', assetsError);
+      // Continue processing, report might be partial or empty for assets
+    }
+
+    // Fetch liabilities
+    const { data: fetchedLiabilities, error: liabilitiesError } = await supabase
+      .from('liabilities')
+      .select('*') // Select all to get name, liability_type, amount_due, etc.
+      .eq('user_id', userId);
+
+    if (liabilitiesError) {
+      console.error('Error fetching liabilities for net worth report:', liabilitiesError);
+      // Continue processing, report might be partial or empty for liabilities
+    }
+
+    const assetsArray = fetchedAssets || [];
+    const liabilitiesArray = fetchedLiabilities || [];
+
     // Process assets
-    const processedAssets = assets.map((asset: any) => {
+    const processedAssets = assetsArray.map((asset: any) => {
       return {
-        name: asset.name || 'Unnamed Account',
-        amount: parseFloat(asset.current_balance) || 0,
-        type: asset.type || 'other' 
+        name: asset.name || asset.asset_type || 'Unnamed Asset',
+        amount: parseFloat(asset.value) || 0,
+        type: asset.asset_type || 'other_asset' // Use asset_type for category
       };
     });
-    
+
     // Process liabilities
-    const processedLiabilities = liabilities.map((liability: any) => {
+    const processedLiabilities = liabilitiesArray.map((liability: any) => {
       return {
-        name: liability.name || 'Unnamed Account',
-        amount: parseFloat(liability.current_balance) || 0,
-        type: liability.type || 'other'
+        name: liability.name || liability.liability_type || 'Unnamed Liability',
+        amount: parseFloat(liability.amount_due) || 0, // Use amount_due for liabilities
+        type: liability.liability_type || 'other_liability' // Use liability_type for category
       };
     });
-    
+
     // Calculate totals
-    const totalAssetsValue = assets.reduce((sum: number, asset: any) => sum + (parseFloat(asset.current_balance) || 0), 0);
-    const totalLiabilitiesValue = liabilities.reduce((sum: number, liability: any) => sum + (parseFloat(liability.current_balance) || 0), 0);
+    const totalAssetsValue = processedAssets.reduce((sum: number, asset) => sum + asset.amount, 0);
+    const totalLiabilitiesValue = processedLiabilities.reduce((sum: number, liability) => sum + liability.amount, 0);
     const netWorthValue = totalAssetsValue - totalLiabilitiesValue;
-    
+
+    console.log(`Net worth report data: ${processedAssets.length} assets, ${processedLiabilities.length} liabilities processed from dedicated tables.`);
+
     return {
       assets: processedAssets,
       liabilities: processedLiabilities,
@@ -899,12 +921,10 @@ async function fetchNetWorthData(
       totalLiabilities: totalLiabilitiesValue,
       netWorth: netWorthValue
     };
-  } else {
-    if (accountsError) {
-      console.error('Error fetching accounts for net worth:', accountsError);
-      // Optionally, rethrow or handle more gracefully
-    }
-    // Return default structure if no data or error
+
+  } catch (error) {
+    console.error('Critical error in fetchNetWorthData:', error);
+    // Return default structure in case of unexpected errors during processing
     return {
       assets: [],
       liabilities: [],

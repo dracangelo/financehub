@@ -1,6 +1,32 @@
 "use server"
 
-import { createServerSupabaseClient } from "@/lib/supabase/server"
+import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { fetchReportData } from './fetch-report-data';
+
+// Define interfaces for Net Worth report data structures
+interface Asset {
+  name: string;
+  category: string; // Typically the 'type' from the accounts table (e.g., 'checking', 'savings')
+  value: number;    // The monetary value of the asset
+  [key: string]: any; // Allow other properties if any, like 'id'
+}
+
+interface Liability {
+  name: string;
+  category: string; // Typically the 'type' from the accounts table (e.g., 'credit_card', 'loan')
+  amount: number;   // The monetary amount of the liability
+  [key: string]: any; // Allow other properties if any, like 'id'
+}
+
+interface NetWorthReportDataType {
+  assets: Asset[];
+  liabilities: Liability[];
+  totalAssets?: number;
+  totalLiabilities?: number;
+  netWorth?: number;
+  timeRange?: { start: string; end: string };
+  [key: string]: any; // Allow other dynamic properties returned by fetchReportData
+}
 import { createAdminSupabaseClient } from "@/lib/supabase/admin"
 import { getAuthenticatedUser } from "@/lib/auth"
 import { format } from "date-fns"
@@ -536,6 +562,42 @@ export async function generateReportFile(report: Report): Promise<string> {
         }
         break;
         
+      case 'net-worth':
+        try {
+          console.log(`Fetching net-worth report data directly for type: ${report.type}`);
+          // Call the main fetchReportData which now handles 'net-worth' specifically
+          const netWorthReportData = await fetchReportData(report.type as ReportType, report.time_range as TimeRange) as NetWorthReportDataType;
+          console.log('Raw net-worth data from fetchReportData:', JSON.stringify(netWorthReportData, null, 2).substring(0, 500));
+          // The prepareReportData function expects an array of objects.
+          // For net-worth, we need to decide how to structure this. 
+          // Let's pass assets and liabilities as separate arrays within an object, 
+          // or combine them if prepareReportData can handle it.
+          // For now, let's assume prepareReportData will be updated or can handle this structure.
+          if (netWorthReportData && typeof netWorthReportData === 'object' && ('assets' in netWorthReportData || 'liabilities' in netWorthReportData)) {
+             // We need to transform this into a single array for generateReportByFormat
+            // which expects data: any[].
+            // Let's combine assets and liabilities into a single list for the report,
+            // distinguishing them by a 'record_type' field.
+            type CombinedEntry = (Asset | Liability) & { record_type: 'Asset' | 'Liability' };
+            const combinedData: CombinedEntry[] = [];
+            if (Array.isArray(netWorthReportData.assets)) {
+              netWorthReportData.assets.forEach((asset: Asset) => combinedData.push({ ...asset, record_type: 'Asset' }));
+            }
+            if (Array.isArray(netWorthReportData.liabilities)) {
+              netWorthReportData.liabilities.forEach((liability: Liability) => combinedData.push({ ...liability, record_type: 'Liability' }));
+            }
+            data = combinedData;
+            console.log(`Processed net-worth data has ${data.length} combined items.`);
+          } else {
+            console.warn('Net-worth data is not in the expected object format with assets/liabilities:', netWorthReportData);
+            data = [];
+          }
+        } catch (error) {
+          console.error('Error fetching net-worth data in generateReportFile:', error);
+          data = [];
+        }
+        break;
+
       case 'subscriptions':
         try {
           const subscriptionData = await fetchSubscriptionData();
