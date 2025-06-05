@@ -64,7 +64,56 @@ export function prepareReportData(data: any, reportType: string): any[] {
     }
   }
 
-  if (!data || !data.length) return [];
+  // If the report type is 'debt' and data is already an array,
+  // we can assume it's in the correct format from fetchReportData.
+  if (reportType === 'debt-analysis' && Array.isArray(data)) {
+    return data.map((debt: any) => ({
+      name: debt.name || '',
+      type: debt.type || '',
+      balance: typeof debt.balance === 'number' ? debt.balance : (parseFloat(String(debt.balance)) || 0),
+      interest_rate: typeof debt.interest_rate === 'number' ? debt.interest_rate : (parseFloat(String(debt.interest_rate)) || 0),
+      minimum_payment: typeof debt.minimum_payment === 'number' ? debt.minimum_payment : (parseFloat(String(debt.minimum_payment)) || 0),
+    }));
+  }
+
+  // Fallback: if data is an object with array properties (e.g. overview), flatten them
+  // Special flattening for expense-trends category-grouped data
+  if (reportType === 'expense-trends' && data && typeof data === 'object' && !Array.isArray(data) && Array.isArray(data.categories)) {
+    // Flatten all transactions from all categories, attaching parent category name to each transaction
+    let allTransactions: any[] = [];
+    data.categories.forEach((cat: any) => {
+      if (Array.isArray(cat.transactions)) {
+        allTransactions = allTransactions.concat(cat.transactions.map((tx: any) => ({ ...tx, _parentCategory: cat.name })));
+      }
+    });
+    data = allTransactions;
+  } else if (data && !Array.isArray(data) && typeof data === 'object') {
+    // Only flatten if at least one property is an array
+    const arrays = Object.values(data).filter(v => Array.isArray(v));
+    if (arrays.length > 0) {
+      // Add a reportDataType property to each item if possible
+      let result: any[] = [];
+      Object.entries(data).forEach(([key, val]) => {
+        if (Array.isArray(val)) {
+          result = result.concat(val.map(item => ({ ...item, reportDataType: key })));
+        }
+      });
+      data = result;
+    }
+  }
+
+  if (!data || (Array.isArray(data) && !data.length)) return [];
+  // If data is not an array at this point (e.g. it was an object with no array properties),
+  // and it's not 'debt' (which is handled above), then the default switch case will handle it.
+  if (!Array.isArray(data) && reportType !== 'debt-analysis') {
+     // If it's a single object that wasn't flattened, wrap it for the default case
+     if (typeof data === 'object' && data !== null) {
+        data = [data];
+     } else {
+        data = [{ value: data }]; // Final fallback for non-object, non-array data
+     }
+  }
+
 
   switch (reportType) {
     case 'transactions':
@@ -350,7 +399,7 @@ function getReportHeaders(reportType: string, data?: any[]): Array<{ key: string
         { key: 'formatted_warranty_expiry', label: 'Warranty Expires' }
       ];
 
-    case 'debt':
+    case 'debt-analysis':
       return [
         { key: 'name', label: 'Debt Name' },
         { key: 'type', label: 'Type' },

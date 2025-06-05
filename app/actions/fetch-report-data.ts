@@ -641,14 +641,23 @@ export async function fetchReportData(reportType: ReportType, timeRange: TimeRan
         return await fetchBudgetAnalysisData(supabase, userId, timeFilter);
       case 'spending-categories':
         return await fetchSpendingCategoriesData(supabase, userId, timeFilter);
-      case 'debt': {
+      case 'debt-analysis': { 
         // Fetch all debts for the authenticated user
         try {
-          const { data: debts, error } = await supabase
+          let query = supabase
             .from('debts')
             .select('*')
-            .eq('user_id', userId)
-            .order('created_at', { ascending: false });
+            .eq('user_id', userId);
+
+          if (timeFilter && timeFilter.start && timeFilter.end) {
+            const startDateISO = new Date(timeFilter.start).toISOString();
+            const endDateISO = new Date(timeFilter.end).toISOString();
+            console.log(`Applying time filter to debt-analysis query (ISO): ${startDateISO} to ${endDateISO}`);
+            query = query.gte('created_at', startDateISO)
+                         .lte('created_at', endDateISO);
+          }
+          
+          const { data: debts, error } = await query.order('created_at', { ascending: false });
 
           if (error) {
             console.error('Error fetching debts:', error);
@@ -679,7 +688,7 @@ export async function fetchReportData(reportType: ReportType, timeRange: TimeRan
           console.error('Exception processing debt data for report:', e);
           return [];
         }
-      } // Closes case 'debt': {
+      } // Closes case 'debt-analysis': {
 
       case 'income-sources': {
         try {
@@ -774,8 +783,8 @@ export async function fetchReportData(reportType: ReportType, timeRange: TimeRan
         };
       }
     }
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+  } catch (e: any) {
+    const errorMessage = e instanceof Error ? e.message : 'Unknown error';
     console.error(`Error in fetchReportData (${reportType}):`, errorMessage);
     
     // Return a user-friendly error response
