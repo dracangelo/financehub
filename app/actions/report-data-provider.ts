@@ -117,6 +117,26 @@ export async function fetchIncomeData(timeRange: { start: Date, end: Date }) {
  * - name, expense date, category, frequency, warranty expiry
  */
 export async function fetchExpenseData(timeRange: { start: Date, end: Date }) {
+  console.log(`fetchExpenseData: Received timeRange.start type: ${typeof timeRange.start}, value: ${timeRange.start?.toString()}`);
+  console.log(`fetchExpenseData: Received timeRange.end type: ${typeof timeRange.end}, value: ${timeRange.end?.toString()}`);
+
+  // Defensive check and potential conversion for timeRange properties
+  let queryStartDate: Date = timeRange.start;
+  let queryEndDate: Date = timeRange.end;
+
+  if (typeof timeRange.start === 'string') {
+    console.warn('fetchExpenseData: timeRange.start was a string, converting to Date.');
+    queryStartDate = new Date(timeRange.start);
+  }
+  if (typeof timeRange.end === 'string') {
+    console.warn('fetchExpenseData: timeRange.end was a string, converting to Date.');
+    queryEndDate = new Date(timeRange.end);
+  }
+
+  if (!(queryStartDate instanceof Date) || !(queryEndDate instanceof Date) || isNaN(queryStartDate.getTime()) || isNaN(queryEndDate.getTime())) {
+    console.error(`fetchExpenseData: Invalid Date objects after potential conversion. Start: ${queryStartDate}, End: ${queryEndDate}. Aborting fetch.`);
+    return [];
+  }
   const supabase = await createServerSupabaseClient()
   if (!supabase) {
     throw new Error("Failed to initialize Supabase client")
@@ -124,18 +144,23 @@ export async function fetchExpenseData(timeRange: { start: Date, end: Date }) {
   
   const user = await getAuthenticatedUser()
   if (!user) {
+    console.error("fetchExpenseData: Authentication required, getAuthenticatedUser returned null.");
     throw new Error("Authentication required")
   }
+  console.log(`fetchExpenseData: Using user ID: ${user.id}`);
   
-  console.log(`Fetching expense data for time range: ${timeRange.start.toISOString()} to ${timeRange.end.toISOString()}`)
+  const startDateStr = queryStartDate.toISOString();
+  const endDateStr = queryEndDate.toISOString();
+  console.log(`fetchExpenseData: Querying with start_date >= ${startDateStr} and end_date <= ${endDateStr}`);
+  console.log(`Fetching expense data for time range: ${startDateStr} to ${endDateStr}`);
   
   try {
     const { data: expenses, error } = await supabase
       .from('expenses')
       .select('id, merchant, amount, expense_date, recurrence, warranty_expiration_date')
       .eq('user_id', user.id)
-      .gte('expense_date', timeRange.start.toISOString())
-      .lte('expense_date', timeRange.end.toISOString())
+      .gte('expense_date', startDateStr)
+      .lte('expense_date', endDateStr)
       .order('expense_date', { ascending: false })
       
     if (error) {

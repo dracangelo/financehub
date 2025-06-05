@@ -1,4 +1,3 @@
-import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
 import { stringify } from 'csv-stringify/sync';
 import { format as dateFormat, isValid } from 'date-fns';
@@ -38,12 +37,38 @@ export function preserveString(str: string | null | undefined): string {
 }
 
 // Common function to prepare data for reports
-export function prepareReportData(data: any[], reportType: string): any[] {
+export function prepareReportData(data: any, reportType: string): any[] {
+  // Fallback: if data is an object with array properties (e.g. overview), flatten them
+  // Special flattening for expense-trends category-grouped data
+  if (reportType === 'expense-trends' && data && typeof data === 'object' && !Array.isArray(data) && Array.isArray(data.categories)) {
+    // Flatten all transactions from all categories, attaching parent category name to each transaction
+    let allTransactions: any[] = [];
+    data.categories.forEach((cat: any) => {
+      if (Array.isArray(cat.transactions)) {
+        allTransactions = allTransactions.concat(cat.transactions.map((tx: any) => ({ ...tx, _parentCategory: cat.name })));
+      }
+    });
+    data = allTransactions;
+  } else if (data && !Array.isArray(data) && typeof data === 'object') {
+    // Only flatten if at least one property is an array
+    const arrays = Object.values(data).filter(v => Array.isArray(v));
+    if (arrays.length > 0) {
+      // Add a reportDataType property to each item if possible
+      let result: any[] = [];
+      Object.entries(data).forEach(([key, val]) => {
+        if (Array.isArray(val)) {
+          result = result.concat(val.map(item => ({ ...item, reportDataType: key })));
+        }
+      });
+      data = result;
+    }
+  }
+
   if (!data || !data.length) return [];
 
   switch (reportType) {
     case 'transactions':
-      return data.map(item => ({
+      return (data as any[]).map((item: Record<string, any>) => ({
         id: item.id || '',
         date: safeFormatDate(item.created_at),
         time: safeFormatTime(item.created_at),
@@ -59,7 +84,7 @@ export function prepareReportData(data: any[], reportType: string): any[] {
       }));
 
     case 'income-expense':
-      return data.map(item => ({
+      return (data as any[]).map((item: Record<string, any>) => ({
         id: item.id || '',
         date: safeFormatDate(item.created_at),
         name: preserveString(item.name || item.title),
@@ -107,7 +132,7 @@ export function prepareReportData(data: any[], reportType: string): any[] {
       return [];
 
     case 'overview':
-      return data.map(item => ({
+      return (data as any[]).map((item: Record<string, any>) => ({
         id: item.id || '',
         date: safeFormatDate(item.created_at),
         name: preserveString(item.name || item.title),
@@ -120,141 +145,42 @@ export function prepareReportData(data: any[], reportType: string): any[] {
         total_amount: item.total_amount || item.amount || 0,
         average_amount: item.average_amount || item.amount || 0
       }));
+      
+    case 'expense-trends':
+      console.log('Preparing expense trends data:', data);
+      
+      // Handle different data structures
+      let items: any[] = [];
+      
+      if (Array.isArray(data)) {
+        items = data;
+      } else if (data && typeof data === 'object' && 'data' in data && Array.isArray((data as any).data)) {
+        items = (data as any).data;
+      } else if (data && typeof data === 'object') {
+        // If it's a single expense object, put it in an array
+        items = [data];
+      }
+      
+      return items
+        .filter((item: any) => {
+          if (!item) return false;
+          if (typeof item !== 'object') return false;
+          if ((item.id && typeof item.id === 'string' && item.id.startsWith('cat-')) || (!item.expense_date && !item.date && !item.created_at)) return false;
+          return true;
+        })
+        .map((item: any) => ({
+          name: typeof item.name === 'string' ? item.name : '',
+          expense_date: typeof item.expense_date === 'string' ? item.expense_date : (typeof item.date === 'string' ? item.date : ''),
+          category: typeof item.category === 'string' ? item.category : '',
+          frequency: typeof item.frequency === 'string' ? item.frequency : '',
+          warranty_expiry: typeof item.warranty_expiry === 'string' ? item.warranty_expiry : ''
+        }));
 
     default:
       return data;
   }
 }
 
-// Generate PDF report
-export function generatePDFReport(data: any[], reportType: string, title: string): Blob {
-  const doc = new jsPDF();
-  const preparedData = prepareReportData(data, reportType);
-  
-  // Add title
-  doc.setFontSize(18);
-  doc.text(title, 14, 20);
-  doc.setFontSize(12);
-  
-  // Add date
-  const currentDate = dateFormat(new Date(), 'MM/dd/yyyy');
-  doc.text(`Generated on: ${currentDate}`, 14, 30);
-  
-  // Add report data
-  let y = 40;
-  const pageHeight = doc.internal.pageSize.height;
-  
-  if (preparedData.length === 0) {
-    doc.text('No data available for this report.', 14, y);
-  } else {
-    // Add headers based on report type
-    const headers = getReportHeaders(reportType, data);
-    const columnWidths = headers.map(() => 30); // Simple fixed width columns
-    
-    // Draw header row
-    let x = 14;
-    doc.setFont('helvetica', 'bold');
-    headers.forEach((header, index) => {
-      doc.text(header.label, x, y);
-      x += columnWidths[index];
-    });
-    doc.setFont('helvetica', 'normal');
-    y += 10;
-    
-    // Draw data rows
-    preparedData.forEach((item) => {
-      // Check if we need a new page
-      if (y > pageHeight - 20) {
-        doc.addPage();
-        y = 20;
-        
-        // Redraw headers on new page
-        x = 14;
-        doc.setFont('helvetica', 'bold');
-        headers.forEach((header, index) => {
-          doc.text(header.label, x, y);
-          x += columnWidths[index];
-        });
-        doc.setFont('helvetica', 'normal');
-        y += 10;
-      }
-      
-      // Draw row data
-      x = 14;
-      headers.forEach((header, index) => {
-        const value = item[header.key]?.toString() || '';
-        doc.text(value.substring(0, 25), x, y); // Limit text length
-        x += columnWidths[index];
-      });
-      y += 7;
-    });
-    
-    // Add summary if available (for grouped data)
-    if (data[0]?.group_key) {
-      doc.addPage();
-      y = 20;
-      doc.setFontSize(16);
-      doc.text('Summary', 14, y);
-      doc.setFontSize(12);
-      y += 15;
-      
-      // Summary headers
-      const summaryHeaders = [
-        { label: 'Group', key: 'group_name' },
-        { label: 'Count', key: 'count' },
-        { label: 'Total', key: 'formatted_total' }
-      ];
-      
-      // Add comparison header if available
-      if (data[0]?.comparison_total !== undefined) {
-        summaryHeaders.push(
-          { label: 'Previous', key: 'comparison_formatted_total' },
-          { label: 'Change', key: 'percent_change' }
-        );
-      }
-      
-      const summaryWidths = summaryHeaders.map(() => 30); // Simple fixed width columns
-      
-      // Draw summary header
-      x = 14;
-      doc.setFont('helvetica', 'bold');
-      summaryHeaders.forEach((header, index) => {
-        doc.text(header.label, x, y);
-        x += summaryWidths[index];
-      });
-      doc.setFont('helvetica', 'normal');
-      y += 10;
-      
-      // Draw summary data
-      data.forEach((group) => {
-        if (y > pageHeight - 20) {
-          doc.addPage();
-          y = 20;
-          
-          // Redraw headers on new page
-          x = 14;
-          doc.setFont('helvetica', 'bold');
-          summaryHeaders.forEach((header, index) => {
-            doc.text(header.label, x, y);
-            x += summaryWidths[index];
-          });
-          doc.setFont('helvetica', 'normal');
-          y += 10;
-        }
-        
-        x = 14;
-        summaryHeaders.forEach((header, index) => {
-          const value = group[header.key]?.toString() || '';
-          doc.text(value.substring(0, 25), x, y);
-          x += summaryWidths[index];
-        });
-        y += 7;
-      });
-    }
-  }
-  
-  return doc.output('blob');
-}
 
 // Generate CSV report
 export function generateCSVReport(data: any[], reportType: string): Blob {
@@ -354,8 +280,7 @@ export function generateExcelReport(data: any[], reportType: string, title: stri
 // Generate report based on format
 export function generateReportByFormat(data: any[], report: Report): Blob {
   switch (report.format) {
-    case 'pdf':
-      return generatePDFReport(data, report.type, report.title);
+
     case 'csv':
       return generateCSVReport(data, report.type);
     case 'excel':
@@ -413,9 +338,26 @@ function getReportHeaders(reportType: string, data?: any[]): Array<{ key: string
         { key: 'type', label: 'Type' },
         { key: 'formatted_amount', label: 'Amount' }
       ];
-      
       return overviewHeaders;
+      
+    case 'expense-trends':
+      return [
+        { key: 'name', label: 'Expense' },
+        { key: 'formatted_amount', label: 'Amount' },
+        { key: 'formatted_expense_date', label: 'Date' },
+        { key: 'category', label: 'Category' },
+        { key: 'frequency', label: 'Frequency' },
+        { key: 'formatted_warranty_expiry', label: 'Warranty Expires' }
+      ];
 
+    case 'debt':
+      return [
+        { key: 'name', label: 'Debt Name' },
+        { key: 'type', label: 'Type' },
+        { key: 'balance', label: 'Balance' },
+        { key: 'interest_rate', label: 'Interest Rate (%)' },
+        { key: 'minimum_payment', label: 'Minimum Payment' }
+      ];
     default:
       // Dynamic headers based on data structure
       if (!data || !data.length) return [];

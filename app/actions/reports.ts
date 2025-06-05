@@ -25,6 +25,7 @@ export type ReportType =
   | 'investment-performance'
   | 'subscriptions' 
   | 'custom'
+  | 'debt'
 export type ReportFormat = 'pdf' | 'csv' | 'excel'
 export type TimeRange = '7d' | '30d' | '90d' | '1y' | 'ytd' | 'all' | 'custom'
 
@@ -442,491 +443,242 @@ async function ensureReportsStorageBucket() {
 }
 
 // Generate the actual report file
-async function generateReportFile(report: Report): Promise<string> {
-  const supabase = await createServerSupabaseClient()
-  
+export async function generateReportFile(report: Report): Promise<string> {
+  console.log('generateReportFile called with report:', JSON.stringify(report, null, 2).substring(0, 500));
+
+  const supabase = await createServerSupabaseClient();
   if (!supabase) {
-    throw new Error("Failed to initialize Supabase client")
+    console.error("Failed to initialize Supabase client in generateReportFile");
+    throw new Error("Failed to initialize Supabase client");
   }
-  
-  // Ensure the reports storage bucket exists before attempting to upload
-  await ensureReportsStorageBucket()
-  
-  // Get the authenticated user ID
-  let userId = report.user_id
-  
-  // If no user ID is provided, try to get the authenticated user
+
+  await ensureReportsStorageBucket();
+  console.log('Ensured reports storage bucket exists.');
+
+  let userId = report.user_id;
   if (!userId || userId === 'default-user') {
     try {
-      const user = await getAuthenticatedUser()
+      const user = await getAuthenticatedUser();
       if (user && user.id) {
-        userId = user.id
+        userId = user.id;
+        console.log('Authenticated user ID obtained:', userId);
       } else {
-        throw new Error('User not authenticated')
+        console.error('User not authenticated, cannot generate report.');
+        throw new Error('User not authenticated');
       }
     } catch (error) {
-      throw new Error('Authentication required to generate reports')
+      console.error('Authentication error in generateReportFile:', error);
+      throw new Error('Authentication required to generate reports');
     }
+  } else {
+    console.log('Using provided user ID for report:', userId);
   }
   
+  if (!userId) {
+    console.error('User ID is null or undefined after authentication check.');
+    throw new Error('User ID could not be determined.');
+  }
+
   try {
-    // Fetch data based on report type and time range
-    let data: any[] = []
-    const timeFilter = getTimeRangeFilter(report.time_range)
-        switch (report.type) {
+    let data: any[] = [];
+    const timeFilter = getTimeRangeFilter(report.time_range);
+    console.log(`Time filter generated for range "${report.time_range}":`, timeFilter);
+
+    switch (report.type) {
       case 'income-sources':
-        // Fetch income sources data
         try {
-          // Use the fetchIncomeData function to get the data
           const incomeSourcesData = await fetchIncomeData(timeFilter);
-          
-          // Log what we received
-          console.log('Raw income sources data:', incomeSourcesData);
-          
+          console.log('Raw income sources data:', JSON.stringify(incomeSourcesData, null, 2).substring(0, 500));
           if (incomeSourcesData && Array.isArray(incomeSourcesData)) {
-            // If the data is already an array, use it directly
             data = incomeSourcesData;
-            console.log('Using income data array with length:', incomeSourcesData.length);
-            
-            console.log('Income sources data prepared for report:', { 
-              dataLength: data.length,
-              firstItem: data.length > 0 ? JSON.stringify(data[0]).substring(0, 100) + '...' : 'none'
-            });
+            console.log(`Income sources data has ${incomeSourcesData.length} items.`);
           } else {
-            console.warn('Income sources data is not in expected format:', typeof incomeSourcesData);
-            data = [];
+            console.warn('Income sources data is not in expected array format:', typeof incomeSourcesData, incomeSourcesData);
+            data = []; 
           }
         } catch (error) {
           console.error('Error fetching income sources data:', error);
-          console.log('Using empty data set for income sources');
-          data = [];
+          data = []; 
         }
         break;
         
       case 'expense-trends':
-        // Fetch expense data
         try {
-          // Use the fetchExpenseData function to get the data
           const expenseData = await fetchExpenseData(timeFilter);
-          
-          // Log what we received
-          console.log('Raw expense data:', expenseData);
-          
+          console.log('Raw expense data for trends report:', JSON.stringify(expenseData, null, 2).substring(0, 500));
           if (expenseData && Array.isArray(expenseData)) {
-            // If the data is already an array, use it directly
             data = expenseData;
-            console.log('Using expense data array with length:', expenseData.length);
-            
-            console.log('Expense data prepared for report:', { 
-              dataLength: data.length,
-              firstItem: data.length > 0 ? JSON.stringify(data[0]).substring(0, 100) + '...' : 'none'
-            });
+            console.log(`Expense data for trends report has ${expenseData.length} items.`);
           } else {
-            console.warn('Expense data is not in expected format:', typeof expenseData);
-            data = [];
+            console.warn('Expense trends data is not in expected array format:', typeof expenseData, expenseData);
+            data = []; 
           }
         } catch (error) {
-          console.error('Error fetching expense data:', error);
-          console.log('Using empty data set for expenses');
-          data = [];
+          console.error('Error fetching expense data for trends report:', error);
+          data = []; 
         }
         break;
       
       case 'debt-analysis':
-        // Fetch debt data
         try {
-          // Use the fetchDebtData function to get the data
           const debtData = await fetchDebtData();
-          
-          // Log what we received
-          console.log('Raw debt data:', debtData);
-          
+          console.log('Raw debt data:', JSON.stringify(debtData, null, 2).substring(0, 500));
           if (debtData && Array.isArray(debtData)) {
-            // If the data is already an array, use it directly
             data = debtData;
-            console.log('Using debt data array with length:', debtData.length);
-            
-            console.log('Debt data prepared for report:', { 
-              dataLength: data.length,
-              firstItem: data.length > 0 ? JSON.stringify(data[0]).substring(0, 100) + '...' : 'none'
-            });
+            console.log(`Debt data has ${debtData.length} items.`);
           } else {
-            console.warn('Debt data is not in expected format:', typeof debtData);
+            console.warn('Debt data is not in expected array format:', typeof debtData, debtData);
             data = [];
           }
         } catch (error) {
           console.error('Error fetching debt data:', error);
-          console.log('Using empty data set for debts');
           data = [];
         }
         break;
         
       case 'subscriptions':
-        // Fetch subscription data
         try {
-          // Use the fetchSubscriptionData function to get the data
           const subscriptionData = await fetchSubscriptionData();
-          
-          // Log what we received
-          console.log('Raw subscription data:', subscriptionData);
-          
+          console.log('Raw subscription data:', JSON.stringify(subscriptionData, null, 2).substring(0, 500));
           if (subscriptionData && Array.isArray(subscriptionData)) {
-            // If the data is already an array, use it directly
             data = subscriptionData;
-            console.log('Using subscription data array with length:', subscriptionData.length);
-            
-            console.log('Subscription data prepared for report:', { 
-              dataLength: data.length,
-              firstItem: data.length > 0 ? JSON.stringify(data[0]).substring(0, 100) + '...' : 'none'
-            });
+            console.log(`Subscription data has ${subscriptionData.length} items.`);
           } else {
-            console.warn('Subscription data is not in expected format:', typeof subscriptionData);
+            console.warn('Subscription data is not in expected array format:', typeof subscriptionData, subscriptionData);
             data = [];
           }
         } catch (error) {
           console.error('Error fetching subscription data:', error);
-          console.log('Using empty data set for subscriptions');
           data = [];
         }
         break;
-        
-      case 'overview':
-        // Fetch overview data (expenses, income, budgets)
-        try {
-          // Fetch expenses
-          const { data: expenses, error: expensesError } = await supabase
-            .from('expenses')
-            .select('*')
-            .eq('user_id', userId)
-            .gte('date', timeFilter.start.toISOString())
-            .lte('date', timeFilter.end.toISOString())
-            .order('date', { ascending: false })
-            .limit(100)
-          
-          // Fetch income
-          const { data: income, error: incomeError } = await supabase
-            .from('incomes')
-            .select('*')
-            .eq('user_id', userId)
-            .gte('start_date', timeFilter.start.toISOString())
-            .lte('start_date', timeFilter.end.toISOString())
-            .order('start_date', { ascending: false })
-            .limit(100)
-          
-          // Fetch budgets
-          const { data: budgets, error: budgetsError } = await supabase
-            .from('budgets')
-            .select('*')
-            .eq('user_id', userId)
-            .order('created_at', { ascending: false })
-            .limit(20)
-          
-          if (expenses || income || budgets) {
-            data = {
-              expenses: expenses || [],
-              income: income || [],
-              budgets: budgets || [],
-              summary: {
-                totalExpenses: expenses ? expenses.reduce((sum, exp) => sum + (parseFloat(exp.amount) || 0), 0) : 0,
-                totalIncome: income ? income.reduce((sum, inc) => sum + (parseFloat(inc.amount) || 0), 0) : 0,
-                budgetCount: budgets ? budgets.length : 0
-              }
-            }
-          }
-          
-          console.log('Overview data fetched:', { 
-            expensesCount: expenses?.length || 0,
-            incomeCount: income?.length || 0,
-            budgetsCount: budgets?.length || 0
-          })
-        } catch (error) {
-          console.error('Error fetching overview data:', error)
-          console.log('Using empty data set for overview')
-        }
-        break
 
-      case 'income-expense':
-        // Fetch income and expense data
+      default:
         try {
-          // Fetch expenses
-          const { data: expenses, error: expensesError } = await supabase
-            .from('expenses')
-            .select('*, expense_categories(name, color)')
-            .eq('user_id', userId)
-            .gte('date', timeFilter.start.toISOString())
-            .lte('date', timeFilter.end.toISOString())
-            .order('date', { ascending: false })
-          
-          // Fetch income
-          const { data: income, error: incomeError } = await supabase
-            .from('income')
-            .select('*, income_categories(name, color)')
-            .eq('user_id', userId)
-            .gte('date', timeFilter.start.toISOString())
-            .lte('date', timeFilter.end.toISOString())
-            .order('date', { ascending: false })
-          
-          // Combine and process data
-          if ((expenses && !expensesError) || (income && !incomeError)) {
-            // Calculate monthly totals
-            const monthlyData = {};
-            
-            // Process expenses by month
-            expenses?.forEach(expense => {
-              const date = new Date(expense.date);
-              const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-              
-              if (!monthlyData[monthKey]) {
-                monthlyData[monthKey] = { expenses: 0, income: 0 };
-              }
-              
-              monthlyData[monthKey].expenses += parseFloat(expense.amount) || 0;
-            });
-            
-            // Process income by month
-            income?.forEach(inc => {
-              const date = new Date(inc.date);
-              const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-              
-              if (!monthlyData[monthKey]) {
-                monthlyData[monthKey] = { expenses: 0, income: 0 };
-              }
-              
-              monthlyData[monthKey].income += parseFloat(inc.amount) || 0;
-            });
-            
-            data = {
-              expenses: expenses || [],
-              income: income || [],
-              monthlyTotals: Object.entries(monthlyData).map(([month, values]) => ({
-                month,
-                ...values,
-                net: (values.income - values.expenses)
-              })).sort((a, b) => a.month.localeCompare(b.month)),
-              summary: {
-                totalExpenses: expenses ? expenses.reduce((sum, exp) => sum + (parseFloat(exp.amount) || 0), 0) : 0,
-                totalIncome: income ? income.reduce((sum, inc) => sum + (parseFloat(inc.amount) || 0), 0) : 0,
-                netCashflow: (income ? income.reduce((sum, inc) => sum + (parseFloat(inc.amount) || 0), 0) : 0) - 
-                             (expenses ? expenses.reduce((sum, exp) => sum + (parseFloat(exp.amount) || 0), 0) : 0)
-              }
+          const genericData = await fetchReportDataFields(report.type, report.time_range);
+          console.log(`Raw data for ${report.type}:`, JSON.stringify(genericData, null, 2).substring(0, 500));
+          if (genericData && Array.isArray(genericData)) {
+            data = genericData;
+            console.log(`Generic data for ${report.type} has ${genericData.length} items.`);
+          } else if (report.type === 'overview' && 
+                     genericData && 
+                     typeof genericData === 'object' &&
+                     'income' in genericData && 
+                     'expenses' in genericData && 
+                     'debts' in genericData && 
+                     'subscriptions' in genericData) {
+            // Type assertion for clarity, assuming genericData matches the expected overview structure
+            const overviewData = genericData as {
+              income: any[];
+              expenses: any[];
+              debts: any[];
+              subscriptions: any[];
+              // timeRange is also present but not directly used to form the 'data' array here
             };
             
-            console.log('Income/Expense data fetched:', { 
-              expensesCount: expenses?.length || 0,
-              incomeCount: income?.length || 0,
-              monthsCount: Object.keys(monthlyData).length
-            });
+            data = [
+              ...(overviewData.income || []).map(item => ({ ...item, reportDataType: 'Income' })),
+              ...(overviewData.expenses || []).map(item => ({ ...item, reportDataType: 'Expense' })),
+              ...(overviewData.debts || []).map(item => ({ ...item, reportDataType: 'Debt' })),
+              ...(overviewData.subscriptions || []).map(item => ({ ...item, reportDataType: 'Subscription' })),
+            ];
+            console.log(`Processed overview data for ${report.type}. Total items: ${data.length}`);
+          } else {
+            // Log the actual structure if it's an object but not the overview format we expect
+            const logData = typeof genericData === 'object' ? JSON.stringify(genericData, null, 2).substring(0, 500) : genericData;
+            console.warn(`${report.type} data is not in expected array format or overview object format:`, typeof genericData, logData);
+            data = [];
           }
         } catch (error) {
-          console.error('Error fetching income/expense data:', error);
-          console.log('Using empty data set for income/expense');
+          console.error(`Error fetching data for ${report.type}:`, error);
+          data = [];
         }
-        break
-        
-      case 'net-worth':
-        // Fetch net worth data using accounts and their balances
-        try {
-          // Fetch accounts
-          const { data: accounts, error: accountsError } = await supabase
-            .from('accounts')
-            .select('*')
-            .eq('user_id', userId)
-            .order('created_at', { ascending: false })
-          
-          if (!accountsError && accounts && accounts.length > 0) {
-            // Categorize accounts as assets or liabilities
-            const assets = accounts.filter(account => 
-              account.type === 'checking' || 
-              account.type === 'savings' || 
-              account.type === 'investment' || 
-              account.type === 'cash' ||
-              account.type === 'other_asset'
-            );
-            
-            const liabilities = accounts.filter(account => 
-              account.type === 'credit_card' || 
-              account.type === 'loan' || 
-              account.type === 'mortgage' ||
-              account.type === 'other_liability'
-            );
-            
-            // Calculate totals
-            const totalAssets = assets.reduce((sum, asset) => sum + (parseFloat(asset.current_balance) || 0), 0);
-            const totalLiabilities = liabilities.reduce((sum, liability) => sum + (parseFloat(liability.current_balance) || 0), 0);
-            const netWorth = totalAssets - totalLiabilities;
-            
-            data = {
-              assets,
-              liabilities,
-              summary: {
-                totalAssets,
-                totalLiabilities,
-                netWorth
-              }
-            };
-            
-            console.log('Net worth data fetched:', { 
-              assetsCount: assets.length, 
-              liabilitiesCount: liabilities.length,
-              netWorth
-            });
-          }
-        } catch (error) {
-          console.error('Error fetching net worth data:', error);
-          console.log('Using empty data set for net worth');
-        }
-        break
-        
-      case 'investments':
-        // Fetch investment data from accounts and investments tables
-        try {
-          // Fetch investment accounts
-          const { data: investmentAccounts, error: accountsError } = await supabase
-            .from('accounts')
-            .select('*')
-            .eq('user_id', userId)
-            .eq('type', 'investment')
-            .order('created_at', { ascending: false })
-          
-          // Fetch subscriptions (as investments)
-          const { data: subscriptions, error: subscriptionsError } = await supabase
-            .from('subscriptions')
-            .select('*')
-            .eq('user_id', userId)
-            .order('created_at', { ascending: false })
-          
-          if ((!accountsError && investmentAccounts) || (!subscriptionsError && subscriptions)) {
-            // Calculate total investment value
-            const totalInvestments = investmentAccounts ? 
-              investmentAccounts.reduce((sum, acct) => sum + (parseFloat(acct.current_balance) || 0), 0) : 0;
-            
-            // Calculate total subscription costs
-            const totalSubscriptions = subscriptions ?
-              subscriptions.reduce((sum, sub) => sum + (parseFloat(sub.amount) || 0), 0) : 0;
-            
-            data = {
-              investmentAccounts: investmentAccounts || [],
-              subscriptions: subscriptions || [],
-              summary: {
-                totalInvestments,
-                totalSubscriptions,
-                accountCount: investmentAccounts?.length || 0,
-                subscriptionCount: subscriptions?.length || 0
-              }
-            };
-            
-            console.log('Investment data fetched:', { 
-              accountsCount: investmentAccounts?.length || 0, 
-              subscriptionsCount: subscriptions?.length || 0
-            });
-          }
-        } catch (error) {
-          console.error('Error fetching investment data:', error);
-          console.log('Using empty data set for investments');
-        }
-        break
+        break;
+    }
+
+    if (!Array.isArray(data)) {
+        console.warn(`Data for report type ${report.type} was not an array after fetching, coercing to empty. Original data:`, JSON.stringify(data, null, 2).substring(0,500));
+        data = [];
     }
     
-    // Create a unique filename
-    const filename = `${report.type}_${report.format}_${uuidv4()}.${getFileExtension(report.format)}`
+    console.log(`Final data array for ${report.type} (length ${data.length}) being passed to generateReportByFormat:`, JSON.stringify(data, null, 2).substring(0,500));
+
+    const filename = `${report.type}_${report.format}_${uuidv4()}.${getFileExtension(report.format)}`;
+    const filePath = `reports/${userId}/${filename}`;
+
+    const reportBlob: Blob = await generateReportByFormat(data, report);
+    const fileBuffer = await reportBlob.arrayBuffer();
+    const actualContentType = reportBlob.type;
     
-    // Prepare file path for storage
-    const filePath = `reports/${userId}/${filename}`
-    
-    // If we have real data, we would generate the file here and upload to storage
-    // For demonstration purposes, we'll create a metadata file with report info
-    const metadata = {
-      report_id: report.id,
-      report_type: report.type,
-      report_format: report.format,
-      time_range: report.time_range,
-      generated_at: new Date().toISOString(),
-      record_count: data.length,
-      user_id: userId,
-      is_authenticated: report.user_id !== 'default-user'
-    }
-    
-    // Convert metadata to string
-    const metadataStr = JSON.stringify(metadata, null, 2)
-    
-    // Try to use admin client first to bypass RLS policies
-    const adminClient = createAdminSupabaseClient()
-    
+    console.log(`Generated report file for ${filePath}. ContentType: ${actualContentType}, Buffer size: ${fileBuffer?.byteLength}`);
+
+    const adminClient = await createAdminSupabaseClient();
+    let uploadSuccessful = false;
+    let publicUrl: string | null = null;
+
     if (adminClient) {
       try {
-        console.log('Using admin client for report file upload')
-        
-        // Upload metadata file using admin client to bypass RLS
-        const { error: adminUploadError, data: adminUploadData } = await adminClient.storage
+        console.log(`Attempting to upload ${filePath} with admin client.`);
+        const { error: adminUploadError } = await adminClient.storage
           .from('reports')
-          .upload(filePath, metadataStr, {
-            contentType: 'application/json',
+          .upload(filePath, fileBuffer, {
+            contentType: actualContentType,
             cacheControl: '3600',
             upsert: true
-          })
-          
-        if (!adminUploadError) {
-          // Get public URL for the file using admin client
-          const { data: urlData } = await adminClient.storage
-            .from('reports')
-            .getPublicUrl(filePath)
-            
-          if (urlData?.publicUrl) {
-            return urlData.publicUrl
+          });
+
+        if (adminUploadError) {
+          console.error(`Admin client upload error for ${filePath}:`, adminUploadError);
+          if (adminUploadError.message && adminUploadError.message.includes('<html>')) {
+            console.error('Admin client received HTML response, possibly an auth or service issue with storage.');
           }
         } else {
-          console.error('Admin client upload error:', adminUploadError)
+          uploadSuccessful = true;
+          console.log(`Report file ${filePath} uploaded successfully with admin client.`);
+          const { data: urlDataResult } = await adminClient.storage.from('reports').getPublicUrl(filePath);
+          publicUrl = urlDataResult?.publicUrl || null;
         }
-      } catch (adminError) {
-        console.error('Error using admin client:', adminError)
+      } catch (e) {
+        console.error(`Exception during admin client upload for ${filePath}:`, e);
       }
     }
-    
-    // Fall back to regular client if admin client fails
-    console.log('Falling back to regular client for upload')
-    const { error: uploadError } = await supabase.storage
-      .from('reports')
-      .upload(filePath, metadataStr, {
-        contentType: 'application/json',
-        cacheControl: '3600',
-        upsert: true
-      })
-    
-    if (uploadError) {
-      console.error('Error uploading report metadata:', uploadError)
-      throw new Error('Failed to upload report file')
-    }
-    
-    // Get public URL for the file
-    // Try admin client first for consistent access (reuse existing or create new)
-    let urlData = null
-    
-    if (adminClient) {
-      const { data } = await adminClient.storage
+
+    if (!uploadSuccessful) {
+      console.log(`Admin client upload failed or not available for ${filePath}. Falling back to regular client.`);
+      const { error: uploadError } = await supabase.storage
         .from('reports')
-        .getPublicUrl(filePath)
-      
-      urlData = data
+        .upload(filePath, fileBuffer, {
+          contentType: actualContentType,
+          cacheControl: '3600',
+          upsert: true
+        });
+
+      if (uploadError) {
+        console.error(`Regular client upload error for ${filePath}:`, uploadError);
+        if (uploadError.message && uploadError.message.includes('new row violates row-level security policy')) {
+            console.error("RLS policy violation detected during fallback upload. This might indicate an issue with user permissions or bucket policies.");
+        }
+        throw new Error(`Failed to upload report file ${filePath} with regular client: ${uploadError.message}`);
+      }
+      console.log(`Report file ${filePath} uploaded successfully with regular client.`);
+      const { data: urlDataResult } = await supabase.storage.from('reports').getPublicUrl(filePath);
+      publicUrl = urlDataResult?.publicUrl || null;
     }
     
-    // Fall back to regular client if needed
-    if (!urlData) {
-      const { data } = await supabase.storage
-        .from('reports')
-        .getPublicUrl(filePath)
-      
-      urlData = data
+    if (!publicUrl) {
+      console.error(`Failed to get public URL for report: ${filePath}`);
+      throw new Error(`Failed to retrieve public URL for the report file ${filePath}.`);
     }
     
-    if (!urlData || !urlData.publicUrl) {
-      // If we can't get a public URL, use a placeholder
-      return `https://storage.example.com/reports/${filename}?records=${data.length}`
-    }
-    
-    return urlData.publicUrl
+    console.log(`Report ${filePath} generated and uploaded. Public URL: ${publicUrl}`);
+    return publicUrl;
+
   } catch (error) {
-    console.error("Error generating report file:", error)
-    throw new Error("Failed to generate report file")
+    console.error("Error in generateReportFile function:", error);
+    if (error instanceof Error) {
+      throw new Error(`Failed to generate report file (original error: ${error.message})`);
+    }
+    throw new Error("Failed to generate report file due to an unexpected error.");
   }
 }
 

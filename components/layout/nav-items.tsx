@@ -122,6 +122,7 @@ export function NavItems({ className, items: propItems, onItemClick }: NavItemsP
                   
                   return (
                     <div
+                      key={`${item.href}-${itemIndex}`}
                       onClick={(e) => {
                         e.preventDefault();
                         // Navigate first
