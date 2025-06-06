@@ -14,17 +14,28 @@ import { BudgetCategoryForm } from "./budget-category-form"
 
 interface BudgetFormProps {
   budget?: {
-    id: string
-    name: string
-    description?: string
-    model?: string
-    start_date: string
-    end_date?: string | null
-    is_active?: boolean
-    categories?: any[]
-  }
-  categories?: any[]
-  onSuccess?: () => void
+    id: string;
+    name: string;
+    description?: string;
+    model?: string;
+    start_date: string;
+    end_date?: string | null;
+    is_active?: boolean;
+    // categories are the formatted categories from BudgetEditDialog
+    categories?: Array<{
+      id: string;
+      name: string;
+      amount: number;
+      percentage: number;
+      color?: string;
+      subcategories?: Array<{ id: string; name: string; amount: number; percentage: number }>;
+    }>;
+    total_allocated?: number; // The saved total budget amount
+  };
+  // The separate 'categories' prop seems unused when 'budget' is provided for editing.
+  // Keeping it for now in case it's used for 'create new' with pre-filled categories, though less likely.
+  categories?: any[]; 
+  onSuccess?: () => void;
 }
 
 export function BudgetForm({ budget, categories, onSuccess }: BudgetFormProps) {
@@ -40,29 +51,24 @@ export function BudgetForm({ budget, categories, onSuccess }: BudgetFormProps) {
       
       // Map categories to ensure they have the correct structure
       const mappedCategories = budget.categories?.map((cat: any) => {
-        // Get the items for this category if they exist
-        const categoryItems = cat.items || [];
-        const totalAmount = categoryItems.reduce((sum: number, item: any) => sum + (parseFloat(item.amount) || 0), 0);
-        
+        // The 'budget.categories' (from BudgetEditDialog's formattedBudget)
+        // already has the correct 'amount' and 'percentage'.
+        // We should use these directly.
         return {
           id: cat.id,
           name: cat.name,
-          description: cat.description || '',
-          amount: totalAmount || cat.amount || 0,
+          // description: cat.description || '', // Not part of formattedBudget.categories structure
+          amount: cat.amount || 0, // Directly use pre-calculated amount
           percentage: cat.percentage || 0,
-          parent_category_id: cat.parent_category_id || null,
+          // parent_category_id: cat.parent_category_id || null, // Not part of formattedBudget.categories structure
           subcategories: cat.subcategories?.map((sub: any) => {
-            // Get the items for this subcategory if they exist
-            const subItems = sub.items || [];
-            const subTotalAmount = subItems.reduce((sum: number, item: any) => sum + (parseFloat(item.amount) || 0), 0);
-            
             return {
               id: sub.id,
               name: sub.name,
-              description: sub.description || '',
-              amount: subTotalAmount || sub.amount || 0,
+              // description: sub.description || '', // Not part of formattedBudget.categories[n].subcategories structure
+              amount: sub.amount || 0, // Directly use pre-calculated amount for subcategory
               percentage: sub.percentage || 0,
-              parent_category_id: cat.id
+              // parent_category_id: cat.id // This is implicitly handled by nesting; BudgetCategoryForm does not seem to need it explicitly
             };
           }) || []
         };
@@ -79,7 +85,7 @@ export function BudgetForm({ budget, categories, onSuccess }: BudgetFormProps) {
         name: budget.name || "",
         description: budget.description || "",
         model: budget.model || "traditional",
-        amount: totalAmount,
+        amount: budget.total_allocated !== undefined ? budget.total_allocated : 0, // Use saved total_allocated
         start_date: budget.start_date || new Date().toISOString().split("T")[0],
         end_date: budget.end_date || "",
         is_active: budget.is_active !== false, // Default to true if not specified

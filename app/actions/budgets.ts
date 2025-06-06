@@ -7,6 +7,8 @@ import { getAuthenticatedUser } from "@/lib/auth"
 import { createServerSupabaseClient } from "@/lib/supabase/server"
 
 export async function getBudgets() {
+  console.log("SERVER_SIDE getBudgets - Supabase URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
+  console.log("SERVER_SIDE getBudgets - Supabase Anon Key:", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? "Loaded" : "NOT LOADED OR EMPTY");
   try {
     console.log("Starting getBudgets function")
     const supabase = await createServerSupabaseClient()
@@ -79,17 +81,29 @@ export async function getBudgets() {
       }
 
       // Get budget items for all categories
-      const categoryIds = categories.map(category => category.id)
-      const { data: itemsData, error: itemsError } = await supabase
-        .from("budget_items")
-        .select("*")
-        .in("category_id", categoryIds)
+      const categoryIds = categories.map(category => category.id);
+      console.log("Category IDs for fetching items:", categoryIds);
 
-      if (itemsError) {
-        console.error("Error fetching budget items:", itemsError)
+      let itemsData: any[] = [];
+      let itemsError: any = null;
+
+      if (categoryIds.length > 0) {
+        const { data, error } = await supabase
+          .from("budget_items")
+          .select("*")
+          .in("category_id", categoryIds);
+        itemsData = data || [];
+        itemsError = error;
+      } else {
+        console.log("No category IDs found, skipping budget_items fetch.");
       }
 
-      const items = itemsData || []
+      if (itemsError) {
+        console.error("Error fetching budget items:", itemsError);
+        console.error("Error fetching budget items (stringified):", JSON.stringify(itemsError, null, 2));
+      }
+
+      const items = itemsData; // Already defaulted to [] if query skipped or data is null
       console.log(`Found ${items.length} budget items for all categories`)
 
       // Group categories by budget_id
@@ -112,22 +126,49 @@ export async function getBudgets() {
 
       // Process each budget to include its categories and items
       const processedBudgets = budgets.map(budget => {
-        const budgetCategories = categoriesByBudget[budget.id] || []
-        console.log(`Processing budget ${budget.id} with ${budgetCategories.length} categories`)
-        
-        // Separate parent categories and subcategories
-        const parentCategories = budgetCategories.filter(cat => !cat.parent_category_id)
-        const subcategories = budgetCategories.filter(cat => cat.parent_category_id)
-        
-        console.log(`Found ${parentCategories.length} parent categories and ${subcategories.length} subcategories`)
-        
+        const rawBudgetCategoriesForThisBudget = categoriesByBudget[budget.id] || [];
+        console.log(`Processing budget ${budget.id} with ${rawBudgetCategoriesForThisBudget.length} raw budget_categories entries`);
+
+        // Prepare the nested structure for display (if BudgetList needs it)
+        const parentDisplayCategories = rawBudgetCategoriesForThisBudget.filter(cat => !cat.parent_category_id);
+        const subDisplayCategories = rawBudgetCategoriesForThisBudget.filter(cat => cat.parent_category_id);
+
+        const subDisplayCategoriesByParent: { [key: string]: any[] } = {};
+        subDisplayCategories.forEach(subcat => {
+          if (subcat.parent_category_id) { // Ensure parent_category_id exists
+            if (!subDisplayCategoriesByParent[subcat.parent_category_id]) {
+              subDisplayCategoriesByParent[subcat.parent_category_id] = [];
+            }
+            subDisplayCategoriesByParent[subcat.parent_category_id].push(subcat);
+          }
+        });
+
+        const itemsByParentDisplayCategory: { [key: string]: any[] } = {};
+        parentDisplayCategories.forEach(pCat => {
+          itemsByParentDisplayCategory[pCat.id] = itemsByCategory[pCat.id] || [];
+        });
+
+        const itemsBySubDisplayCategory: { [key: string]: any[] } = {};
+        subDisplayCategories.forEach(sCat => {
+          itemsBySubDisplayCategory[sCat.id] = itemsByCategory[sCat.id] || [];
+        });
+
+        const displayCategoriesStructure = parentDisplayCategories.map(pCat => ({
+          ...pCat, // Includes id, name, amount_allocated, budget_id, category_id, parent_category_id etc. from budget_categories table
+          items: itemsByParentDisplayCategory[pCat.id] || [],
+          subcategories: (subDisplayCategoriesByParent[pCat.id] || []).map(sCat => ({
+            ...sCat, // Includes id, name, amount_allocated, budget_id, category_id, parent_category_id etc.
+            items: itemsBySubDisplayCategory[sCat.id] || [],
+          })),
+        }));
+
         // Calculate total allocated amount
         let totalAllocated = 0
         
         // Organize subcategories under their parent categories
-        const categoriesWithSubs = parentCategories.map(parent => {
-          const children = subcategories.filter(sub => sub.parent_category_id === parent.id)
-          const categoryItems = itemsByCategory[parent.id] || []
+        const categoriesWithSubs = parentDisplayCategories.map(parent => {
+          const children = subDisplayCategories.filter(sub => sub.parent_category_id === parent.id)
+          const categoryItems = itemsByParentDisplayCategory[parent.id] || []
           
           // Calculate total amount for this category (from items or direct allocation)
           let categoryTotal = 0
@@ -139,7 +180,7 @@ export async function getBudgets() {
           
           // Process subcategories
           const processedChildren = children.map(child => {
-            const childItems = itemsByCategory[child.id] || []
+            const childItems = itemsBySubDisplayCategory[child.id] || []
             const childTotal = childItems.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
             totalAllocated += childTotal
             
@@ -594,18 +635,50 @@ export async function updateBudget(id: string, budgetData: any) {
     const existingCategoryMap = new Map();
     existingCategories?.forEach(category => {
       // Calculate total allocation from budget items
-      const totalAllocation = category.budget_items?.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0) || 0;
+      const totalAllocation = category.budget_items?.reduce((sum: number, item: { amount: string | number }) => sum + (parseFloat(String(item.amount)) || 0), 0) || 0;
       existingCategoryMap.set(category.id, {
         ...category,
         amount_allocated: totalAllocation
       });
     });
 
-    // Process and insert/update all categories and subcategories
+    // Identify categories to be removed
+    const incomingCategoryIdsFromPayload = new Set(budgetData.categories.map((c: any) => c.id).filter((id: any) => id));
+
+    if (existingCategories) {
+      for (const existingCat of existingCategories) {
+        if (!incomingCategoryIdsFromPayload.has(existingCat.id)) {
+          console.log(`Category ${existingCat.name} (ID: ${existingCat.id}) is marked for deletion from budget ${id}`);
+          
+          // First, delete its budget_items
+          const { error: deleteItemsError } = await supabase
+            .from("budget_items")
+            .delete()
+            .eq("category_id", existingCat.id);
+
+          if (deleteItemsError) {
+            console.error(`Error deleting items for category ${existingCat.id}:`, deleteItemsError);
+            // Potentially throw error or handle, for now, we log and continue
+          }
+
+          // Then, delete the budget_category itself
+          const { error: deleteCategoryError } = await supabase
+            .from("budget_categories")
+            .delete()
+            .eq("id", existingCat.id);
+
+          if (deleteCategoryError) {
+            console.error(`Error deleting budget_category ${existingCat.id}:`, deleteCategoryError);
+            // Potentially throw error or handle
+          }
+        }
+      }
+    }
+
+    // Process and insert/update all categories and subcategories from the payload
     const allCategories = [];
     
-    // Extract parent categories and their subcategories
-    console.log(`Processing ${budgetData.categories.length} categories for budget ${id}`);
+    console.log(`Processing ${budgetData.categories.length} categories from payload for budget ${id}`);
     
     for (const category of budgetData.categories) {
       // Check if this category already exists
