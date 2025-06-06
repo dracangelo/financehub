@@ -306,13 +306,15 @@ export function generateExcelReport(data: any[], reportType: string, title: stri
   if (preparedData.length === 0) {
     // Create empty worksheet with message
     const ws = XLSX.utils.aoa_to_sheet([['No data available for this report.']]);
-    XLSX.utils.book_append_sheet(wb, ws, title);
+    const sheetTitleForEmpty = title.substring(0, 31);
+    XLSX.utils.book_append_sheet(wb, ws, sheetTitleForEmpty);
   } else {
     // Convert data to worksheet
     const ws = XLSX.utils.json_to_sheet(preparedData);
     
     // Add to workbook
-    XLSX.utils.book_append_sheet(wb, ws, title);
+    const sheetTitle = title.substring(0, 31);
+    XLSX.utils.book_append_sheet(wb, ws, sheetTitle);
     
     // Add summary sheet for grouped data
     if (data[0]?.group_key) {

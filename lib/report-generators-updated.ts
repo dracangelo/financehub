@@ -275,7 +275,7 @@ export function generateExcelReport(data: any, reportType: string, title: string
   // If no data, create empty sheet
   if (!preparedData.length) {
     const ws = XLSX.utils.aoa_to_sheet([['No data available']]);
-    XLSX.utils.book_append_sheet(wb, ws, title);
+    XLSX.utils.book_append_sheet(wb, ws, title.substring(0, 31));
     const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     return new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   }
@@ -326,8 +326,10 @@ export function generateExcelReport(data: any, reportType: string, title: string
       header: headers.map(h => h.label)
     });
     
+    // Truncate title to 31 characters for Excel sheet name
+    const sheetTitle = title.substring(0, 31);
     // Add to workbook
-    XLSX.utils.book_append_sheet(wb, ws, title);
+    XLSX.utils.book_append_sheet(wb, ws, sheetTitle);
   }
   
   // Generate blob

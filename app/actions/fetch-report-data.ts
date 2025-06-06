@@ -44,6 +44,44 @@ type Income = BaseTransaction & {
   start_date?: string;
 };
 
+// Define types for the structure returned by fetchIncomeSourcesData
+interface IncomeReportTransaction {
+  id: string;
+  date: string;
+  description: string;
+  amount: number;
+}
+
+interface IncomeReportCategory {
+  id: string;
+  name: string;
+  amount: number;
+  color: string;
+  percent: number;
+  transactions: IncomeReportTransaction[];
+}
+
+
+// Define the structure for individual expense transactions within a category
+interface ExpenseTransaction {
+  id: string;
+  expense_date: string;
+  description: string;
+  amount: number;
+  category_name: string;
+  name: string;
+}
+
+// Define the structure for each spending category's data
+interface SpendingCategoryData {
+  id: string;
+  name: string;
+  amount: number;
+  color: string;
+  transactions: ExpenseTransaction[];
+  percent: number;
+}
+
 type Transaction = {
   id: string;
   type: 'income' | 'expense';
@@ -316,75 +354,87 @@ export async function fetchReportData(reportType: ReportType, timeRange: TimeRan
             userId
           });
           
-          // Fetch income data with date range filtering
-          const incomeQuery = await supabase
-            .from('incomes')
-            .select('*, income_categories!inner(*)')
-            .eq('user_id', userId)
-            .gte('start_date', timeFilter.start.toISOString())
-            .lte('end_date', timeFilter.end.toISOString())
-            .order('start_date', { ascending: false });
+          console.log(`[fetchReportData] income-expense: Fetching via income-sources and expense-trends logic. User: ${userId}, Time: ${JSON.stringify(timeFilter)}`);
 
-          if (incomeQuery.error) {
-            console.error('Error fetching income data:', incomeQuery.error);
-            throw incomeQuery.error;
+          // Fetch income data using fetchIncomeSourcesData logic
+          const incomeSourcesFullData = await fetchIncomeSourcesData(supabase, userId, timeFilter);
+          let processedIncomes: { id: string; name: string; amount: number; date: string; category: string; type: 'income'; original_description?: string; }[] = [];
+          if (incomeSourcesFullData && incomeSourcesFullData.categories) {
+            console.log(`[fetchReportData] income-expense: Processing ${incomeSourcesFullData.categories.length} income categories from incomeSourcesFullData.`);
+            incomeSourcesFullData.categories.forEach((category: IncomeReportCategory, catIndex: number) => {
+              // Log the structure of the first category and its transactions for inspection
+              if (catIndex === 0) {
+                console.log(`[fetchReportData] income-expense: Inspecting first income category [${catIndex}]: ${JSON.stringify(category, (key, value) => key === 'transactions' ? `Array(${value.length})` : value).substring(0,500)}`);
+                if (category.transactions && category.transactions.length > 0) {
+                   console.log(`[fetchReportData] income-expense: Inspecting first transaction of first income category: ${JSON.stringify(category.transactions[0]).substring(0,300)}`);
+                }
+              }
+              if (category.transactions && Array.isArray(category.transactions)) {
+                category.transactions.forEach((tx: IncomeReportTransaction) => { // tx should be { id, date, description, amount }
+                  processedIncomes.push({
+                    id: tx.id,
+                    name: tx.description || 'N/A', // Assuming tx.description has the name/detail
+                    amount: tx.amount,
+                    date: tx.date,
+                    category: category.name || 'Uncategorized',
+                    type: 'income' as const,
+                    original_description: tx.description
+                  });
+                });
+              } else {
+                console.log(`[fetchReportData] income-expense: Category '${category.name}' has no transactions array or it's not an array.`);
+              }
+            });
           }
-          console.log(`Fetched ${incomeQuery.data?.length || 0} income records`);
+          console.log(`[fetchReportData] income-expense: Processed ${processedIncomes.length} income items from incomeSourcesFullData.`);
 
-          // Fetch expense data with date range filtering
-          const expensesQuery = await supabase
-            .from('expenses')
-            .select('*, expense_categories!inner(*)')
-            .eq('user_id', userId)
-            .gte('expense_date', timeFilter.start.toISOString())
-            .lte('expense_date', timeFilter.end.toISOString())
-            .order('expense_date', { ascending: false });
-            
-          if (expensesQuery.error) {
-            console.error('Error fetching expenses data:', expensesQuery.error);
-            throw expensesQuery.error;
+          // Fetch expense data using fetchSpendingCategoriesData logic
+          const spendingData = await fetchSpendingCategoriesData(supabase, userId, timeFilter);
+          let processedExpenses: { id: string; name: string; amount: number; date: string; category: string; type: 'expense'; }[] = [];
+          if (spendingData && spendingData.categories) {
+            spendingData.categories.forEach((category: SpendingCategoryData) => { // category: SpendingCategoryData
+              if (category.transactions) {
+                category.transactions.forEach((tx: ExpenseTransaction) => { // tx: ExpenseTransaction { id, expense_date, description, amount, category_name }
+                  if (!tx.description) {
+                    console.log('[fetchReportData] Raw expense transaction from spendingData leading to N/A name:', JSON.stringify(tx).substring(0, 300));
+                  }
+                  processedExpenses.push({
+                    id: tx.id,
+                    name: tx.name || 'N/A', // Corrected: tx.name from fetchSpendingCategoriesData's transaction mapping
+                    amount: tx.amount,
+                    date: tx.expense_date,
+                    category: category.name || tx.category_name || 'Uncategorized',
+                    type: 'expense' as const
+                  });
+                });
+              }
+            });
           }
-          console.log(`Fetched ${expensesQuery.data?.length || 0} expense records`);
-          
-          // If no data found, return empty results
-          if ((!incomeQuery.data || incomeQuery.data.length === 0) && 
-              (!expensesQuery.data || expensesQuery.data.length === 0)) {
-            console.log('No income or expense data found for the selected period');
+          console.log(`[fetchReportData] income-expense: Processed ${processedExpenses.length} expense items from spendingData.`);
+
+          // If no data found from new sources, return an empty structure consistent with the expected output
+          if (processedIncomes.length === 0 && processedExpenses.length === 0) {
+            console.log('[fetchReportData] income-expense: No income or expense data found from new sources for the selected period');
+            const emptyTimeRange = { start: timeFilter.start.toISOString(), end: timeFilter.end.toISOString() };
+            const formattedZero = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(0);
             return {
-              income: 0,
-              expenses: 0,
-              net: 0,
+              totalIncome: 0,
+              totalExpenses: 0,
+              netIncome: 0,
+              monthlyData: getMonthlyData([], [], timeFilter),
+              categoryData: getCategoryData([]),
+              recentTransactions: [],
               incomeData: [],
               expenseData: [],
-              incomeByCategory: {},
-              expensesByCategory: {},
+              incomeByCategory: groupByCategory([]),
+              expensesByCategory: groupByCategory([]),
               transactions: [],
-              timeRange: {
-                start: timeFilter.start.toISOString(),
-                end: timeFilter.end.toISOString()
-              }
+              timeRange: emptyTimeRange,
+              formattedTotalIncome: formattedZero,
+              formattedTotalExpenses: formattedZero,
+              formattedNet: formattedZero
             };
           }
-
-          // Process income data
-          const processedIncomes = incomeQuery.data?.map(inc => ({
-            id: inc.id,
-            name: inc.source_name,
-            amount: parseFloat(inc.amount) || 0,
-            date: inc.start_date,
-            category: inc.income_categories?.name || 'Uncategorized',
-            type: 'income'
-          })) || [];
-
-          // Process expense data
-          const processedExpenses = expensesQuery.data?.map(exp => ({
-            id: exp.id,
-            name: exp.name,
-            amount: parseFloat(exp.amount) || 0,
-            date: exp.expense_date,
-            category: exp.expense_categories?.name || 'Uncategorized',
-            type: 'expense'
-          })) || [];
 
           // Calculate totals
           const totalIncome = processedIncomes.reduce((sum, inc) => sum + inc.amount, 0);
@@ -1122,14 +1172,23 @@ async function fetchSpendingCategoriesData(
   supabase: SupabaseClient,
   userId: string,
   timeFilter: { start: Date; end: Date }
-): Promise<ReportData> {
+): Promise<{
+  categories: SpendingCategoryData[];
+  summary: {
+    total_spending: number;
+    formatted_total: string;
+    category_count: number;
+    transaction_count: number;
+    period: string;
+  };
+}> {
   // Fetch expenses with categories
   const { data: expenses, error: expensesError } = await supabase
     .from('expenses')
     .select('*, expense_categories(id, name, color)')
     .eq('user_id', userId)
-    .gte('date', timeFilter.start.toISOString())
-    .lte('date', timeFilter.end.toISOString())
+    .gte('expense_date', timeFilter.start.toISOString())
+    .lte('expense_date', timeFilter.end.toISOString())
   
   console.log(`Spending categories data fetched: ${expenses?.length || 0} expenses`)
   
@@ -1165,7 +1224,7 @@ async function fetchSpendingCategoriesData(
       categoryMap[categoryId].transaction_count += 1
       categoryMap[categoryId].transactions.push({
         id: expense.id,
-        date: expense.date,
+        date: expense.expense_date, // Corrected from expense.date
         name: expense.name,
         amount: amount,
         formatted_amount: new Intl.NumberFormat('en-US', { 
@@ -1202,9 +1261,87 @@ async function fetchSpendingCategoriesData(
       }
     }
   } else {
-    if (expensesError) console.error("Error fetching expenses for categories:", expensesError)
-    return []
+    if (expensesError) console.error("Error fetching expenses for categories:", expensesError);
+    return {
+      categories: [],
+      summary: {
+        total_spending: 0,
+        formatted_total: formatCurrency(0),
+        category_count: 0,
+        transaction_count: 0,
+        period: `${timeFilter.start.toLocaleDateString()} - ${timeFilter.end.toLocaleDateString()}`
+      }
+    };
   }
+}
+
+// Helper function to generate income occurrences within a time range
+// TODO: Define a proper type for 'income' based on your Supabase table structure
+function generateIncomeOccurrences(
+  income: any, 
+  timeFilter: { start: Date; end: Date }
+): any[] { 
+  const occurrences: any[] = [];
+  const incomeStartDate = new Date(income.start_date);
+  const reportStartDate = new Date(timeFilter.start);
+  const reportEndDate = new Date(timeFilter.end);
+
+  if (!income.is_recurring) {
+    // For non-recurring income, check if its single date falls within the filter
+    if (incomeStartDate >= reportStartDate && incomeStartDate <= reportEndDate) {
+      occurrences.push({ ...income, date: incomeStartDate.toISOString() });
+    }
+    return occurrences;
+  }
+
+  // For recurring income
+  let currentOccurrenceDate = new Date(income.start_date);
+
+  // Loop to find all occurrences within the report's time window
+  // Assumes no specific 'recurrence_end_date' field for now.
+  while (currentOccurrenceDate <= reportEndDate) {
+    if (currentOccurrenceDate >= reportStartDate) {
+      // This occurrence is within the report's time window
+      occurrences.push({
+        ...income,
+        date: currentOccurrenceDate.toISOString(), // This specific instance's date
+      });
+    }
+
+    const nextDate = new Date(currentOccurrenceDate);
+    switch (income.frequency) {
+      case 'weekly':
+        nextDate.setDate(nextDate.getDate() + 7);
+        break;
+      case 'bi-weekly': // Every 2 weeks
+        nextDate.setDate(nextDate.getDate() + 14);
+        break;
+      case 'monthly':
+        nextDate.setMonth(nextDate.getMonth() + 1);
+        break;
+      case 'quarterly':
+        nextDate.setMonth(nextDate.getMonth() + 3);
+        break;
+      case 'semi-annually': // Every 6 months
+        nextDate.setMonth(nextDate.getMonth() + 6);
+        break;
+      case 'annually':
+        nextDate.setFullYear(nextDate.getFullYear() + 1);
+        break;
+      default:
+        // Unknown or 'one-time' (though 'one-time' should be handled by !is_recurring)
+        // To prevent infinite loops for unhandled frequencies:
+        console.warn(`Unsupported frequency: ${income.frequency} for income ID ${income.id}`);
+        return occurrences; 
+    }
+    
+    if (nextDate.getTime() === currentOccurrenceDate.getTime()) {
+        console.warn(`Stagnant date advancement for income ID ${income.id}, frequency ${income.frequency}. Breaking recurrence.`);
+        break;
+    }
+    currentOccurrenceDate = nextDate;
+  }
+  return occurrences;
 }
 
 // Fetch income sources data
@@ -1228,269 +1365,134 @@ async function fetchIncomeSourcesData(
   }>;
   total: number;
 }> {
-  // Fetch all income data with categories and complete details
-  const { data: incomes, error: incomesError } = await supabase
+  // Fetch all income data whose start_date is on or before the report's end date.
+  // Further filtering for recurrence and specific dates will happen in code.
+  const { data: potentialIncomes, error: incomesError } = await supabase
     .from('incomes')
     .select('*, income_categories(*)')
     .eq('user_id', userId)
-    .gte('start_date', timeFilter.start.toISOString())
-    .lte('start_date', timeFilter.end.toISOString())
-    .order('start_date', { ascending: false })
-  
-  // Fetch all income categories to ensure we have complete category data
+    .lte('start_date', timeFilter.end.toISOString()) // Fetch broadly
+    .order('start_date', { ascending: false });
+
+  // Fetch all income categories (remains the same)
   const { data: allCategories, error: categoriesError } = await supabase
     .from('income_categories')
     .select('*')
-    .eq('user_id', userId)
+    .eq('user_id', userId);
+
+  if (incomesError) {
+    console.error('Error fetching potential incomes:', incomesError);
+    return { categories: [], total: 0 }; // Or throw
+  }
+  if (categoriesError) {
+    console.error('Error fetching income categories:', categoriesError);
+    return { categories: [], total: 0 }; // Or throw
+  }
+
+  console.log(`Potential income sources fetched: ${potentialIncomes?.length || 0} entries, ${allCategories?.length || 0} categories`);
+
+  let reportableIncomeInstances: any[] = []; // TODO: Type this properly
+  if (potentialIncomes) {
+    potentialIncomes.forEach((income: any) => { // TODO: Type 'income' properly
+      const occurrences = generateIncomeOccurrences(income, timeFilter);
+      reportableIncomeInstances.push(...occurrences);
+    });
+  }
   
-  console.log(`Income sources data fetched: ${incomes?.length || 0} income entries, ${allCategories?.length || 0} categories`)
-  
-  if (!incomesError && incomes && incomes.length > 0) {
-    // Calculate total income
-    const totalIncome = incomes.reduce((sum: number, income: any) => {
-      return sum + (parseFloat(income.amount) || 0)
-    }, 0)
-    
-    // Process all income entries with full details
-    const processedIncomes = incomes.map((income: any) => {
-      // Format date
-      let formattedDate = ''
-      try {
-        if (income.date && !isNaN(new Date(income.date).getTime())) {
-          formattedDate = new Date(income.date).toLocaleDateString()
-        }
-      } catch (error) {
-        // Leave empty if there's an error
-      }
-      
-      // Format amount with currency
-      const formattedAmount = new Intl.NumberFormat('en-US', { 
-        style: 'currency', 
-        currency: 'USD' 
-      }).format(income.amount || 0)
-      
-      return {
-        id: income.id,
-        name: income.name || '',
-        description: income.description || '',
-        amount: parseFloat(income.amount) || 0,
-        formatted_amount: formattedAmount,
-        date: income.date,
-        formatted_date: formattedDate,
-        category_id: income.category_id,
-        category_name: income.income_categories?.name || 'Uncategorized',
-        category_color: income.income_categories?.color || '#4CAF50',
-        payment_method: income.payment_method || '',
-        is_recurring: income.is_recurring || false,
-        frequency: income.frequency || 'one-time',
-        notes: income.notes || '',
-        created_at: income.created_at,
-        updated_at: income.updated_at
-      }
-    })
-    
-    // Group income by source/category
-    const sourceMap: Record<string, any> = {}
-    
-    incomes.forEach((income: any) => {
-      const categoryId = income.category_id || 'uncategorized'
-      const categoryName = income.income_categories?.name || 'Uncategorized'
-      const categoryColor = income.income_categories?.color || '#4CAF50'
-      const amount = parseFloat(income.amount) || 0
-      const isRecurring = income.is_recurring || false
-      const frequency = income.frequency || 'one-time'
-      
+  console.log(`Reportable income instances after processing recurrence: ${reportableIncomeInstances.length}`);
+
+  if (reportableIncomeInstances.length === 0) {
+    return { categories: [], total: 0 };
+  }
+
+  // Calculate total income from reportable instances
+  const totalIncome = reportableIncomeInstances.reduce((sum: number, incomeInstance: any) => {
+    return sum + (parseFloat(incomeInstance.amount) || 0);
+  }, 0);
+
+  // Process all reportable income instances. 
+  // The 'processedIncomes' variable is not directly used for final output structure, 
+  // but the mapping logic is now applied within the sourceMap population.
+
+  // Group income by source/category using reportableIncomeInstances
+  const sourceMap: Record<string, any> = {};
+  reportableIncomeInstances.forEach((incomeInstance: any) => {
+      const categoryId = incomeInstance.category_id || 'uncategorized';
+      const categoryName = incomeInstance.income_categories?.name || 'Uncategorized';
+      const categoryColor = incomeInstance.income_categories?.color || '#4CAF50';
+      const amount = parseFloat(incomeInstance.amount) || 0;
+      const isRecurringSource = incomeInstance.is_recurring || false; // Property of the original source
+      const sourceFrequency = incomeInstance.frequency || 'one-time'; // Property of the original source
+
       if (!sourceMap[categoryId]) {
         sourceMap[categoryId] = {
           id: categoryId,
-          source: categoryName,
+          name: categoryName, // Use 'name' for consistency with output structure
           color: categoryColor,
           amount: 0,
-          transaction_count: 0,
-          recurring_count: 0,
-          transactions: [],
-          frequencies: {}
-        }
+          transaction_count: 0, // Counts actual occurrences in this category
+          recurring_instance_count: 0, // Counts instances from a recurring source
+          transactions: [], // Will hold individual transaction instances
+          source_frequencies: {} // Tracks frequencies of original sources contributing
+        };
       }
-      
-      // Update source totals
-      sourceMap[categoryId].amount += amount
-      sourceMap[categoryId].transaction_count += 1
-      
-      // Track recurring income
-      if (isRecurring) {
-        sourceMap[categoryId].recurring_count += 1
+
+      sourceMap[categoryId].amount += amount;
+      sourceMap[categoryId].transaction_count += 1;
+
+      if (isRecurringSource) {
+        sourceMap[categoryId].recurring_instance_count += 1;
       }
-      
-      // Track frequency distribution
-      if (!sourceMap[categoryId].frequencies[frequency]) {
-        sourceMap[categoryId].frequencies[frequency] = 0
+
+      if (!sourceMap[categoryId].source_frequencies[sourceFrequency]) {
+        sourceMap[categoryId].source_frequencies[sourceFrequency] = 0;
       }
-      sourceMap[categoryId].frequencies[frequency] += 1
-      
-      // Add transaction details
+      sourceMap[categoryId].source_frequencies[sourceFrequency] += 1;
+
+      // Add transaction details for this specific instance
       sourceMap[categoryId].transactions.push({
-        id: income.id,
-        date: income.date,
-        formatted_date: new Date(income.date).toLocaleDateString(),
-        name: income.name || '',
-        description: income.description || '',
+        id: incomeInstance.id, // ID of the original income source
+        date: incomeInstance.date, // Actual date of this occurrence
+        // formatted_date: new Date(incomeInstance.date).toLocaleDateString(), // Can be formatted later if needed
+        description: incomeInstance.name || incomeInstance.description || '', // Name or description of source
         amount: amount,
-        formatted_amount: new Intl.NumberFormat('en-US', { 
-          style: 'currency', 
-          currency: 'USD' 
-        }).format(amount),
-        is_recurring: isRecurring,
-        frequency: frequency,
-        payment_method: income.payment_method || ''
-      })
-    })
-    
-    // Format source data
-    const sources = Object.values(sourceMap).map((source: any) => {
-      const percentOfTotal = totalIncome > 0 ? (source.amount / totalIncome * 100) : 0
-      const recurringPercentage = source.transaction_count > 0 ? 
-        (source.recurring_count / source.transaction_count * 100) : 0
-      
-      // Format frequencies for display
-      const formattedFrequencies = Object.entries(source.frequencies).map(([freq, count]: [string, any]) => ({
-        frequency: freq,
-        count: count,
-        percentage: source.transaction_count > 0 ? (count / source.transaction_count * 100) : 0
-      })).sort((a, b) => b.count - a.count)
-      
+        // formatted_amount: new Intl.NumberFormat('en-US', { 
+        //   style: 'currency', 
+        //   currency: 'USD' 
+        // }).format(amount), // Formatting can be done at presentation layer
+        // is_recurring_source: isRecurringSource, // Info about original source
+        // source_frequency: sourceFrequency, // Info about original source
+        // payment_method: incomeInstance.payment_method || ''
+      });
+    });
+
+    // Format category data for the final output
+    const categoriesOutput = Object.values(sourceMap).map((categoryData: any) => {
+      const percentOfTotal = totalIncome > 0 ? (categoryData.amount / totalIncome * 100) : 0;
+      // const recurringInstancePercentage = categoryData.transaction_count > 0 ? 
+      //   (categoryData.recurring_instance_count / categoryData.transaction_count * 100) : 0;
+
       return {
-        ...source,
-        formatted_amount: new Intl.NumberFormat('en-US', { 
-          style: 'currency', 
-          currency: 'USD' 
-        }).format(source.amount),
-        percent_of_total: percentOfTotal,
-        formatted_percent: `${percentOfTotal.toFixed(1)}%`,
-        average_transaction: source.transaction_count > 0 ? 
-          (source.amount / source.transaction_count) : 0,
-        formatted_average: new Intl.NumberFormat('en-US', { 
-          style: 'currency', 
-          currency: 'USD' 
-        }).format(source.transaction_count > 0 ? 
-          (source.amount / source.transaction_count) : 0),
-        recurring_percentage: recurringPercentage,
-        formatted_recurring: `${recurringPercentage.toFixed(1)}%`,
-        frequencies: formattedFrequencies
-      }
-    }).sort((a: any, b: any) => b.amount - a.amount)
-    
-    // Get monthly breakdown
-    const monthlyData: Record<string, {amount: number, transactions: number, recurring: number}> = {}
-    
-    incomes.forEach((income: any) => {
-      if (!income.date) return
-      
-      const date = new Date(income.date)
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-      const amount = parseFloat(income.amount) || 0
-      const isRecurring = income.is_recurring || false
-      
-      if (!monthlyData[monthKey]) {
-        monthlyData[monthKey] = {
-          amount: 0,
-          transactions: 0,
-          recurring: 0
-        }
-      }
-      
-      monthlyData[monthKey].amount += amount
-      monthlyData[monthKey].transactions += 1
-      if (isRecurring) {
-        monthlyData[monthKey].recurring += 1
-      }
-    })
-    
-    // Format monthly data
-    const monthlyIncome = Object.entries(monthlyData).map(([key, data]) => {
-      const [year, month] = key.split('-')
-      const date = new Date(parseInt(year), parseInt(month) - 1, 1)
-      const monthName = date.toLocaleString('default', { month: 'long' })
-      
-      return {
-        month: `${monthName} ${year}`,
-        monthKey: key,
-        amount: data.amount,
-        formatted_amount: new Intl.NumberFormat('en-US', { 
-          style: 'currency', 
-          currency: 'USD' 
-        }).format(data.amount),
-        transaction_count: data.transactions,
-        recurring_count: data.recurring,
-        recurring_percentage: data.transactions > 0 ? 
-          (data.recurring / data.transactions * 100) : 0,
-        average_per_transaction: data.transactions > 0 ? 
-          (data.amount / data.transactions) : 0,
-        formatted_average: new Intl.NumberFormat('en-US', { 
-          style: 'currency', 
-          currency: 'USD' 
-        }).format(data.transactions > 0 ? (data.amount / data.transactions) : 0)
-      }
-    }).sort((a, b) => b.monthKey.localeCompare(a.monthKey))
-    
-    // Calculate frequency distribution across all income
-    const frequencyDistribution: Record<string, {count: number, amount: number}> = {}
-    incomes.forEach((income: any) => {
-      const frequency = income.frequency || 'one-time'
-      const amount = parseFloat(income.amount) || 0
-      
-      if (!frequencyDistribution[frequency]) {
-        frequencyDistribution[frequency] = {
-          count: 0,
-          amount: 0
-        }
-      }
-      
-      frequencyDistribution[frequency].count += 1
-      frequencyDistribution[frequency].amount += amount
-    })
-    
-    // Format frequency distribution
-    const frequencies = Object.entries(frequencyDistribution).map(([frequency, data]) => ({
-      frequency,
-      count: data.count,
-      percentage: incomes.length > 0 ? (data.count / incomes.length * 100) : 0,
-      amount: data.amount,
-      formatted_amount: new Intl.NumberFormat('en-US', { 
-        style: 'currency', 
-        currency: 'USD' 
-      }).format(data.amount),
-      percent_of_total: totalIncome > 0 ? (data.amount / totalIncome * 100) : 0
-    })).sort((a, b) => b.count - a.count)
-    
+        id: categoryData.id,
+        name: categoryData.name,
+        amount: categoryData.amount,
+        color: categoryData.color,
+        percent: parseFloat(percentOfTotal.toFixed(2)),
+        transactions: categoryData.transactions, // Already shaped correctly
+        // You could add more aggregated data here if the return type is extended:
+        // transaction_count: categoryData.transaction_count,
+        // recurring_instance_count: categoryData.recurring_instance_count,
+        // recurring_instance_percentage: parseFloat(recurringInstancePercentage.toFixed(2)),
+        // source_frequencies: categoryData.source_frequencies
+      };
+    });
+
     return {
-      incomes: processedIncomes,
-      sources,
-      monthlyIncome,
-      frequencies,
-      categories: allCategories || [],
-      summary: {
-        total_income: totalIncome,
-        formatted_total: new Intl.NumberFormat('en-US', { 
-          style: 'currency', 
-          currency: 'USD' 
-        }).format(totalIncome),
-        source_count: sources.length,
-        transaction_count: incomes.length,
-        monthly_average: totalIncome / Math.max(1, monthlyIncome.length),
-        formatted_monthly_average: new Intl.NumberFormat('en-US', { 
-          style: 'currency', 
-          currency: 'USD' 
-        }).format(totalIncome / Math.max(1, monthlyIncome.length)),
-        recurring_count: incomes.filter(inc => inc.is_recurring).length,
-        recurring_percentage: incomes.length > 0 ? 
-          (incomes.filter(inc => inc.is_recurring).length / incomes.length * 100) : 0,
-        period: `${timeFilter.start.toLocaleDateString()} - ${timeFilter.end.toLocaleDateString()}`
-      }
-    }
-  } else {
-    if (incomesError) console.error("Error fetching income sources:", incomesError)
-    if (categoriesError) console.error("Error fetching income categories:", categoriesError)
-    return []
-  }
+      categories: categoriesOutput,
+      total: totalIncome,
+    };
+
+  // Fallback for no incomes or errors handled before this point
+  return { categories: [], total: 0 };
 }
+

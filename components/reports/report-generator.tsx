@@ -31,34 +31,14 @@ const reportFormSchema = z.object({
     "investment-performance",
     "custom"
   ] as const),
-  format: z.enum(["pdf", "csv", "excel"] as const),
+  format: z.enum(["csv", "excel"] as const),
   timeRange: z.enum(["7d", "30d", "90d", "1y", "ytd", "all", "custom"] as const),
   title: z.string().optional(),
   description: z.string().optional(),
   customDateRange: z.object({
     startDate: z.string(),
     endDate: z.string()
-  }).optional(),
-  comparisonEnabled: z.boolean().default(false),
-  comparisonType: z.enum(["previous-period", "year-over-year", "custom", "none"]).default("none"),
-  comparisonTimeRange: z.enum(["7d", "30d", "90d", "1y", "ytd", "all", "custom"]).optional(),
-  comparisonCustomDateRange: z.object({
-    startDate: z.string(),
-    endDate: z.string()
-  }).optional(),
-  dataFilters: z.object({
-    categories: z.array(z.string()).optional(),
-    accounts: z.array(z.string()).optional(),
-    tags: z.array(z.string()).optional(),
-    minAmount: z.number().optional(),
-    maxAmount: z.number().optional()
-  }).optional(),
-  groupBy: z.enum(["day", "week", "month", "quarter", "year", "category", "account", "tag"]).optional(),
-  sortBy: z.enum(["date", "amount", "name", "category"]).optional(),
-  sortDirection: z.enum(["asc", "desc"]).optional(),
-  includeCharts: z.boolean().default(true),
-  chartTypes: z.array(z.enum(["bar", "line", "pie", "area", "scatter"])).optional(),
-  advancedOptions: z.boolean().default(false)
+  }).optional()
 })
 
 type ReportFormValues = z.infer<typeof reportFormSchema>
@@ -71,14 +51,10 @@ export function ReportGenerator() {
     resolver: zodResolver(reportFormSchema),
     defaultValues: {
       type: "overview",
-      format: "pdf",
+      format: "csv",
       timeRange: "30d",
       title: "",
-      description: "",
-      comparisonEnabled: false,
-      comparisonType: "none",
-      includeCharts: true,
-      advancedOptions: false
+      description: ""
     },
   })
 
@@ -194,7 +170,6 @@ export function ReportGenerator() {
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="pdf">PDF Document</SelectItem>
                       <SelectItem value="csv">CSV Spreadsheet</SelectItem>
                       <SelectItem value="excel">Excel Spreadsheet</SelectItem>
                     </SelectContent>
@@ -309,26 +284,6 @@ export function ReportGenerator() {
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="advancedOptions"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
-                  <div className="space-y-0.5">
-                    <FormLabel>Advanced Options</FormLabel>
-                    <FormDescription>
-                      Enable additional report customization options
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
 
             {form.watch('advancedOptions') && (
               <div className="space-y-6 rounded-lg border p-4">

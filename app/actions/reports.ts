@@ -617,6 +617,37 @@ export async function generateReportFile(report: Report): Promise<string> {
         }
         break;
 
+      case 'income-expense':
+        try {
+          console.log(`[generateReportFile] Fetching 'income-expense' report data for type: ${report.type}`);
+          // Ensure we are calling fetchReportData from './fetch-report-data.ts'
+          const reportDataResult = await fetchReportData(report.type as ReportType, report.time_range as TimeRange);
+          console.log('[generateReportFile] Raw income-expense data:', JSON.stringify(reportDataResult, null, 2).substring(0, 500));
+
+          if (reportDataResult && typeof reportDataResult === 'object' && 'transactions' in reportDataResult && Array.isArray(reportDataResult.transactions)) {
+            const transactionsForReport = reportDataResult.transactions;
+            console.log(`[generateReportFile] income-expense: Received ${transactionsForReport.length} total transactions from fetchReportData.`);
+            const incomeItemsCount = transactionsForReport.filter(t => t.type === 'income').length;
+            const expenseItemsCount = transactionsForReport.filter(t => t.type === 'expense').length;
+            console.log(`[generateReportFile] income-expense: Breakdown - Incomes: ${incomeItemsCount}, Expenses: ${expenseItemsCount}.`);
+            
+            if (transactionsForReport.length > 0 && incomeItemsCount === 0 && expenseItemsCount > 0) {
+              console.warn(`[generateReportFile] income-expense: WARNING - No income items found in transactions list, but expenses are present. First 3 transaction items:`, JSON.stringify(transactionsForReport.slice(0,3), null, 2));
+            } else if (transactionsForReport.length > 0 && incomeItemsCount === 0 && expenseItemsCount === 0) {
+              console.warn(`[generateReportFile] income-expense: WARNING - No income OR expense items found in transactions list, though list is not empty. This is unexpected. First 3 transaction items:`, JSON.stringify(transactionsForReport.slice(0,3), null, 2));
+            }
+
+            data = transactionsForReport; // Assign to data for report generation
+          } else {
+            console.warn('[generateReportFile] Income-expense data is not in expected object format or missing transactions array:', typeof reportDataResult, reportDataResult);
+            data = [];
+          }
+        } catch (error) {
+          console.error('[generateReportFile] Error fetching income-expense data for report file:', error);
+          data = [];
+        }
+        break;
+
       case 'subscriptions':
         try {
           const subscriptionData = await fetchSubscriptionData();
