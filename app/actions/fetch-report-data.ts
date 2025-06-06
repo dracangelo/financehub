@@ -6,6 +6,7 @@ import { ReportType, TimeRange } from "./reports"
 import { formatCurrency } from '@/lib/utils'
 import { createClient } from "@supabase/supabase-js"
 import type { Database } from "@/lib/supabase/database.types"
+import { getBudgets } from './budgets';
 
 // Create a type for our Supabase client
 type SupabaseClient = ReturnType<typeof createClient<Database>>
@@ -657,8 +658,102 @@ case 'net-worth':
              end: timeFilter.end.toISOString()
           }
         };
-      case 'budget-analysis':
+      case 'savings-goals': {
+        console.log(`[fetchReportData] Fetching 'savings-goals' data for user ${userId}. Time range: ${timeRange}`);
+        try {
+          const { data: financialGoals, error: financialGoalsError } = await supabase
+            .from('financial_goals') // Use the correct table name
+            .select(`
+              name,
+              target_amount,
+              current_amount,
+              progress,
+              start_date,
+              end_date,
+              priority,
+              category_id,
+              categories(name)
+            `)
+            .eq('user_id', userId);
+
+          if (financialGoalsError) {
+            console.error('[fetchReportData] Error fetching financial goals:', financialGoalsError);
+            throw financialGoalsError;
+          }
+
+          if (!financialGoals) {
+            console.log('[fetchReportData] No financial goals data found.');
+            return [];
+          }
+
+          const processedGoals = financialGoals.map((goal: any) => {
+            // The 'progress' field from financial_goals is expected to be a percentage (0-100)
+            // We'll ensure it's a number and cap it at 100%.
+            const progressPercent = Math.min(parseFloat(goal.progress) || 0, 100);
+
+            return {
+              goal_name: goal.name || 'Unnamed Goal',
+              target_amount: parseFloat(goal.target_amount) || 0,
+              current_amount: parseFloat(goal.current_amount) || 0,
+              progress_percent: progressPercent,
+              start_date: goal.start_date,
+              target_end_date: goal.end_date, // Mapped from end_date column
+              category: goal.goal_categories ? goal.goal_categories.name : 'Uncategorized',
+              priority: goal.priority, // Assuming priority is a number as per Goal type, or handle text
+            };
+          });
+
+          console.log(`[fetchReportData] Processed ${processedGoals.length} financial goals for report.`);
+          return processedGoals;
+        } catch (error) {
+          console.error('[fetchReportData] Critical error in savings-goals report data fetching:', error);
+          return []; // Return empty array on critical error to prevent report generation failure
+        }
+      }
+
+      case 'budgets_list': {
+      console.log("[fetchReportData] Fetching 'budgets_list' data.");
+      const budgetsData = await getBudgets(); // getBudgets handles its own auth & supabase client
+      
+      if (!budgetsData) {
+        console.log("[fetchReportData] No data returned from getBudgets for 'budgets_list'.");
+        return [];
+      }
+
+      const reportResult = budgetsData.map((budget: any) => {
+        const categoryNames = new Set<string>();
+        // Ensure categoriesWithSubs exists and is an array before iterating
+        if (Array.isArray(budget.categoriesWithSubs)) {
+          budget.categoriesWithSubs.forEach((parentCat: any) => {
+            if (parentCat && typeof parentCat.name === 'string') {
+              categoryNames.add(parentCat.name);
+            }
+            // Ensure children exists and is an array before iterating
+            if (Array.isArray(parentCat.children)) {
+              parentCat.children.forEach((subCat: any) => {
+                if (subCat && typeof subCat.name === 'string') {
+                  categoryNames.add(subCat.name);
+                }
+              });
+            }
+          });
+        }
+
+        return {
+          name: budget.name || 'Unnamed Budget',
+          amount: typeof budget.totalAllocated === 'number' ? budget.totalAllocated : 0,
+          start_date: budget.start_date || '',
+          end_date: budget.end_date || '',
+          categories: Array.from(categoryNames),
+          allocated: typeof budget.totalAllocated === 'number' ? budget.totalAllocated : 0,
+        };
+      });
+      console.log(`[fetchReportData] Processed ${reportResult.length} budgets for 'budgets_list'.`);
+      return reportResult;
+    }
+      case 'budget-analysis': {
         return await fetchBudgetAnalysisData(supabase, userId, timeFilter);
+      }
       case 'spending-categories':
         return await fetchSpendingCategoriesData(supabase, userId, timeFilter);
       case 'debt-analysis': { 

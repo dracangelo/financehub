@@ -43,6 +43,7 @@ export type ReportType =
   | 'net-worth' 
   | 'investments' 
   | 'budget-analysis' 
+  | 'budgets_list'
   | 'spending-categories' 
   | 'income-sources' 
   | 'expense-trends' 
@@ -545,6 +546,24 @@ export async function generateReportFile(report: Report): Promise<string> {
         }
         break;
       
+      case 'savings-goals':
+        try {
+          console.log(`[generateReportFile] Fetching 'savings-goals' report data for type: ${report.type}`);
+          const savingsGoalsReportData = await fetchReportData(report.type as ReportType, report.time_range as TimeRange);
+          console.log('[generateReportFile] Raw savings-goals data:', JSON.stringify(savingsGoalsReportData, null, 2).substring(0, 500));
+          if (savingsGoalsReportData && Array.isArray(savingsGoalsReportData)) {
+            data = savingsGoalsReportData;
+            console.log(`[generateReportFile] Savings goals data has ${data.length} items.`);
+          } else {
+            console.warn('[generateReportFile] Savings goals data is not in expected array format:', typeof savingsGoalsReportData, savingsGoalsReportData);
+            data = [];
+          }
+        } catch (error) {
+          console.error('[generateReportFile] Error fetching savings goals data for report file:', error);
+          data = [];
+        }
+        break;
+
       case 'debt-analysis':
         try {
           const debtData = await fetchDebtData();
