@@ -353,92 +353,74 @@ export function generateReportByFormat(data: any[], report: Report): Blob {
   }
 }
 
-// Download the generated report
 export function downloadReport(blob: Blob, filename: string) {
   saveAs(blob, filename);
 }
 
+// Define the allowed report types and their corresponding headers
+const REPORT_HEADERS: Record<string, Array<{ key: string, label: string }>> = {
+  'income-sources': [
+    { key: 'source', label: 'Source' },
+    { key: 'amount', label: 'Amount' },
+    { key: 'percentage', label: 'Percentage' },
+    { key: 'transactions', label: 'Transactions' },
+    { key: 'average', label: 'Average' },
+  ],
+  'expense-trends': [
+    { key: 'date', label: 'Date' },
+    { key: 'category', label: 'Category' },
+    { key: 'amount', label: 'Amount' },
+    { key: 'description', label: 'Description' },
+    { key: 'account', label: 'Account' },
+    { key: 'payment_method', label: 'Payment Method' },
+  ],
+  'net-worth': [
+    { key: 'date', label: 'Date' },
+    { key: 'assets', label: 'Assets' },
+    { key: 'liabilities', label: 'Liabilities' },
+    { key: 'net_worth', label: 'Net Worth' },
+    { key: 'change', label: 'Change' },
+  ],
+  'savings-goals': [
+    { key: 'name', label: 'Goal' },
+    { key: 'target_amount', label: 'Target Amount' },
+    { key: 'current_amount', label: 'Current Amount' },
+    { key: 'progress', label: 'Progress' },
+    { key: 'target_date', label: 'Target Date' },
+    { key: 'status', label: 'Status' },
+  ],
+  'debt': [
+    { key: 'name', label: 'Debt Name' },
+    { key: 'type', label: 'Type' },
+    { key: 'balance', label: 'Balance' },
+    { key: 'interest_rate', label: 'Interest Rate' },
+    { key: 'minimum_payment', label: 'Minimum Payment' },
+    { key: 'due_date', label: 'Due Date' },
+  ]
+};
+
 // Get headers for each report type
 function getReportHeaders(reportType: string, data?: any[]): Array<{ key: string, label: string }> {
-  switch (reportType) {
-    case 'transactions':
-      return [
-        { key: 'date', label: 'Date' },
-        { key: 'name', label: 'Description' },
-        { key: 'category', label: 'Category' },
-        { key: 'formatted_amount', label: 'Amount' },
-        { key: 'account', label: 'Account' },
-        { key: 'type', label: 'Type' },
-        { key: 'recurring', label: 'Recurring' },
-        { key: 'tax_deductible', label: 'Tax Deductible' }
-      ];
-
-    case 'income-expense':
-      const incomeExpenseHeaders = [
-        { key: 'date', label: 'Date' },
-        { key: 'name', label: 'Description' },
-        { key: 'category', label: 'Category' },
-        { key: 'type', label: 'Type' },
-        { key: 'formatted_amount', label: 'Amount' }
-      ];
-      
-      return incomeExpenseHeaders;
-      
-    case 'income-sources':
-      return [
-        { key: 'source', label: 'Income Source' },
-        { key: 'formatted_amount', label: 'Amount' },
-        { key: 'formatted_percent', label: 'Percent of Total' },
-        { key: 'count', label: 'Number of Entries' },
-        { key: 'recurring_count', label: 'Recurring Entries' },
-        { key: 'recurring_percentage', label: 'Recurring %' }
-      ];
-
-    case 'overview':
-      const overviewHeaders = [
-        { key: 'date', label: 'Date' },
-        { key: 'name', label: 'Description' },
-        { key: 'type', label: 'Type' },
-        { key: 'formatted_amount', label: 'Amount' }
-      ];
-      return overviewHeaders;
-      
-    case 'expense-trends':
-      return [
-        { key: 'name', label: 'Expense' },
-        { key: 'formatted_amount', label: 'Amount' },
-        { key: 'formatted_expense_date', label: 'Date' },
-        { key: 'category', label: 'Category' },
-        { key: 'frequency', label: 'Frequency' },
-        { key: 'formatted_warranty_expiry', label: 'Warranty Expires' }
-      ];
-
-    case 'debt-analysis':
-      return [
-        { key: 'name', label: 'Debt Name' },
-        { key: 'type', label: 'Type' },
-        { key: 'balance', label: 'Balance' },
-        { key: 'interest_rate', label: 'Interest Rate (%)' },
-        { key: 'minimum_payment', label: 'Minimum Payment' }
-      ];
-
-    case 'net-worth':
-      return [
-        { key: 'name', label: 'Name' },
-        { key: 'category', label: 'Category' },
-        { key: 'record_type', label: 'Type (Asset/Liability)' },
-        { key: 'current_value', label: 'Current Value' }
-      ];
-
-    default:
-      // Dynamic headers based on data structure
-      if (!data || !data.length) return [];
-      const firstItem = data[0] || {};
-      return Object.keys(firstItem).map(key => ({
-        key, 
-        label: key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
-      }));
+  // If the report type is in our allowed list, return its headers
+  if (Object.prototype.hasOwnProperty.call(REPORT_HEADERS, reportType)) {
+    return REPORT_HEADERS[reportType as keyof typeof REPORT_HEADERS];
   }
+  
+  // For unknown report types, try to infer headers from the data
+  if (data && data.length > 0 && typeof data[0] === 'object') {
+    return Object.keys(data[0]).map(key => ({
+      key,
+      label: key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+    }));
+  }
+  
+  // Default fallback
+  return [
+    { key: 'name', label: 'Name' },
+    { key: 'value', label: 'Value' },
+    { key: 'date', label: 'Date' },
+    { key: 'description', label: 'Description' },
+  ];
 }
 
 function formatTimeRange(timeRange: string): string {

@@ -38,20 +38,10 @@ import { generateReportByFormat } from "@/lib/report-generators-updated"
 
 // Types for report data
 export type ReportType = 
-  | 'overview' 
-  | 'income-expense' 
-  | 'net-worth' 
-  | 'investments' 
-  | 'budget-analysis' 
-  | 'budgets_list'
-  | 'spending-categories' 
   | 'income-sources' 
   | 'expense-trends' 
+  | 'net-worth' 
   | 'savings-goals' 
-  | 'debt-analysis' 
-  | 'investment-performance'
-  | 'subscriptions' 
-  | 'custom'
   | 'debt'
 export type ReportFormat = 'pdf' | 'csv' | 'excel'
 export type TimeRange = '7d' | '30d' | '90d' | '1y' | 'ytd' | 'all' | 'custom'
@@ -507,268 +497,212 @@ export async function generateReportFile(report: Report): Promise<string> {
   }
 
   try {
+    // Ensure the report type is one of the allowed types
+    const allowedReportTypes = ['income-sources', 'expense-trends', 'net-worth', 'savings-goals', 'debt'] as const;
+    if (!allowedReportTypes.includes(report.type as any)) {
+      const errorMessage = `Unsupported report type: ${report.type}. Only the following report types are allowed: ${allowedReportTypes.join(', ')}`;
+      console.error(errorMessage);
+      await supabase.from('reports').update({ 
+        status: 'failed', 
+        error_message: errorMessage,
+        updated_at: new Date().toISOString()
+      }).eq('id', report.id);
+      throw new Error(errorMessage);
+    }
+
     let data: any[] = [];
     const timeFilter = getTimeRangeFilter(report.time_range);
     console.log(`Time filter generated for range "${report.time_range}":`, timeFilter);
 
+    // Process the report based on its type
     switch (report.type) {
       case 'income-sources':
         try {
+          console.log(`[${report.id}] Fetching income sources data for report`);
           const incomeSourcesData = await fetchIncomeData(timeFilter);
-          console.log('Raw income sources data:', JSON.stringify(incomeSourcesData, null, 2).substring(0, 500));
+          
           if (incomeSourcesData && Array.isArray(incomeSourcesData)) {
             data = incomeSourcesData;
-            console.log(`Income sources data has ${incomeSourcesData.length} items.`);
+            console.log(`[${report.id}] Successfully fetched ${incomeSourcesData.length} income sources`);
           } else {
-            console.warn('Income sources data is not in expected array format:', typeof incomeSourcesData, incomeSourcesData);
-            data = []; 
+            const warning = 'Income sources data is not in expected array format';
+            console.warn(`[${report.id}] ${warning}:`, typeof incomeSourcesData);
+            data = [];
           }
         } catch (error) {
-          console.error('Error fetching income sources data:', error);
-          data = []; 
+          console.error(`[${report.id}] Error fetching income sources:`, error);
+          data = [];
         }
         break;
         
       case 'expense-trends':
         try {
+          console.log(`[${report.id}] Fetching expense trends data`);
           const expenseData = await fetchExpenseData(timeFilter);
-          console.log('Raw expense data for trends report:', JSON.stringify(expenseData, null, 2).substring(0, 500));
+          
           if (expenseData && Array.isArray(expenseData)) {
             data = expenseData;
-            console.log(`Expense data for trends report has ${expenseData.length} items.`);
+            console.log(`[${report.id}] Successfully fetched ${expenseData.length} expense records`);
           } else {
-            console.warn('Expense trends data is not in expected array format:', typeof expenseData, expenseData);
-            data = []; 
+            const warning = 'Expense data is not in expected array format';
+            console.warn(`[${report.id}] ${warning}:`, typeof expenseData);
+            data = [];
           }
         } catch (error) {
-          console.error('Error fetching expense data for trends report:', error);
-          data = []; 
+          console.error(`[${report.id}] Error fetching expense data:`, error);
+          data = [];
         }
         break;
       
       case 'savings-goals':
         try {
-          console.log(`[generateReportFile] Fetching 'savings-goals' report data for type: ${report.type}`);
-          const savingsGoalsReportData = await fetchReportData(report.type as ReportType, report.time_range as TimeRange);
-          console.log('[generateReportFile] Raw savings-goals data:', JSON.stringify(savingsGoalsReportData, null, 2).substring(0, 500));
-          if (savingsGoalsReportData && Array.isArray(savingsGoalsReportData)) {
-            data = savingsGoalsReportData;
-            console.log(`[generateReportFile] Savings goals data has ${data.length} items.`);
+          console.log(`[${report.id}] Fetching savings goals data`);
+          const savingsData = await fetchReportData('savings-goals', report.time_range);
+          
+          if (savingsData && Array.isArray(savingsData)) {
+            data = savingsData;
+            console.log(`[${report.id}] Successfully fetched ${savingsData.length} savings goals`);
+          } else if (savingsData && typeof savingsData === 'object' && 'data' in savingsData) {
+            // Handle case where fetchReportData returns { data: [...] }
+            data = Array.isArray(savingsData.data) ? savingsData.data : [];
+            console.log(`[${report.id}] Successfully fetched ${data.length} savings goals from data property`);
           } else {
-            console.warn('[generateReportFile] Savings goals data is not in expected array format:', typeof savingsGoalsReportData, savingsGoalsReportData);
+            const warning = 'Savings goals data is not in expected format';
+            console.warn(`[${report.id}] ${warning}:`, typeof savingsData);
             data = [];
           }
         } catch (error) {
-          console.error('[generateReportFile] Error fetching savings goals data for report file:', error);
+          console.error(`[${report.id}] Error fetching savings goals:`, error);
           data = [];
         }
         break;
 
-      case 'debt-analysis':
+      case 'debt':
         try {
-          const debtData = await fetchDebtData();
-          console.log('Raw debt data:', JSON.stringify(debtData, null, 2).substring(0, 500));
+          console.log(`[${report.id}] Fetching debt data`);
+          const debtData = await fetchReportData('debt', report.time_range);
+          
           if (debtData && Array.isArray(debtData)) {
             data = debtData;
-            console.log(`Debt data has ${debtData.length} items.`);
+            console.log(`[${report.id}] Successfully fetched ${debtData.length} debt records`);
+          } else if (debtData && typeof debtData === 'object' && 'data' in debtData) {
+            // Handle case where fetchReportData returns { data: [...] }
+            data = Array.isArray(debtData.data) ? debtData.data : [];
+            console.log(`[${report.id}] Successfully fetched ${data.length} debt records from data property`);
           } else {
-            console.warn('Debt data is not in expected array format:', typeof debtData, debtData);
+            const warning = 'Debt data is not in expected format';
+            console.warn(`[${report.id}] ${warning}:`, typeof debtData);
             data = [];
           }
         } catch (error) {
-          console.error('Error fetching debt data:', error);
+          console.error(`[${report.id}] Error fetching debt data:`, error);
           data = [];
         }
         break;
         
       case 'net-worth':
         try {
-          console.log(`Fetching net-worth report data directly for type: ${report.type}`);
-          // Call the main fetchReportData which now handles 'net-worth' specifically
-          const netWorthReportData = await fetchReportData(report.type as ReportType, report.time_range as TimeRange) as NetWorthReportDataType;
-          console.log('Raw net-worth data from fetchReportData:', JSON.stringify(netWorthReportData, null, 2).substring(0, 500));
-          // The prepareReportData function expects an array of objects.
-          // For net-worth, we need to decide how to structure this. 
-          // Let's pass assets and liabilities as separate arrays within an object, 
-          // or combine them if prepareReportData can handle it.
-          // For now, let's assume prepareReportData will be updated or can handle this structure.
-          if (netWorthReportData && typeof netWorthReportData === 'object' && ('assets' in netWorthReportData || 'liabilities' in netWorthReportData)) {
-             // We need to transform this into a single array for generateReportByFormat
-            // which expects data: any[].
-            // Let's combine assets and liabilities into a single list for the report,
-            // distinguishing them by a 'record_type' field.
-            type CombinedEntry = (Asset | Liability) & { record_type: 'Asset' | 'Liability' };
-            const combinedData: CombinedEntry[] = [];
-            if (Array.isArray(netWorthReportData.assets)) {
-              netWorthReportData.assets.forEach((asset: Asset) => combinedData.push({ ...asset, record_type: 'Asset' }));
+          console.log(`[${report.id}] Fetching net worth data`);
+          const netWorthData = await fetchReportData('net-worth', report.time_range);
+          
+          if (netWorthData && typeof netWorthData === 'object' && netWorthData !== null) {
+            // Handle the net worth data structure with assets and liabilities
+            const combinedData: Array<Asset | Liability & { record_type: 'Asset' | 'Liability' }> = [];
+            
+            // Process assets if available
+            if ('assets' in netWorthData && Array.isArray(netWorthData.assets)) {
+              netWorthData.assets.forEach((asset: Asset) => {
+                combinedData.push({ ...asset, record_type: 'Asset' as const });
+              });
             }
-            if (Array.isArray(netWorthReportData.liabilities)) {
-              netWorthReportData.liabilities.forEach((liability: Liability) => combinedData.push({ ...liability, record_type: 'Liability' }));
+            
+            // Process liabilities if available
+            if ('liabilities' in netWorthData && Array.isArray(netWorthData.liabilities)) {
+              netWorthData.liabilities.forEach((liability: Liability) => {
+                combinedData.push({ ...liability, record_type: 'Liability' as const });
+              });
             }
+            
             data = combinedData;
-            console.log(`Processed net-worth data has ${data.length} combined items.`);
+            console.log(`[${report.id}] Successfully processed net worth data with ${data.length} items`);
           } else {
-            console.warn('Net-worth data is not in the expected object format with assets/liabilities:', netWorthReportData);
+            const warning = 'Net worth data is not in expected format';
+            console.warn(`[${report.id}] ${warning}:`, typeof netWorthData);
             data = [];
           }
         } catch (error) {
-          console.error('Error fetching net-worth data in generateReportFile:', error);
+          console.error(`[${report.id}] Error fetching net worth data:`, error);
           data = [];
         }
         break;
-
-      case 'income-expense':
-        try {
-          console.log(`[generateReportFile] Fetching 'income-expense' report data for type: ${report.type}`);
-          // Ensure we are calling fetchReportData from './fetch-report-data.ts'
-          const reportDataResult = await fetchReportData(report.type as ReportType, report.time_range as TimeRange);
-          console.log('[generateReportFile] Raw income-expense data:', JSON.stringify(reportDataResult, null, 2).substring(0, 500));
-
-          if (reportDataResult && typeof reportDataResult === 'object' && 'transactions' in reportDataResult && Array.isArray(reportDataResult.transactions)) {
-            const transactionsForReport = reportDataResult.transactions;
-            console.log(`[generateReportFile] income-expense: Received ${transactionsForReport.length} total transactions from fetchReportData.`);
-            const incomeItemsCount = transactionsForReport.filter(t => t.type === 'income').length;
-            const expenseItemsCount = transactionsForReport.filter(t => t.type === 'expense').length;
-            console.log(`[generateReportFile] income-expense: Breakdown - Incomes: ${incomeItemsCount}, Expenses: ${expenseItemsCount}.`);
-            
-            if (transactionsForReport.length > 0 && incomeItemsCount === 0 && expenseItemsCount > 0) {
-              console.warn(`[generateReportFile] income-expense: WARNING - No income items found in transactions list, but expenses are present. First 3 transaction items:`, JSON.stringify(transactionsForReport.slice(0,3), null, 2));
-            } else if (transactionsForReport.length > 0 && incomeItemsCount === 0 && expenseItemsCount === 0) {
-              console.warn(`[generateReportFile] income-expense: WARNING - No income OR expense items found in transactions list, though list is not empty. This is unexpected. First 3 transaction items:`, JSON.stringify(transactionsForReport.slice(0,3), null, 2));
-            }
-
-            data = transactionsForReport; // Assign to data for report generation
-          } else {
-            console.warn('[generateReportFile] Income-expense data is not in expected object format or missing transactions array:', typeof reportDataResult, reportDataResult);
-            data = [];
-          }
-        } catch (error) {
-          console.error('[generateReportFile] Error fetching income-expense data for report file:', error);
-          data = [];
-        }
-        break;
-
-      case 'subscriptions':
-        try {
-          const subscriptionData = await fetchSubscriptionData();
-          console.log('Raw subscription data:', JSON.stringify(subscriptionData, null, 2).substring(0, 500));
-          if (subscriptionData && Array.isArray(subscriptionData)) {
-            data = subscriptionData;
-            console.log(`Subscription data has ${subscriptionData.length} items.`);
-          } else {
-            console.warn('Subscription data is not in expected array format:', typeof subscriptionData, subscriptionData);
-            data = [];
-          }
-        } catch (error) {
-          console.error('Error fetching subscription data:', error);
-          data = [];
-        }
-        break;
-
+      
       default:
-        try {
-          const genericData = await fetchReportDataFields(report.type, report.time_range);
-          console.log(`Raw data for ${report.type}:`, JSON.stringify(genericData, null, 2).substring(0, 500));
-          if (genericData && Array.isArray(genericData)) {
-            data = genericData;
-            console.log(`Generic data for ${report.type} has ${genericData.length} items.`);
-          } else if (report.type === 'overview' && 
-                     genericData && 
-                     typeof genericData === 'object' &&
-                     'income' in genericData && 
-                     'expenses' in genericData && 
-                     'debts' in genericData && 
-                     'subscriptions' in genericData) {
-            // Type assertion for clarity, assuming genericData matches the expected overview structure
-            const overviewData = genericData as {
-              income: any[];
-              expenses: any[];
-              debts: any[];
-              subscriptions: any[];
-              // timeRange is also present but not directly used to form the 'data' array here
-            };
-            
-            data = [
-              ...(overviewData.income || []).map(item => ({ ...item, reportDataType: 'Income' })),
-              ...(overviewData.expenses || []).map(item => ({ ...item, reportDataType: 'Expense' })),
-              ...(overviewData.debts || []).map(item => ({ ...item, reportDataType: 'Debt' })),
-              ...(overviewData.subscriptions || []).map(item => ({ ...item, reportDataType: 'Subscription' })),
-            ];
-            console.log(`Processed overview data for ${report.type}. Total items: ${data.length}`);
-          } else {
-            // Log the actual structure if it's an object but not the overview format we expect
-            const logData = typeof genericData === 'object' ? JSON.stringify(genericData, null, 2).substring(0, 500) : genericData;
-            console.warn(`${report.type} data is not in expected array format or overview object format:`, typeof genericData, logData);
-            data = [];
-          }
-        } catch (error) {
-          console.error(`Error fetching data for ${report.type}:`, error);
-          data = [];
-        }
-        break;
+        // This should never be reached due to the type checking above, but TypeScript needs this for exhaustiveness
+        const _exhaustiveCheck: never = report.type;
+        const errorMessage = `Unhandled report type: ${_exhaustiveCheck}`;
+        console.error(`[${report.id}] ${errorMessage}`);
+        await supabase.from('reports').update({ 
+          status: 'failed', 
+          error_message: errorMessage,
+          updated_at: new Date().toISOString() 
+        }).eq('id', report.id);
+        throw new Error(errorMessage);
     }
 
+    console.log(`Data prepared for report "${report.title}" (type: ${report.type}):`, JSON.stringify(data, null, 2).substring(0, 500));
     if (!Array.isArray(data)) {
-        console.warn(`Data for report type ${report.type} was not an array after fetching, coercing to empty. Original data:`, JSON.stringify(data, null, 2).substring(0,500));
-        data = [];
+      console.error(`Data for report type ${report.type} is not an array after processing:`, data);
+      data = []; // Ensure data is an array to prevent downstream errors
     }
-    
-    console.log(`Final data array for ${report.type} (length ${data.length}) being passed to generateReportByFormat:`, JSON.stringify(data, null, 2).substring(0,500));
+    console.log(`Number of records for report ${report.type}: ${data.length}`);
 
-    const filename = `${report.type}_${report.format}_${uuidv4()}.${getFileExtension(report.format)}`;
-    const filePath = `reports/${userId}/${filename}`;
+    const fileName = `${report.type}_${report.id}.${getFileExtension(report.format)}`;
+    const filePath = `${userId}/${fileName}`;
+    console.log(`Generating report file: ${filePath}`);
 
     const reportBlob: Blob = await generateReportByFormat(data, report);
     const fileBuffer = await reportBlob.arrayBuffer();
-    const actualContentType = reportBlob.type;
-    
-    console.log(`Generated report file for ${filePath}. ContentType: ${actualContentType}, Buffer size: ${fileBuffer?.byteLength}`);
+    console.log(`Report file Blob generated for ${filePath}. Size: ${reportBlob.size} bytes. Type: ${reportBlob.type}`);
 
-    const adminClient = await createAdminSupabaseClient();
-    let uploadSuccessful = false;
+    // Try uploading with admin client first (bypasses RLS)
     let publicUrl: string | null = null;
-
-    if (adminClient) {
-      try {
-        console.log(`Attempting to upload ${filePath} with admin client.`);
-        const { error: adminUploadError } = await adminClient.storage
-          .from('reports')
-          .upload(filePath, fileBuffer, {
-            contentType: actualContentType,
-            cacheControl: '3600',
-            upsert: true
-          });
-
-        if (adminUploadError) {
-          console.error(`Admin client upload error for ${filePath}:`, adminUploadError);
-          if (adminUploadError.message && adminUploadError.message.includes('<html>')) {
-            console.error('Admin client received HTML response, possibly an auth or service issue with storage.');
-          }
-        } else {
-          uploadSuccessful = true;
-          console.log(`Report file ${filePath} uploaded successfully with admin client.`);
-          const { data: urlDataResult } = await adminClient.storage.from('reports').getPublicUrl(filePath);
-          publicUrl = urlDataResult?.publicUrl || null;
-        }
-      } catch (e) {
-        console.error(`Exception during admin client upload for ${filePath}:`, e);
+    try {
+      const adminSupabase = await createAdminSupabaseClient(); // Ensure await if it's async
+      if (!adminSupabase) {
+        console.warn('Admin Supabase client is null. Falling back to regular client for upload.');
+        throw new Error('Admin Supabase client initialization failed.'); // This will trigger the catch block for regular client upload
       }
-    }
-
-    if (!uploadSuccessful) {
-      console.log(`Admin client upload failed or not available for ${filePath}. Falling back to regular client.`);
-      const { error: uploadError } = await supabase.storage
+      const { data: uploadData, error: uploadError } = await adminSupabase.storage
         .from('reports')
         .upload(filePath, fileBuffer, {
-          contentType: actualContentType,
-          cacheControl: '3600',
-          upsert: true
+          contentType: report.format === 'pdf' ? 'application/pdf' : report.format === 'csv' ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          upsert: true, 
+        });
+
+      if (uploadError) {
+        console.error(`Admin client upload error for ${filePath}:`, uploadError);
+        // Rethrow to be caught by the outer catch block, which will then try regular client
+        throw new Error(`Admin client failed to upload report file ${filePath}: ${uploadError.message}`);
+      }
+      console.log(`Report file ${filePath} uploaded successfully with admin client.`);
+      const { data: urlDataResult } = adminSupabase.storage.from('reports').getPublicUrl(filePath);
+      publicUrl = urlDataResult?.publicUrl || null;
+
+    } catch (adminUploadError) {
+      console.warn(`Admin client upload failed for ${filePath}: ${(adminUploadError as Error).message}. Attempting with regular client...`);
+      
+      // Fallback to regular client if admin client fails
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('reports')
+        .upload(filePath, fileBuffer, {
+          contentType: report.format === 'pdf' ? 'application/pdf' : report.format === 'csv' ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          upsert: true,
         });
 
       if (uploadError) {
         console.error(`Regular client upload error for ${filePath}:`, uploadError);
         if (uploadError.message && uploadError.message.includes('new row violates row-level security policy')) {
-            console.error("RLS policy violation detected during fallback upload. This might indicate an issue with user permissions or bucket policies.");
+          console.error("RLS policy violation detected during fallback upload. This might indicate an issue with user permissions or bucket policies.");
         }
         throw new Error(`Failed to upload report file ${filePath} with regular client: ${uploadError.message}`);
       }
@@ -839,20 +773,31 @@ export async function deleteReport(id: string) {
   }
 }
 
-// Helper functions
+/**
+ * Format a report type into a human-readable string
+ * @param type The report type to format
+ * @returns A formatted string representation of the report type
+ */
 function formatReportType(type: ReportType): string {
-  switch (type) {
-    case 'overview':
-      return 'Financial Overview'
-    case 'income-expense':
-      return 'Income & Expenses'
-    case 'net-worth':
-      return 'Net Worth'
-    case 'investments':
-      return 'Investment Performance'
-    default:
-      return String(type).charAt(0).toUpperCase() + String(type).slice(1).replace(/-/g, ' ')
-  }
+  const typeMap: Record<ReportType, string> = {
+    'income-sources': 'Income Sources',
+    'expense-trends': 'Expense Trends',
+    'net-worth': 'Net Worth',
+    'savings-goals': 'Savings Goals',
+    'debt': 'Debt Analysis'
+  };
+
+  // This type assertion is safe because ReportType is already restricted to the keys of typeMap
+  return typeMap[type as keyof typeof typeMap] || 
+    // Fallback that should never be reached due to TypeScript's type checking
+    (() => {
+      const fallback = String(type)
+        .split('-')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+      console.warn(`Unexpected report type in formatReportType: ${type}`);
+      return fallback;
+    })();
 }
 
 function getFileExtension(format: ReportFormat): string {

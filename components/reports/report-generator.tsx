@@ -16,21 +16,17 @@ import { z } from "zod"
 import { generateReport, ReportRequest, ReportType, ReportFormat, TimeRange } from "@/app/actions/reports"
 import { Loader2 } from "lucide-react"
 
+// Define the allowed report types
+const ALLOWED_REPORT_TYPES = [
+  'income-sources',
+  'expense-trends',
+  'net-worth',
+  'savings-goals',
+  'debt'
+] as const;
+
 const reportFormSchema = z.object({
-  type: z.enum([
-    "overview", 
-    "income-expense", 
-    "net-worth", 
-    "investments",
-    "budget-analysis",
-    "spending-categories",
-    "income-sources",
-    "expense-trends",
-    "savings-goals",
-    "debt-analysis",
-    "investment-performance",
-    "custom"
-  ] as const),
+  type: z.enum(ALLOWED_REPORT_TYPES),
   format: z.enum(["csv", "excel"] as const),
   timeRange: z.enum(["7d", "30d", "90d", "1y", "ytd", "all", "custom"] as const),
   title: z.string().optional(),
@@ -50,7 +46,7 @@ export function ReportGenerator() {
   const form = useForm<ReportFormValues>({
     resolver: zodResolver(reportFormSchema),
     defaultValues: {
-      type: "overview",
+      type: "income-sources",
       format: "csv",
       timeRange: "30d",
       title: "",
@@ -135,18 +131,11 @@ export function ReportGenerator() {
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="overview">Financial Overview</SelectItem>
-                      <SelectItem value="income-expense">Income & Expenses</SelectItem>
-                      <SelectItem value="net-worth">Net Worth</SelectItem>
-                      <SelectItem value="investments">Investment Performance</SelectItem>
-                      <SelectItem value="budget-analysis">Budget Analysis</SelectItem>
-                      <SelectItem value="spending-categories">Spending by Category</SelectItem>
                       <SelectItem value="income-sources">Income Sources</SelectItem>
                       <SelectItem value="expense-trends">Expense Trends</SelectItem>
+                      <SelectItem value="net-worth">Net Worth</SelectItem>
                       <SelectItem value="savings-goals">Savings Goals</SelectItem>
-                      <SelectItem value="debt-analysis">Debt Analysis</SelectItem>
-                      <SelectItem value="investment-performance">Detailed Investment Performance</SelectItem>
-                      <SelectItem value="custom">Custom Report</SelectItem>
+                      <SelectItem value="debt">Debt Analysis</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormDescription>
