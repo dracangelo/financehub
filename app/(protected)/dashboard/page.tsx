@@ -22,7 +22,7 @@ import { WidgetLayout } from "@/components/dashboard/widget-layout"
 import { IncomeExpenseChart } from "@/components/charts/income-expense-chart"
 import { FinancialInsights } from "@/components/dashboard/financial-insights"
 import { FinancialSummary } from "@/components/dashboard/financial-summary"
-import { InvestmentAnalyticsWidget } from "@/components/dashboard/investment-analytics-widget"
+import { InvestmentList } from "@/components/investments/investment-list"
 import { ProjectedFinancesWidget } from "@/components/dashboard/projected-finances"
 import { MobileTabButtons } from "@/components/dashboard/mobile-tab-buttons"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -264,7 +264,7 @@ export default async function DashboardPage() {
           {/* Investments Tab */}
           <TabsContent value="investments" className="space-y-6">
             {/* Investment Portfolio Analytics */}
-            <InvestmentAnalyticsWidget />
+            <InvestmentList />
           </TabsContent>
           
           {/* Assistant Tab */}

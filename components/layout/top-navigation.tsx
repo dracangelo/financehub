@@ -129,7 +129,6 @@ export function TopNavigation({
                 </DropdownMenuItem>
                 <DropdownMenuItem className="flex flex-col items-start py-2">
                   <div className="font-medium">New Feature</div>
-                  <div className="text-xs text-muted-foreground">ESG Screener now available</div>
                   <div className="text-xs text-muted-foreground mt-1">Yesterday</div>
                 </DropdownMenuItem>
                 <DropdownMenuItem className="flex flex-col items-start py-2">

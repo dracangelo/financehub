@@ -48,7 +48,6 @@ const expenseFormSchema = z.object({
   amount: z.coerce.number().positive("Amount must be a positive number"),
   currency: z.string().default("USD"),
   category_ids: z.array(z.string()).optional(),
-  budget_item_id: z.string().optional().nullable(),
   expense_date: z.date({
     required_error: "A date is required",
   }),
@@ -174,7 +173,7 @@ export function ExpenseForm({
       amount: expense?.amount || 0,
       currency: expense?.currency || "USD",
       category_ids: expense?.categories?.map(cat => cat.id) || [],
-      budget_item_id: expense?.budget_item_id || null,
+
       expense_date: expense?.expense_date ? new Date(expense.expense_date) : new Date(),
       location_name: expense?.location_name || "",
       latitude: expense?.latitude || null,
@@ -187,7 +186,7 @@ export function ExpenseForm({
       // Extract the person's name from the note field if it exists
       split_with_user: expense?.splits?.[0] ? extractNameFromNote(expense.splits[0].note) || "" : "",
       split_amount: expense?.splits?.[0]?.amount || null,
-      split_note: expense?.splits?.[0]?.note || null,
+      split_note: expense?.splits?.[0]?.note || "",
     },
   });
 
@@ -231,7 +230,7 @@ export function ExpenseForm({
         amount: expense.amount || 0,
         currency: expense.currency || "USD",
         category_ids: expense.categories?.map((cat: any) => cat.id) || [],
-        budget_item_id: expense.budget_item_id || null,
+
         expense_date: expense.expense_date ? new Date(expense.expense_date) : new Date(),
         location_name: expense.location_name || null,
         recurrence: expense.recurrence || "none",
@@ -418,12 +417,12 @@ export function ExpenseForm({
 
     try {
       // Prepare the expense data
-      let expenseData: any = {
+      const expenseData = {
         merchant: data.merchant,
         amount: Number(data.amount),
         currency: data.currency,
         category_ids: data.category_ids || [],
-        budget_item_id: data.budget_item_id === 'none' ? null : data.budget_item_id,
+  
         expense_date: data.expense_date,
         location_name: data.location_name || null,
         latitude: data.latitude,
@@ -746,32 +745,6 @@ export function ExpenseForm({
                 {field.value && field.value.length >= 3 && (
                   <p className="text-xs text-muted-foreground mt-2">Maximum of 3 categories reached</p>
                 )}
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          {/* Budget Item */}
-          <FormField
-            control={form.control}
-            name="budget_item_id"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Budget Item</FormLabel>
-                <Select 
-                  onValueChange={field.onChange} 
-                  defaultValue={field.value || undefined}
-                >
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Link to budget item (optional)" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    {/* You would fetch and map budget items here */}
-                  </SelectContent>
-                </Select>
                 <FormMessage />
               </FormItem>
             )}

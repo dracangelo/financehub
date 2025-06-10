@@ -7,23 +7,6 @@ module.exports = {
     ignoreBuildErrors: true,
   },
 
-  images: {
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: 'hfsfcu.org',
-        port: '',
-        pathname: '/wp-content/uploads/**',
-      },
-      {
-        protocol: 'https',
-        hostname: 'cdn.pixabay.com',
-        port: '',
-        pathname: '/photo/**',
-      },
-    ],
-  },
-
   // Explicitly handle the problematic pages
   rewrites: async () => {
     return [

@@ -65,7 +65,6 @@ const navItems = [
     icon: TrendingUp,
     items: [
       { title: "Portfolio", href: "/investments/portfolio", icon: DollarSign },
-      { title: "ESG Screener", href: "/investments/esg-screener", icon: Landmark },
       { title: "Watchlist", href: "/investments/watchlist", icon: Clock },
     ],
   },

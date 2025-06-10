@@ -136,25 +136,9 @@ const investmentTypes = [
   "Real Estate"
 ];
 
-// List of excluded sectors for ESG filtering (used locally)
-const excludedSectorsList = [
-  "Tobacco",
-  "Weapons",
-  "Gambling",
-  "Adult Entertainment",
-  "Fossil Fuels",
-  "Nuclear Power",
-  "Alcohol"
-];
+
 
 // Define interfaces for investment data
-interface ESGScore {
-  environmental: number;
-  social: number;
-  governance: number;
-  total: number;
-}
-
 interface Investment {
   id: string;
   name: string;
@@ -164,8 +148,7 @@ interface Investment {
   risk_level?: string;
   sector?: string;
   sector_id?: string;
-  esg_categories?: string[];
-  esgScore?: ESGScore;
+
   price?: number;
   value?: number;
   change?: number;
@@ -1398,8 +1381,7 @@ export async function getInvestments() {
               id,
               name,
               ticker,
-              asset_type,
-              esg_score
+              asset_type
             )
           )
         `)
@@ -1417,7 +1399,6 @@ export async function getInvestments() {
             shares: holding.quantity,
             cost_basis: holding.cost_basis,
             value: holding.cost_basis, // Default to cost basis if no current price
-            esg_score: holding.assets.esg_score,
             portfolio_id: portfolio.id,
             portfolio_name: portfolio.name
           }))
@@ -1754,19 +1735,13 @@ export async function getInvestmentById(id: string) {
         const { data: holding, error: holdingError } = await supabase
           .from("holdings")
           .select(`
-            id,
-            quantity,
-            cost_basis,
-            acquisition_date,
-            portfolio_id,
-            asset_id,
-            portfolios:portfolio_id (id, name),
-            assets:asset_id (
+            *,
+            portfolios (name),
+            assets!inner(
               id,
               name,
               ticker,
               asset_type,
-              esg_score,
               sector,
               is_dividend_paying
             )
@@ -1774,29 +1749,28 @@ export async function getInvestmentById(id: string) {
           .eq("id", id)
           .single()
 
-        if (!holdingError && holding) {
-          // Transform holding to investment format
-          return {
-            investment: {
-              id: holding.id,
-              name: holding.assets.name,
-              ticker: holding.assets.ticker,
-              type: holding.assets.asset_type,
-              shares: holding.quantity,
-              cost_basis: holding.cost_basis,
-              purchase_date: holding.acquisition_date,
-              portfolio_id: holding.portfolio_id,
-              portfolio_name: holding.portfolios?.name,
-              esg_score: holding.assets.esg_score,
-              sector: holding.assets.sector,
-              is_dividend_paying: holding.assets.is_dividend_paying
-            },
-            history: [],
-            transactions: []
+        if (holdingError) throw holdingError
+
+        if (holding) {
+          const transformedInvestment = {
+            id: holding.id,
+            user_id: user.id,
+            name: holding.assets.name,
+            ticker: holding.assets.ticker,
+            type: holding.assets.asset_type,
+            shares: holding.quantity,
+            cost_basis: holding.cost_basis,
+            value: holding.cost_basis, // Default value
+            purchase_date: holding.acquisition_date,
+            portfolio_id: holding.portfolio_id,
+            portfolio_name: holding.portfolios?.name,
+            sector: holding.assets.sector,
+            is_dividend_paying: holding.assets.is_dividend_paying
           }
+          return { investment: transformedInvestment, history: [], transactions: [] }
         }
-      } catch (holdingError) {
-        console.error("Error fetching holding:", holdingError)
+      } catch (e) {
+        console.error("Error fetching from holdings/assets:", e)
       }
       
       console.error("Error fetching investment:", error)
@@ -1804,23 +1778,12 @@ export async function getInvestmentById(id: string) {
     }
 
     // Get investment history
-    const { data: history, error: historyError } = await supabase
-      .from("investment_history")
-      .select("*")
-      .eq("investment_id", id)
-      .order("date", { ascending: false })
+    const investmentHistory = await getInvestmentHistory(id)
 
-    if (historyError) {
-      console.error("Error fetching investment history:", historyError)
-    }
+    // Get transactions
+    const transactions = await getTransactionsByInvestment(id)
 
-    // Get investment transactions
-    const { data: transactions, error: transactionsError } = await supabase
-      .from("investment_transactions")
-      .select("*")
-      .eq("investment_id", id)
-      .order("transaction_date", { ascending: false })
-
+    return { investment, history: investmentHistory, transactions }
     if (transactionsError) {
       console.error("Error fetching investment transactions:", transactionsError)
     }
@@ -2140,41 +2103,7 @@ export async function fetchFinancialTopics() {
   }
 }
 
-// Fetch ESG categories for investments
-export async function fetchESGCategories(): Promise<{ id: string; name: string; category: string }[]> {
-  // In a real app, this would fetch from a database or API
-  // For now, we'll return mock data
-  return [
-    { id: "environmental", name: "Environmental Impact", category: "environmental" },
-    { id: "social", name: "Social Responsibility", category: "social" },
-    { id: "governance", name: "Corporate Governance", category: "governance" },
-    { id: "climate_change", name: "Climate Change", category: "environmental" },
-    { id: "resource_use", name: "Resource Use", category: "environmental" },
-    { id: "human_rights", name: "Human Rights", category: "social" },
-    { id: "labor_practices", name: "Labor Practices", category: "social" },
-    { id: "corporate_ethics", name: "Corporate Ethics", category: "governance" },
-    { id: "sustainable_products", name: "Sustainable Products", category: "environmental" },
-    { id: "diversity_inclusion", name: "Diversity & Inclusion", category: "social" }
-  ];
-}
 
-// Fetch excluded sectors for ESG screening
-export async function fetchExcludedSectors(): Promise<{ id: string; name: string }[]> {
-  // In a real app, this would fetch from a database or API
-  // For now, we'll return mock data based on common ESG exclusions
-  return [
-    { id: "fossil_fuels", name: "Fossil Fuels" },
-    { id: "weapons", name: "Weapons & Defense" },
-    { id: "tobacco", name: "Tobacco" },
-    { id: "gambling", name: "Gambling" },
-    { id: "adult_entertainment", name: "Adult Entertainment" },
-    { id: "nuclear", name: "Nuclear Power" },
-    { id: "alcohol", name: "Alcohol" },
-    { id: "animal_testing", name: "Animal Testing" },
-    { id: "gmo", name: "GMO Products" },
-    { id: "palm_oil", name: "Palm Oil" }
-  ];
-}
 
 // Find tax loss harvesting opportunities
 export async function findTaxLossHarvestingOpportunities(): Promise<any[]> {

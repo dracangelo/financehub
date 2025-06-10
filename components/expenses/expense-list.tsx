@@ -387,19 +387,23 @@ export function ExpenseList() {
   
   // Filter expenses based on selected category and search query
   const filteredExpenses = useMemo(() => {
+    if (!Array.isArray(expenses)) {
+      return [];
+    }
     return expenses.filter(expense => {
+      if (!expense) {
+        return false;
+      }
       // Category filter
-      const categoryMatch = selectedCategory === 'all' || 
-        getCategoryName(expense.category) === getCategoryName(selectedCategory);
-      
+      const expenseCategoryName = getCategoryName(expense.category || '');
+      const categoryMatch = selectedCategory === 'all' || expenseCategoryName === getCategoryName(selectedCategory);
+
       // Search query filter
-      const searchMatch = !searchQuery || 
-        expense.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (expense.merchant_name && expense.merchant_name.toLowerCase().includes(searchQuery.toLowerCase()));
-      
-      // We don't need to filter by location here since that's done at the database level
-      // when we call searchExpensesByLocation
-      
+      const query = searchQuery.toLowerCase();
+      const searchMatch = !query ||
+        (expense.notes && expense.notes.toLowerCase().includes(query)) ||
+        (expense.merchant && expense.merchant.toLowerCase().includes(query));
+
       return categoryMatch && searchMatch;
     });
   }, [expenses, selectedCategory, searchQuery]);

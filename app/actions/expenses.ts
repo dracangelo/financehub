@@ -161,7 +161,7 @@ export async function createExpense(expenseData: ExpenseInput): Promise<ExpenseR
     const defaultColumns = [
       'amount', 'description', 'category', 'expense_date', 'user_id', 
       'created_at', 'updated_at', 'location_name', 'merchant', 'notes',
-      'payment_method', 'recurring', 'tags', 'warranty_expiration_date',
+      'payment_method', 'recurrence', 'is_impulse', 'tags', 'warranty_expiration_date',
       'receipt_url', 'is_tax_deductible', 'currency', 'category_ids'
       // Note: 'is_split' and 'note' are intentionally omitted as they don't exist in the database schema
     ];
@@ -244,21 +244,16 @@ export async function updateExpense(id: string, expenseData: Partial<ExpenseInpu
       updated_at: new Date().toISOString()
     }
 
-    // Get the current expense to check which fields exist
-    const { data: currentExpense } = await supabase
-      .from('expenses')
-      .select('*')
-      .eq('id', id)
-      .single();
-      
-    if (!currentExpense) {
-      return { data: null, error: new Error('Expense not found') };
-    }
-    
-    // Only include fields that exist in the current expense or are being added
-    const validFields = Object.keys(currentExpense);
+    // Define a whitelist of updatable columns to prevent unintended updates
+    const validUpdateColumns = [
+      'amount', 'description', 'category', 'expense_date', 'location_name', 
+      'merchant', 'notes', 'payment_method', 'recurrence', 'is_impulse', 'tags', 
+      'warranty_expiration_date', 'receipt_url', 'is_tax_deductible', 
+      'currency', 'category_ids', 'updated_at'
+    ];
+
     const updateData = Object.entries(updatedExpense)
-      .filter(([key]) => validFields.includes(key) || key === 'updated_at')
+      .filter(([key]) => validUpdateColumns.includes(key))
       .reduce((acc, [key, value]) => {
         acc[key] = value;
         return acc;

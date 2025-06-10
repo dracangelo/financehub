@@ -22,10 +22,6 @@ interface Investment {
   value?: number
   allocation?: number
   sector?: string
-  esg_score?: number
-  environmental_score?: number
-  social_score?: number
-  governance_score?: number
 }
 
 export function InvestmentAnalyticsWidget() {
@@ -98,21 +94,6 @@ export function InvestmentAnalyticsWidget() {
   })
   sectorData.sort((a, b) => b.value - a.value)
   
-  // Prepare data for ESG score chart
-  const esgData = investments
-    .filter(inv => inv.esg_score !== undefined)
-    .map(inv => ({
-      name: inv.name,
-      ticker: inv.ticker || "",
-      esg: inv.esg_score || 0,
-      environmental: inv.environmental_score || 0,
-      social: inv.social_score || 0,
-      governance: inv.governance_score || 0,
-      value: inv.value || 0
-    }))
-    .sort((a, b) => b.esg - a.esg)
-    .slice(0, 5) // Top 5 by ESG score
-  
   // Prepare data for performance chart (simulated for this example)
   const topInvestments = investments
     .filter(inv => inv.value !== undefined && inv.value > 0)
@@ -134,10 +115,9 @@ export function InvestmentAnalyticsWidget() {
           </div>
           
           <Tabs value={activeView} onValueChange={setActiveView} className="w-full sm:w-auto">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="allocation">Allocation</TabsTrigger>
-              <TabsTrigger value="esg">ESG Scores</TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
@@ -176,16 +156,6 @@ export function InvestmentAnalyticsWidget() {
                   <div className="bg-card border rounded-lg p-4">
                     <h3 className="text-sm font-medium text-muted-foreground mb-1">Investments</h3>
                     <p className="text-2xl font-bold">{investments.length}</p>
-                  </div>
-                  
-                  <div className="bg-card border rounded-lg p-4">
-                    <h3 className="text-sm font-medium text-muted-foreground mb-1">Avg ESG Score</h3>
-                    <p className="text-2xl font-bold">
-                      {investments.some(inv => inv.esg_score !== undefined) 
-                        ? (investments.reduce((sum, inv) => sum + (inv.esg_score || 0), 0) / 
-                           investments.filter(inv => inv.esg_score !== undefined).length).toFixed(1)
-                        : "N/A"}
-                    </p>
                   </div>
                 </div>
                 
@@ -265,62 +235,6 @@ export function InvestmentAnalyticsWidget() {
                     ))}
                   </div>
                 </div>
-              </div>
-            )}
-            
-            {activeView === "esg" && (
-              <div className="space-y-6">
-                {esgData.length > 0 ? (
-                  <>
-                    <div className="h-[300px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={esgData}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="ticker" />
-                          <YAxis domain={[0, 100]} />
-                          <Tooltip />
-                          <Legend />
-                          <Bar dataKey="environmental" name="Environmental" fill="#10b981" />
-                          <Bar dataKey="social" name="Social" fill="#3b82f6" />
-                          <Bar dataKey="governance" name="Governance" fill="#8b5cf6" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                    
-                    <div>
-                      <h3 className="text-sm font-medium mb-3">Top ESG Performers</h3>
-                      <div className="space-y-2">
-                        {esgData.map((inv) => (
-                          <div key={inv.name} className="flex items-center justify-between p-2 border rounded-md">
-                            <div>
-                              <p className="font-medium">{inv.name}</p>
-                              <div className="flex items-center gap-2">
-                                {inv.ticker && <Badge variant="outline">{inv.ticker}</Badge>}
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <div className="flex items-center gap-1">
-                                <Badge className="bg-green-600">{inv.environmental}</Badge>
-                                <Badge className="bg-blue-600">{inv.social}</Badge>
-                                <Badge className="bg-purple-600">{inv.governance}</Badge>
-                              </div>
-                              <p className="text-xs font-medium mt-1">
-                                Overall: <span className="font-bold">{inv.esg}</span>/100
-                              </p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-[250px] space-y-4">
-                    <p className="text-muted-foreground">No ESG data available for your investments</p>
-                    <Button asChild variant="outline">
-                      <a href="/investments/esg-screener">Explore ESG Investments <ArrowRight className="ml-2 h-4 w-4" /></a>
-                    </Button>
-                  </div>
-                )}
               </div>
             )}
             

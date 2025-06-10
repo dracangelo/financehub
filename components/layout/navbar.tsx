@@ -112,9 +112,6 @@ export function Navbar({ className }: NavbarProps) {
             <DropdownMenuItem>
               <span>Budget alert: Dining category exceeded</span>
             </DropdownMenuItem>
-            <DropdownMenuItem>
-              <span>New feature: ESG Screener available</span>
-            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

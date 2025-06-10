@@ -10,12 +10,8 @@ export interface Investment {
   annualDividend?: number
   expenseRatio?: number
   accountType?: "taxable" | "tax-deferred" | "tax-free"
-  esgScore?: {
-    environmental: number
-    social: number
-    governance: number
-    total: number
-  }
+  type?: string
+  allocation?: number
   shares?: number
   initialPrice?: number
   currentPrice?: number
@@ -194,48 +190,36 @@ export const sampleInvestments: Investment[] = [
     annualDividend: 1.5,
     expenseRatio: 0.03,
     accountType: "taxable",
-    esgScore: {
-      environmental: 6.8,
-      social: 7.2,
-      governance: 8.5,
-      total: 7.5,
-    },
+    type: "ETF",
+    allocation: 37.0,
   },
   {
     id: "2",
-    name: "Vanguard Total International Stock ETF",
-    ticker: "VXUS",
-    assetClass: "International Stocks",
-    value: 25000,
-    costBasis: 27000,
-    annualReturn: 7.8,
-    annualDividend: 3.2,
-    expenseRatio: 0.08,
-    accountType: "taxable",
-    esgScore: {
-      environmental: 7.1,
-      social: 6.9,
-      governance: 7.8,
-      total: 7.3,
-    },
-  },
-  {
-    id: "3",
     name: "Vanguard Total Bond Market ETF",
     ticker: "BND",
-    assetClass: "Bonds",
+    assetClass: "US Bonds",
     value: 30000,
     costBasis: 31000,
     annualReturn: 3.5,
     annualDividend: 2.8,
     expenseRatio: 0.035,
+    accountType: "taxable",
+    type: "ETF",
+    allocation: 22.2,
+  },
+  {
+    id: "3",
+    name: "iShares Core U.S. Aggregate Bond ETF",
+    ticker: "AGG",
+    assetClass: "US Bonds",
+    value: 25000,
+    costBasis: 24000,
+    annualReturn: 3.2,
+    annualDividend: 2.5,
+    expenseRatio: 0.04,
     accountType: "tax-deferred",
-    esgScore: {
-      environmental: 6.5,
-      social: 7.0,
-      governance: 8.2,
-      total: 7.2,
-    },
+    type: "ETF",
+    allocation: 18.5,
   },
   {
     id: "4",
@@ -248,12 +232,8 @@ export const sampleInvestments: Investment[] = [
     annualDividend: 3.8,
     expenseRatio: 0.12,
     accountType: "tax-deferred",
-    esgScore: {
-      environmental: 5.8,
-      social: 6.2,
-      governance: 7.5,
-      total: 6.5,
-    },
+    type: "ETF",
+    allocation: 7.4,
   },
   {
     id: "5",
@@ -265,30 +245,8 @@ export const sampleInvestments: Investment[] = [
     annualDividend: 0,
     expenseRatio: 0,
     accountType: "taxable",
-    esgScore: {
-      environmental: 5.0,
-      social: 5.0,
-      governance: 5.0,
-      total: 5.0,
-    },
-  },
-  {
-    id: "6",
-    name: "iShares ESG Aware MSCI USA ETF",
-    ticker: "ESGU",
-    assetClass: "US Stocks",
-    value: 20000,
-    costBasis: 18000,
-    annualReturn: 9.8,
-    annualDividend: 1.3,
-    expenseRatio: 0.15,
-    accountType: "tax-free",
-    esgScore: {
-      environmental: 8.5,
-      social: 8.7,
-      governance: 9.0,
-      total: 8.7,
-    },
+    type: "Cash",
+    allocation: 11.1,
   },
   {
     id: "7",
@@ -300,12 +258,8 @@ export const sampleInvestments: Investment[] = [
     annualDividend: 0,
     expenseRatio: 0,
     accountType: "taxable",
-    esgScore: {
-      environmental: 3.0,
-      social: 5.0,
-      governance: 4.0,
-      total: 4.0,
-    },
+    type: "Crypto",
+    allocation: 3.7,
   },
 ]
 
@@ -392,7 +346,7 @@ function getAlternativeInvestments(investment: Investment): string[] {
     VXUS: ["IXUS", "SPDW", "SCHF"],
     BND: ["AGG", "SCHZ", "IUSB"],
     VNQ: ["SCHH", "IYR", "RWR"],
-    ESGU: ["SUSA", "SPYX", "ESGD"],
+
   }
 
   return alternatives[investment.ticker || ""] || ["No alternatives found"]
@@ -406,7 +360,7 @@ export function calculateFeeComparisons(investments: Investment[]): FeeCompariso
     VXUS: { name: "Fidelity ZERO International Index Fund (FZILX)", fee: 0.0 },
     BND: { name: "Schwab U.S. Aggregate Bond ETF (SCHZ)", fee: 0.03 },
     VNQ: { name: "Schwab U.S. REIT ETF (SCHH)", fee: 0.07 },
-    ESGU: { name: "Vanguard ESG U.S. Stock ETF (ESGV)", fee: 0.09 },
+
   }
 
   return investments
@@ -487,9 +441,6 @@ export function calculatePerformanceMetrics(investments: Investment[], benchmark
 
   const expenseRatio = investments.reduce((sum, inv) => sum + (inv.value / totalValue) * (inv.expenseRatio || 0), 0)
 
-  // Calculate ESG score
-  const esgScore = investments.reduce((sum, inv) => sum + (inv.value / totalValue) * (inv.esgScore?.total || 0), 0)
-
   return [
     {
       name: "Weighted Annual Return",
@@ -508,12 +459,6 @@ export function calculatePerformanceMetrics(investments: Investment[], benchmark
       value: expenseRatio,
       benchmark: 0.2, // Typical low-cost portfolio
       difference: 0.2 - expenseRatio, // Positive is good here (lower expenses)
-    },
-    {
-      name: "ESG Score",
-      value: esgScore,
-      benchmark: 6.5, // Average ESG score
-      difference: esgScore - 6.5,
     },
   ]
 }
@@ -556,22 +501,7 @@ export function calculateOptimalAssetLocation(investments: Investment[]): { [key
   )
 }
 
-export interface AssetClass {
-  id: string
-  name: string
-  targetAllocation: number
-  currentAllocation: number
-}
 
-export interface Investment {
-  id: string
-  name: string
-  ticker?: string
-  type: string
-  value: number
-  costBasis: number
-  allocation: number
-}
 
 export function calculatePortfolioValue(investments: Investment[]): number {
   return investments.reduce((total, investment) => total + investment.value, 0)
@@ -618,7 +548,7 @@ export function calculateRebalancingRecommendations(
     const amountToRebalance = Math.abs(difference / 100) * totalPortfolioValue
 
     return {
-      assetClass,
+      assetClass: asset,
       targetAllocation: asset.targetAllocation,
       currentAllocation: asset.currentAllocation,
       difference,
@@ -638,62 +568,6 @@ export function formatCurrency2(amount: number, options: Intl.NumberFormatOption
   }).format(amount)
 }
 
-export interface PortfolioESGScore {
-  environmentalScore: number
-  socialScore: number
-  governanceScore: number
-  totalESGScore: number
-}
-
-export function calculateESGScore(investments: Investment[]): PortfolioESGScore {
-  if (!investments.length) {
-    return {
-      environmentalScore: 0,
-      socialScore: 0,
-      governanceScore: 0,
-      totalESGScore: 0,
-    }
-  }
-
-  // Calculate total value of all investments
-  const totalValue = investments.reduce((sum, investment) => sum + (investment.value || investment.price || 0), 0)
-  
-  // If there's no total value, return zeros to avoid NaN
-  if (totalValue === 0) {
-    return {
-      environmentalScore: 0,
-      socialScore: 0,
-      governanceScore: 0,
-      totalESGScore: 0,
-    }
-  }
-
-  // Calculate weighted ESG scores
-  let weightedEnvironmental = 0
-  let weightedSocial = 0
-  let weightedGovernance = 0
-  let weightedTotal = 0
-
-  investments.forEach((investment) => {
-    if (investment.esgScore) {
-      const investmentValue = investment.value || investment.price || 0
-      const weight = investmentValue / totalValue
-      weightedEnvironmental += investment.esgScore.environmental * weight
-      weightedSocial += investment.esgScore.social * weight
-      weightedGovernance += investment.esgScore.governance * weight
-      weightedTotal += investment.esgScore.total * weight
-    }
-  })
-
-  return {
-    environmentalScore: weightedEnvironmental || 0,
-    socialScore: weightedSocial || 0,
-    governanceScore: weightedGovernance || 0,
-    totalESGScore: weightedTotal || 0,
-  }
-}
-
-// Calculate performance metrics
 export function calculatePerformance(investments: Investment[]): {
   totalValue: number
   totalCost: number
