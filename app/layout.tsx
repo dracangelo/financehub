@@ -1,4 +1,4 @@
-import type React from "react"
+import React, { Suspense } from "react"
 import { Inter } from "next/font/google"
 import { Toaster } from "@/components/ui/toaster"
 import { MainNavigation } from "@/components/layout/main-navigation"
@@ -6,6 +6,7 @@ import { Providers } from "./providers"
 import { ErrorHandler } from "@/components/error/error-handler"
 import { CookieCleaner } from "@/components/error/cookie-cleaner"
 import { ClientIdManager } from "@/components/client-id-manager"
+import GoogleAnalytics from "./components/GoogleAnalytics"
 import "./globals.css"
 import {
   Home,
@@ -101,7 +102,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={inter.className}>
+            <body className={inter.className}>
+        <Suspense fallback={null}>
+          <GoogleAnalytics />
+        </Suspense>
         {/* Cookie cleaner runs first to fix cookie parsing issues */}
         <CookieCleaner />
         <ClientIdManager />
