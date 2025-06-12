@@ -24,8 +24,6 @@ interface BillCategorySelectorProps {
   value: string
   onChange: (value: string) => void
   placeholder?: string
-  includeCustomOption?: boolean
-  onAddCustom?: () => void
   className?: string
 }
 
@@ -33,8 +31,6 @@ export function BillCategorySelector({
   value,
   onChange,
   placeholder = "Select bill category",
-  includeCustomOption = true,
-  onAddCustom,
   className,
 }: BillCategorySelectorProps) {
   const [open, setOpen] = useState(false)
@@ -102,24 +98,7 @@ export function BillCategorySelector({
                 </CommandItem>
               ))}
             </CommandGroup>
-            {includeCustomOption && (
-              <>
-                <CommandSeparator />
-                <CommandGroup>
-                  <CommandItem
-                    onSelect={() => {
-                      if (onAddCustom) {
-                        onAddCustom()
-                      }
-                      setOpen(false)
-                    }}
-                  >
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add custom category
-                  </CommandItem>
-                </CommandGroup>
-              </>
-            )}
+            
           </CommandList>
         </Command>
       </PopoverContent>

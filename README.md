@@ -11,8 +11,8 @@ Dripcheck is a comprehensive personal finance management application designed to
 ### User Authentication & Security 🔐
 - Secure email/password authentication via Supabase Auth
 - JWT-based session management with proper expiration and refresh logic
-- Client-side persistent ID management for consistent user identification
-- Multi-layered user ID retrieval system with fallback mechanisms
+- Strict server-side user identification only (no client-side fallback), ensuring consistent and secure user IDs across frontend and backend
+- Comprehensive 401 handling when unauthenticated, protecting all finance data
 
 ### Intelligent Dashboard 📈
 - Comprehensive overview of financial metrics
@@ -39,6 +39,9 @@ Dripcheck is a comprehensive personal finance management application designed to
 
 #### Bill & Subscription Management 📅
 - Comprehensive bill tracking with recurring payment support
+- Accurate recurring-bill due-date generation without unintended date shifts
+- Automatic status detection (Overdue / Due Soon / Upcoming) based on due date
+- Robust server-side validation for amount and due-date inputs with clear UI error messages
 - Subscription management with ROI calculator
 - Bill calendar view for visualizing upcoming payments
 

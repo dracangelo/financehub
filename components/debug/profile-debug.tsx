@@ -9,9 +9,11 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Skeleton } from "@/components/ui/skeleton"
 
 export function ProfileDebug() {
-  const [user, setUser] = useState<any>(null)
-  const { profile, loading, error, refreshProfile } = useUserProfile(user)
-  const supabase = createClientComponentClient()
+  const [user, setUser] = useState<any>(null);
+  const { profile, loading, error, refreshProfile } = useUserProfile(user);
+  const supabase = createClientComponentClient();
+  const [resetting, setResetting] = useState(false);
+  const [resetMessage, setResetMessage] = useState('');
   
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -26,17 +28,36 @@ export function ProfileDebug() {
   const handleRefresh = async () => {
     try {
       // Call the refreshProfile function from the hook
-      await refreshProfile()
+      await refreshProfile();
       
       // Force a cache-busting reload of the profile image if it exists
       if (profile?.avatar_url) {
-        const img = new Image()
-        img.src = `${profile.avatar_url}&t=${new Date().getTime()}`
+        const img = new Image();
+        img.src = `${profile.avatar_url}&t=${new Date().getTime()}`;
       }
     } catch (err) {
-      console.error("Error refreshing profile:", err)
+      console.error("Error refreshing profile:", err);
     }
-  }
+  };
+
+  const handleResetCategories = async () => {
+    setResetting(true);
+    setResetMessage('');
+    try {
+      const response = await fetch('/api/bills/reset-categories', {
+        method: 'POST',
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to reset categories');
+      }
+      setResetMessage('Bill categories have been reset successfully!');
+    } catch (error) {
+      setResetMessage(`Error: ${(error as Error).message}`);
+    } finally {
+      setResetting(false);
+    }
+  };
   
   return (
     <Card className="w-full max-w-md mx-auto">
@@ -74,10 +95,14 @@ export function ProfileDebug() {
           <p><strong>Error:</strong> {error || "None"}</p>
         </div>
       </CardContent>
-      <CardFooter>
+      <CardFooter className="flex-col items-stretch space-y-2">
         <Button onClick={handleRefresh} className="w-full">
           Refresh Profile
         </Button>
+        <Button onClick={handleResetCategories} disabled={resetting} variant="destructive" className="w-full">
+          {resetting ? 'Resetting...' : 'Reset Bill Categories'}
+        </Button>
+        {resetMessage && <p className="text-sm text-center text-muted-foreground pt-2">{resetMessage}</p>}
       </CardFooter>
     </Card>
   )

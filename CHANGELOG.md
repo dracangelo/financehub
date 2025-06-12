@@ -212,6 +212,24 @@
 - Added detailed documentation for database setup in README files
 - Implemented proper Row Level Security (RLS) across all tables
 
+## Recent Updates (June 2025)
+
+### Billing System Improvements
+- Fixed incorrect field names between frontend and backend (`amount_due`, `due_date`, `frequency`, `is_automatic`).
+- Added robust server-side validation for amount (numeric) and date (YYYY-MM-DD) preventing invalid inserts.
+- Implemented client-side error catching in `BillDialog` with meaningful UI messages instead of crashing.
+- Corrected recurring-bill next-due-date generation logic to eliminate unintended date shifts.
+- Added enum mapping for `biweekly` → `bi_weekly` to satisfy database constraints.
+- Automatic badge logic now displays **Overdue** instead of negative “Due Soon” counts.
+
+### Authentication Hardening
+- Removed all client-side ID fallback mechanisms; authentication strictly relies on Supabase Auth.
+- All API routes now return 401 Unauthorized for unauthenticated requests, enhancing security.
+
+### Miscellaneous
+- Updated README with new authentication approach and billing feature highlights.
+- Minor UI tweaks for status badges (colors, icons).
+
 This document tracks the progress of the Ultimate Personal Finance Tracker project, documenting both implemented features and those that are still pending implementation.
 
 ## Implemented Features

@@ -364,8 +364,16 @@ export function BillsList({ showCalendarView = false }: BillsListProps) {
           </Badge>
         );
       case "unpaid":
-        // For unpaid bills, we'll show different visual indicators based on the due date
-        if (dueSoonOrUpcoming && daysUntilDue <= 7) {
+        // For unpaid bills, decide if it's actually overdue, due soon, or upcoming
+        if (dueSoonOrUpcoming && daysUntilDue < 0) {
+          // Past due but DB not updated – treat as overdue for badge
+          return (
+            <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+              <AlertCircle className="mr-1 h-3 w-3" />
+              Overdue
+            </Badge>
+          );
+        } else if (dueSoonOrUpcoming && daysUntilDue <= 7) {
           return (
             <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
               <Clock className="mr-1 h-3 w-3" />

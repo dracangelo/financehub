@@ -5,6 +5,76 @@ import { revalidatePath } from "next/cache"
 import { getCurrentUser } from "@/lib/auth"
 import { redirect } from "next/navigation"
 
+// Helper function to calculate next due date based on recurrence pattern
+function calculateNextDueDate(currentDueDate: string, recurrencePattern: string): string {
+  // By appending T00:00:00, we ensure the date is parsed in the server's local timezone,
+  // avoiding UTC conversion issues that can shift the date.
+  const date = new Date(`${currentDueDate}T00:00:00`)
+
+  switch (recurrencePattern) {
+    case "once":
+      break
+    case "weekly":
+      date.setDate(date.getDate() + 7)
+      break
+    case "biweekly":
+    case "bi_weekly":
+      date.setDate(date.getDate() + 14)
+      break
+    case "monthly":
+      date.setMonth(date.getMonth() + 1)
+      break
+    case "quarterly":
+      date.setMonth(date.getMonth() + 3)
+      break
+    case "semi-annually":
+    case "semiannually":
+    case "semi_annual":
+      date.setMonth(date.getMonth() + 6)
+      break
+    case "annually":
+    case "annual":
+      date.setFullYear(date.getFullYear() + 1)
+      break
+    default:
+      // Default to monthly for unknown patterns
+      date.setMonth(date.getMonth() + 1)
+  }
+
+  return date.toISOString().split("T")[0]
+}
+
+// Helper function to generate negotiation strategy based on bill type
+function generateNegotiationStrategy(bill: any): string {
+    const strategies = [
+      "Call customer service and mention competitor offers",
+      "Ask about loyalty discounts for long-term customers",
+      "Request a review of your account for available promotions",
+      "Inquire about bundling services for a discount",
+      "Mention financial hardship and request temporary rate reduction",
+    ]
+  
+    // Use category to determine best strategy if available
+    if (bill.billers?.category) {
+      const category = bill.billers.category.toLowerCase()
+  
+      if (category.includes("internet") || category.includes("phone") || category.includes("cable")) {
+        return "Research competitor rates and call to request a price match. Mention you're considering switching providers."
+      }
+  
+      if (category.includes("insurance")) {
+        return "Ask about bundling policies, safe driver discounts, or loyalty programs. Consider increasing deductibles to lower monthly premiums."
+      }
+  
+      if (category.includes("subscription") || category.includes("streaming")) {
+        return "Check for annual payment options which often come with discounts. Consider family or group plans if applicable."
+      }
+    }
+  
+    // Return a random strategy if no specific category match
+    return strategies[Math.floor(Math.random() * strategies.length)]
+}
+
 export async function getBills() {
   try {
     const user = await getCurrentUser()
@@ -20,11 +90,13 @@ export async function getBills() {
     // Use the bills table that exists in the database
     const { data: bills, error } = await supabase
       .from("bills")
-      .select(`
+      .select(
+        `
         *,
         category:category_id(id, name, description, icon),
         bill_payments(id, payment_date, amount_paid, payment_method, note)
-      `)
+      `
+      )
       .eq("user_id", user.id)
       .order("next_due_date", { ascending: true })
 
@@ -54,10 +126,12 @@ export async function getBillById(id: string) {
 
     const { data: bill, error } = await supabase
       .from("bills")
-      .select(`
+      .select(
+        `
         *,
         category:category_id(id, name, description, icon)
-      `)
+      `
+      )
       .eq("id", id)
       .eq("user_id", user.id)
       .single()
@@ -87,387 +161,173 @@ export async function getBillById(id: string) {
 
 export async function createBill(formData: FormData) {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentUser();
     if (!user) {
-      redirect("/login")
+      redirect("/login");
     }
 
-    const supabase = await createServerSupabaseClient()
+    const supabase = await createServerSupabaseClient();
     if (!supabase) {
-      throw new Error("Failed to initialize Supabase client")
+      throw new Error("Failed to initialize Supabase client");
     }
 
-    // Extract and validate form data with proper type conversion
-    const name = formData.get("name") as string
-    if (!name) {
-      throw new Error("Bill name is required")
-    }
-
-    const amountStr = formData.get("amount") as string
-    if (!amountStr) {
-      throw new Error("Bill amount is required")
-    }
-    const amount = Number.parseFloat(amountStr)
+    const amountStr = formData.get("amount_due") as string;
+    const amount = parseFloat(amountStr);
     if (isNaN(amount)) {
-      throw new Error("Invalid bill amount")
+      throw new Error("Invalid amount. Please provide a valid number.");
     }
 
-    const due_date = formData.get("next_payment_date") as string
-    if (!due_date) {
-      throw new Error("Due date is required")
-    }
-    
-    // Validate and standardize date format
-    let formattedDate;
-    try {
-      // Parse the date string
-      const dateObj = new Date(due_date);
-      if (isNaN(dateObj.getTime())) {
-        throw new Error("Invalid date");
-      }
-      
-      // Ensure consistent date format (YYYY-MM-DD)
-      const year = dateObj.getFullYear();
-      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-      const day = String(dateObj.getDate()).padStart(2, '0');
-      formattedDate = `${year}-${month}-${day}`;
-      
-      console.log(`Parsed due date from form: '${due_date}' → standardized as: '${formattedDate}'`);
-    } catch (e) {
-      console.error("Date parsing error:", e);
-      // Fallback to today's date if there's an error
-      const today = new Date();
-      const year = today.getFullYear();
-      const month = String(today.getMonth() + 1).padStart(2, '0');
-      const day = String(today.getDate()).padStart(2, '0');
-      formattedDate = `${year}-${month}-${day}`;
-      console.log(`Using fallback date due to parsing error: ${formattedDate}`);
-    }
+    const rawFormData = {
+      name: formData.get("name") as string,
+      amount_due: amount,
+      due_date: formData.get("due_date") as string,
+      frequency: formData.get("frequency") as string,
+      is_automatic: formData.get("is_automatic") === "on",
+      category_id: formData.get("category_id") as string,
+      vendor: formData.get("vendor") as string,
+      description: formData.get("description") as string,
+      reminder_days: parseInt(formData.get("reminder_days") as string, 10) || 0,
+    };
 
-    // Optional fields with proper defaults
-    // Map the UI frequency values to the database enum values
-    let frequency = (formData.get("recurrence_pattern") as string) || "monthly"
-    // Ensure frequency matches the database enum values
-    if (frequency === "biweekly") frequency = "bi_weekly"
-    else if (frequency === "semi-annually" || frequency === "semiannually") frequency = "semi_annual"
-    else if (frequency === "annually") frequency = "annual"
-    
-    const is_automatic = formData.get("auto_pay") === "true"
-    // Store whether the bill is recurring in a variable for later use
-    // but don't try to save it to the database since the column doesn't exist
-    const isRecurring = formData.get("is_recurring") === "true"
-    
-    // Get the category ID from the form data
-    const categoryId = formData.get("category_id") as string || null
-    
-    // Determine initial bill status based on due date
-    // The database only accepts these enum values: 'unpaid', 'paid', 'overdue', 'cancelled'
-    // We'll use them directly as requested:
-    // - unpaid: default for new bills
-    // - paid: when clicked by the user
-    // - overdue: if the date is past due
-    // - cancelled: if a user cancels the bill
-    let initialStatus = "unpaid";
-    try {
-      // Parse the date properly to ensure accurate comparison
-      const dueDate = new Date(formattedDate);
-      const today = new Date();
-      
-      // Set hours to 0 for proper comparison
-      today.setHours(0, 0, 0, 0);
-      dueDate.setHours(0, 0, 0, 0);
-      
-      // Calculate days until due
-      const diffTime = dueDate.getTime() - today.getTime();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      
-      // Set to 'overdue' if the due date has passed, otherwise use 'unpaid'
-      if (diffDays < 0) {
-        initialStatus = "overdue";
-      } else {
-        initialStatus = "unpaid";
-      }
-      
-      console.log(`Setting initial status for bill: ${initialStatus}, due date: ${formattedDate}, days until due: ${diffDays}`);
-    } catch (e) {
-      console.error("Error calculating initial bill status:", e);
-      // Default to unpaid if there's an error
-      initialStatus = "unpaid";
+    const dateStr = rawFormData.due_date;
+    if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      throw new Error("Invalid date format. Please use YYYY-MM-DD.");
     }
-    
-    // Always use the date that the user sets, even if it's in the past
-    let finalDueDate = formattedDate;
-    
-    // Log the date and status for debugging
-    console.log(`Using user-specified due date: ${finalDueDate} with status: ${initialStatus}`);
-    
-    // Note: We're no longer automatically calculating the next occurrence date
-    // Instead, we're using exactly what the user specified
-    
-    // Create a new bill record using the correct table and field names based on the actual database schema
-    const { data: bill, error } = await supabase
-      .from("bills")
-      .insert({
-        user_id: user.id,
-        name,
-        amount_due: amount,
-        next_due_date: finalDueDate,
-        frequency: frequency,
-        is_automatic: is_automatic,
-        description: formData.get("description") as string || "",
-        category_id: categoryId,
-        vendor: formData.get("vendor") as string || null,
-        expected_payment_account: formData.get("payment_account") as string || null,
-        reminder_days: parseInt(formData.get("reminder_days") as string || "3", 10),
-        status: initialStatus,
-        currency: formData.get("currency") as string || "USD"
-      })
-      .select()
-      .single()
+    const date = new Date(`${dateStr}T00:00:00`);
+    if (isNaN(date.getTime())) {
+      throw new Error("Invalid date provided");
+    }
+    if (rawFormData.is_automatic && rawFormData.frequency !== "once") {
+      date.setDate(date.getDate() - rawFormData.reminder_days);
+    }
+    const formattedDate = date.toISOString().split("T")[0];
+
+    const billData = {
+      user_id: user.id,
+      name: rawFormData.name,
+      amount_due: rawFormData.amount_due,
+      next_due_date: formattedDate,
+      frequency: rawFormData.frequency,
+      is_automatic: rawFormData.is_automatic,
+      description: rawFormData.description,
+      category_id: rawFormData.category_id,
+      vendor: rawFormData.vendor,
+      reminder_days: rawFormData.reminder_days,
+      status: "unpaid",
+      currency: "USD",
+    };
+
+    const { data: bill, error } = await supabase.from("bills").insert(billData).select().single();
 
     if (error) {
-      console.error("Error creating bill:", error)
-      throw new Error("Failed to create bill")
+      console.error("Error creating bill:", error);
+      // Throw a more specific error from Supabase if available
+      throw new Error(error.message || "Failed to create bill in database.");
     }
 
-    // Create initial payment schedule entry
-    if (bill && supabase) {
-      console.log('Creating payment schedule for bill:', bill.id);
-      
-      try {
-        // Create the payment schedule entry
-        const { error: scheduleError } = await supabase.from("bill_payments").insert({
-          bill_id: bill.id,
-          user_id: user.id,
-          amount_paid: 0, // Initial entry with zero amount
-          payment_date: finalDueDate, // Use the final calculated due date
-          payment_method: "none",
-          note: "Initial payment schedule"
-        })
-
-        if (scheduleError) {
-          console.error("Error creating payment schedule:", scheduleError)
-          // Don't throw here, we've already created the bill
-        }
-        
-        // CRITICAL: Double-check that the bill status is correct
-        // This ensures that even if something else is setting the status to 'paid',
-        // we explicitly set it back to the correct initial status
-        const { error: statusCheckError } = await supabase
-          .from("bills")
-          .update({ status: initialStatus })
-          .eq("id", bill.id)
-          .eq("user_id", user.id)
-          
-        if (statusCheckError) {
-          console.error("Error ensuring correct bill status:", statusCheckError)
-        } else {
-          console.log(`Ensured bill status is set to: ${initialStatus}`)
-        }
-      } catch (scheduleErr) {
-        console.error("Exception creating payment schedule:", scheduleErr)
-        // Continue even if payment schedule creation fails
-      }
-    }
-
-    revalidatePath("/bills")
-    return bill
+    revalidatePath("/bills");
+    return bill;
   } catch (error) {
-    console.error("Error in createBill:", error)
-    // Include the original error message for better debugging
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    throw new Error(`Failed to create bill: ${errorMessage}`)
+    console.error("Error in createBill:", error);
+    if (error instanceof Error) {
+      // Re-throw the specific error message to the client
+      throw new Error(error.message);
+    }
+    // Fallback for unexpected error types
+    throw new Error("An unexpected error occurred while creating the bill.");
   }
 }
 
 export async function updateBill(id: string, formData: FormData) {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentUser();
     if (!user) {
-      redirect("/login")
+      redirect("/login");
     }
 
-    const supabase = await createServerSupabaseClient()
-
-    // Extract and validate form data
-    const name = formData.get("name") as string
-    if (!name) {
-      throw new Error("Bill name is required")
+    const supabase = await createServerSupabaseClient();
+    if (!supabase) {
+      throw new Error("Failed to initialize Supabase client");
     }
 
-    const amountStr = formData.get("amount") as string
-    if (!amountStr) {
-      throw new Error("Bill amount is required")
-    }
-    const amount = Number.parseFloat(amountStr)
+    const amountStr = formData.get("amount_due") as string;
+    const amount = parseFloat(amountStr);
     if (isNaN(amount)) {
-      throw new Error("Invalid bill amount")
+      throw new Error("Invalid amount. Please provide a valid number.");
     }
 
-    const due_date = formData.get("next_payment_date") as string
-    if (!due_date) {
-      throw new Error("Due date is required")
-    }
-    
-    // Validate and standardize date format
-    let formattedDate;
-    try {
-      // Parse the date string
-      const dateObj = new Date(due_date);
-      if (isNaN(dateObj.getTime())) {
-        throw new Error("Invalid date");
-      }
-      
-      // Ensure consistent date format (YYYY-MM-DD)
-      const year = dateObj.getFullYear();
-      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-      const day = String(dateObj.getDate()).padStart(2, '0');
-      formattedDate = `${year}-${month}-${day}`;
-      
-      console.log(`Parsed due date from form: '${due_date}' → standardized as: '${formattedDate}'`);
-    } catch (e) {
-      console.error("Date parsing error:", e);
-      // Fallback to today's date if there's an error
-      const today = new Date();
-      const year = today.getFullYear();
-      const month = String(today.getMonth() + 1).padStart(2, '0');
-      const day = String(today.getDate()).padStart(2, '0');
-      formattedDate = `${year}-${month}-${day}`;
-      console.log(`Using fallback date due to parsing error: ${formattedDate}`);
-    }
+    const rawFormData = {
+      name: formData.get("name") as string,
+      amount_due: amount,
+      due_date: formData.get("due_date") as string,
+      frequency: formData.get("frequency") as string,
+      is_automatic: formData.get("is_automatic") === "on",
+      category_id: formData.get("category_id") as string,
+      vendor: formData.get("vendor") as string,
+      description: formData.get("description") as string,
+      reminder_days: parseInt(formData.get("reminder_days") as string, 10) || 0,
+    };
 
-    // Get optional fields
-    const type = (formData.get("type") as string) || "other"
-    
-    // Map the UI frequency values to the database enum values
-    let billing_frequency = (formData.get("recurrence_pattern") as string) || "monthly"
-    // Ensure frequency matches the database enum values
-    if (billing_frequency === "biweekly") billing_frequency = "bi_weekly"
-    else if (billing_frequency === "semi-annually" || billing_frequency === "semiannually") billing_frequency = "semi_annual"
-    else if (billing_frequency === "annually") billing_frequency = "annual"
-    
-    const auto_pay = formData.get("auto_pay") === "true"
-    
-    // Map the payment status to valid bill_status enum values
-    let payment_status = formData.get("status") as string || "unpaid"
-    // Ensure status matches the database enum values: 'unpaid', 'paid', 'overdue', 'cancelled'
-    if (payment_status === "pending") payment_status = "unpaid"
-
-    // First, check if the bill exists and belongs to the user
-    if (!supabase) {
-      throw new Error("Failed to initialize Supabase client")
-    }
-    
-    const { data: existingBill, error: fetchError } = await supabase
+    const { data: currentBill, error: fetchError } = await supabase
       .from("bills")
-      .select("id")
+      .select("amount_due, next_due_date")
       .eq("id", id)
-      .eq("user_id", user.id)
-      .single()
+      .single();
 
-    if (fetchError) {
-      console.error("Error fetching bill:", fetchError)
-      throw new Error("Bill not found or you don't have permission to update it")
+    if (fetchError || !currentBill) {
+      console.error("Error fetching bill for update:", fetchError);
+      throw new Error("Failed to find the bill to update");
     }
 
-    // First, fetch the current bill to get the current amount for comparison
-    if (!supabase) {
-      throw new Error("Failed to initialize Supabase client")
+    const dateStr = rawFormData.due_date;
+    if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      throw new Error("Invalid date format. Please use YYYY-MM-DD.");
     }
-    
-    const { data: currentBill, error: fetchCurrentError } = await supabase
-      .from("bills")
-      .select("amount_due")
-      .eq("id", id)
-      .eq("user_id", user.id)
-      .single()
+    const date = new Date(`${dateStr}T00:00:00`);
+    if (isNaN(date.getTime())) {
+      throw new Error("Invalid date provided");
+    }
+    if (rawFormData.is_automatic && rawFormData.frequency !== "once") {
+      date.setDate(date.getDate() - rawFormData.reminder_days);
+    }
+    const formattedDate = date.toISOString().split("T")[0];
 
-    if (fetchCurrentError) {
-      console.error("Error fetching current bill amount:", fetchCurrentError)
-      // Continue with the update even if we can't fetch the current amount
-    }
+    const billData = {
+      name: rawFormData.name,
+      amount_due: rawFormData.amount_due,
+      next_due_date: formattedDate,
+      frequency: rawFormData.frequency,
+      is_automatic: rawFormData.is_automatic,
+      description: rawFormData.description,
+      category_id: rawFormData.category_id,
+      vendor: rawFormData.vendor,
+      reminder_days: rawFormData.reminder_days,
+    };
 
-    // Check if the amount is changing
-    const isAmountChanging = currentBill && amount !== currentBill.amount_due
-    
-    // Update the bill with fields that exist in the database
-    if (!supabase) {
-      throw new Error("Failed to initialize Supabase client")
-    }
-    
-    const { data: bill, error } = await supabase
-      .from("bills")
-      .update({
-        name,
-        amount_due: amount,
-        next_due_date: formattedDate,
-        frequency: billing_frequency,
-        is_automatic: auto_pay,
-        description: formData.get("description") as string || "",
-        category_id: formData.get("category_id") as string || null,
-        vendor: formData.get("vendor") as string || null,
-        expected_payment_account: formData.get("payment_account") as string || null,
-        status: payment_status,
-        currency: formData.get("currency") as string || "USD"
-      })
-      .eq("id", id)
-      .eq("user_id", user.id)
-      .select()
-      .single()
+    const { data: bill, error } = await supabase.from("bills").update(billData).eq("id", id).select().single();
 
     if (error) {
-      console.error("Error updating bill:", error)
-      throw new Error("Failed to update bill")
-    }
-    
-    // If the amount changed, manually insert a price change record with admin rights
-    if (isAmountChanging && currentBill && supabase) {
-      try {
-        // Use service role to bypass RLS
-        const { error: priceChangeError } = await supabase
-          .from("bill_price_changes")
-          .insert({
-            bill_id: id,
-            old_amount: currentBill.amount_due,
-            new_amount: amount,
-            reason: "User updated bill amount"
-          })
-        
-        if (priceChangeError) {
-          console.error("Error recording price change (non-critical):", priceChangeError)
-          // Don't throw an error here, as the bill update itself was successful
-        }
-      } catch (priceChangeErr) {
-        console.error("Exception recording price change (non-critical):", priceChangeErr)
-      }
+      console.error("Error updating bill:", error);
+      throw new Error(error.message || "Failed to update bill in database.");
     }
 
-    // Update the payment schedule if it exists
-    if (supabase) {
-      const { data: scheduleData, error: scheduleQueryError } = await supabase
-        .from("bill_payments")
-        .select("id")
-        .eq("bill_id", id)
-        .order("payment_date", { ascending: false })
-        .limit(1)
-
-      if (!scheduleQueryError && scheduleData && scheduleData.length > 0) {
-        const scheduleId = scheduleData[0].id
-        
-        await supabase
-          .from("bill_payments")
-          .update({
-            payment_date: formattedDate
-          })
-          .eq("id", scheduleId)
-      }
+    if (currentBill.amount_due !== rawFormData.amount_due) {
+      await supabase.from("bill_price_history").insert({
+        bill_id: id,
+        old_amount: currentBill.amount_due,
+        new_amount: rawFormData.amount_due,
+        reason: "User updated bill amount",
+      });
     }
 
-    revalidatePath("/bills")
-    return bill
+    revalidatePath("/bills");
+    return bill;
   } catch (error) {
-    console.error("Error in updateBill:", error)
-    throw new Error("Failed to update bill")
+    console.error("Error in updateBill:", error);
+    if (error instanceof Error) {
+      throw new Error(error.message);
+    }
+    throw new Error("An unexpected error occurred while updating the bill.");
   }
 }
 
@@ -483,25 +343,7 @@ export async function deleteBill(id: string) {
       throw new Error("Failed to initialize Supabase client")
     }
 
-    // First check if the bill exists and belongs to the user
-    const { data: bill, error: fetchError } = await supabase
-      .from("bills")
-      .select("id")
-      .eq("id", id)
-      .eq("user_id", user.id)
-      .single()
-
-    if (fetchError) {
-      console.error("Error fetching bill:", fetchError)
-      throw new Error("Bill not found or you don't have permission to delete it")
-    }
-
-    // Delete the bill
-    const { error } = await supabase
-      .from("bills")
-      .delete()
-      .eq("id", id)
-      .eq("user_id", user.id)
+    const { error } = await supabase.from("bills").delete().eq("id", id).eq("user_id", user.id)
 
     if (error) {
       console.error("Error deleting bill:", error)
@@ -528,11 +370,6 @@ export async function markBillAsPaid(id: string, formData?: FormData) {
       throw new Error("Failed to initialize Supabase client")
     }
 
-    // Get the bill details
-    if (!supabase) {
-      throw new Error("Failed to initialize Supabase client")
-    }
-    
     const { data: bill, error: billError } = await supabase
       .from("bills")
       .select("*")
@@ -540,161 +377,64 @@ export async function markBillAsPaid(id: string, formData?: FormData) {
       .eq("user_id", user.id)
       .single()
 
-    if (billError) {
-      console.error("Error fetching bill:", billError)
-      throw new Error("Failed to mark bill as paid")
+    if (billError || !bill) {
+      console.error("Error fetching bill or bill not found:", billError)
+      throw new Error("Failed to find the bill to mark as paid")
     }
 
-    // Update payment schedule to mark as paid
-    const { data: scheduleData, error: scheduleQueryError } = await supabase
-      .from("bill_payments")
-      .select("id, note, payment_date")
-      .eq("bill_id", id)
-      .order("payment_date", { ascending: false })
-      .limit(1)
-
-    if (scheduleQueryError) {
-      console.error("Error fetching payment schedule:", scheduleQueryError)
-    } else if (scheduleData && scheduleData.length > 0) {
-      const scheduleId = scheduleData[0].id
-      
-      // Determine if the bill is overdue based on payment_date
-      const paymentDate = new Date(scheduleData[0].payment_date)
-      const today = new Date()
-      const isOverdue = paymentDate < today
-      
-      // Log if we're handling an overdue bill
-      if (isOverdue) {
-        console.log("Updating overdue bill to paid status")
-      }
-      
-      // Update the bill status to paid
-      const { error: updateBillError } = await supabase
-        .from("bills")
-        .update({
-          status: "paid",
-          last_paid_date: new Date().toISOString().split('T')[0]
-        })
-        .eq("id", id)
-        .eq("user_id", user.id)
-
-      if (updateBillError) {
-        console.error("Error updating bill status:", updateBillError)
-      }
-    }
-
-    // Create bill payment record
-    // Determine if the bill is overdue based on the due date
-    const isOverdue = bill.next_due_date && new Date(bill.next_due_date) < new Date()
-    const paymentNotes = isOverdue ? "Overdue bill marked as paid" : "Marked as paid manually"
-    
-    // Get payment method from form or default to 'other' if not provided or invalid
-    let paymentMethod = "other";
-    
-    // Only try to get payment_method if formData is provided
-    if (formData) {
-      const methodFromForm = formData.get("payment_method");
-      if (methodFromForm && typeof methodFromForm === 'string') {
-        paymentMethod = methodFromForm;
-      }
-    }
-    
-    // Ensure payment_method is one of the valid enum values
-    const validPaymentMethods = ['credit_card', 'debit_card', 'bank_transfer', 'cash', 'other'];
-    if (!validPaymentMethods.includes(paymentMethod)) {
-      paymentMethod = "other";
-    }
-    
-    console.log(`Using payment method: ${paymentMethod} for bill ${id}`);
-    
-    const { error: paymentError } = await supabase.from("bill_payments").insert({
-      bill_id: id,
-      user_id: user.id,
-      amount_paid: bill.amount_due || bill.amount,
-      payment_date: new Date().toISOString().split('T')[0],
-      payment_method: paymentMethod,
-      note: paymentNotes
-    })
-
-    if (paymentError) {
-      console.error("Error creating bill payment:", paymentError)
-    }
-
-    // First mark the bill as paid
+    // Mark the current bill as 'paid' but do not change its due date.
     const { error: updateError } = await supabase
       .from("bills")
       .update({
         status: "paid",
-        last_paid_date: new Date().toISOString().split('T')[0]
+        last_paid_date: new Date().toISOString().split("T")[0]
       })
       .eq("id", id)
-      .eq("user_id", user.id)
 
     if (updateError) {
       console.error("Error updating bill status:", updateError)
       throw new Error("Failed to update bill status")
     }
-    
-    // Create payment schedule entry for record-keeping
-    if (supabase) {
-      const { error: scheduleError } = await supabase.from("bill_payments").insert({
-        bill_id: id,
-        user_id: user.id,
-        amount_paid: bill.amount_due || bill.amount,
-        payment_date: new Date().toISOString().split('T')[0], // Today's date as payment date
-        payment_method: paymentMethod,
-        note: "Payment recorded"
-      })
 
-      if (scheduleError) {
-        console.error("Error creating payment schedule:", scheduleError)
-        // Don't throw here, we've already updated the bill status
+    // Create a payment record.
+    let paymentMethod = "other"
+    if (formData) {
+      const methodFromForm = formData.get("payment_method")
+      if (typeof methodFromForm === "string") {
+        const validMethods = ["credit_card", "debit_card", "bank_transfer", "cash", "other"]
+        if (validMethods.includes(methodFromForm)) {
+          paymentMethod = methodFromForm
+        }
       }
     }
-    
-    // For recurring bills, create a new bill entry for the next cycle instead of updating the current one
-    if (bill.frequency && bill.frequency !== 'once' && supabase) {
-      // Calculate the next due date based on the frequency
-      const nextDueDate = calculateNextDueDate(bill.next_due_date || '', bill.frequency);
-      console.log(`Recurring bill paid. Next cycle due date: ${nextDueDate}`);
-      
-      // Keep the current bill as paid and don't modify its due date
-      // This preserves the user's original input and payment history
-      console.log(`Keeping original bill as paid with due date: ${bill.next_due_date}`);
-      
-      // Create a new bill entry for the next cycle
-      try {
-        const { data: newBill, error: newBillError } = await supabase
-          .from("bills")
-          .insert({
-            user_id: user.id,
-            name: bill.name,
-            amount_due: bill.amount_due,
-            next_due_date: nextDueDate,
-            frequency: bill.frequency,
-            is_automatic: bill.is_automatic,
-            description: bill.description || "",
-            category_id: bill.category_id,
-            vendor: bill.vendor,
-            expected_payment_account: bill.expected_payment_account,
-            reminder_days: bill.reminder_days,
-            status: "unpaid", // Always start the new cycle as unpaid
-            currency: bill.currency || "USD"
-          })
-          .select()
-          .single();
 
-        if (newBillError) {
-          console.error("Error creating next cycle bill:", newBillError);
-        } else {
-          console.log(`Created new bill for next cycle with due date: ${nextDueDate}`);
-        }
-      } catch (e) {
-        console.error("Exception creating next cycle bill:", e);
-        // Don't throw here, we've already marked the original bill as paid
-      }
-    } else {
-      console.log(`Non-recurring bill marked as paid. Due date remains: ${bill.next_due_date}`);
+    await supabase.from("bill_payments").insert({
+      bill_id: id,
+      user_id: user.id,
+      amount_paid: bill.amount_due,
+      payment_date: new Date().toISOString().split("T")[0],
+      payment_method: paymentMethod,
+      note: "Payment recorded"
+    })
+
+    // For recurring bills, create a new bill for the next cycle.
+    if (bill.frequency && bill.frequency !== "once") {
+      const nextDueDate = calculateNextDueDate(bill.next_due_date, bill.frequency)
+
+      await supabase.from("bills").insert({
+        user_id: user.id,
+        name: bill.name,
+        amount_due: bill.amount_due,
+        next_due_date: nextDueDate,
+        frequency: bill.frequency,
+        is_automatic: bill.is_automatic,
+        description: bill.description,
+        category_id: bill.category_id,
+        vendor: bill.vendor,
+        reminder_days: bill.reminder_days,
+        status: "unpaid",
+        currency: bill.currency || "USD"
+      })
     }
 
     revalidatePath("/bills")
@@ -713,51 +453,49 @@ export async function getBillNegotiationOpportunities() {
     }
 
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+        throw new Error("Failed to initialize Supabase client")
+    }
 
-    // Find bills that have been consistently the same amount for several months
-    // and are above a certain threshold (potential for negotiation)
     const { data: bills, error } = await supabase
-      .from("user_bills")
-      .select(`
+      .from("bills")
+      .select(
+        `
         id,
         name,
-        amount,
-        biller_id,
-        billers (name, category)
-      `)
+        amount_due,
+        vendor,
+        category:category_id (name)
+      `
+      )
       .eq("user_id", user.id)
-      .eq("is_recurring", true)
-      .gt("amount", 50) // Only consider bills above $50
-      .order("amount", { ascending: false })
+      .eq("frequency", "monthly") // Common for negotiation
+      .gt("amount_due", 50) // Only consider bills above $50
+      .order("amount_due", { ascending: false })
 
     if (error) {
       console.error("Error fetching bill negotiation opportunities:", error)
       throw new Error("Failed to fetch bill negotiation opportunities")
     }
 
-    // For each bill, check if there are any payment history
-    const opportunities = await Promise.all(
-      bills.map(async (bill) => {
-        const { data: payments } = await supabase
-          .from("bill_payments")
-          .select("*")
-          .eq("user_bill_id", bill.id)
-          .order("created_at", { ascending: false })
-          .limit(1)
+    const opportunities = bills.map(bill => {
+        const category = bill.category as any;
+        let categoryName: string | undefined;
 
-        const hasRecentPayment = payments && payments.length > 0
+        if (Array.isArray(category)) {
+            categoryName = category[0]?.name;
+        } else if (category) {
+            categoryName = category.name;
+        }
 
         return {
           ...bill,
-          hasRecentPayment,
-          lastPayment: payments && payments.length > 0 ? payments[0] : null,
-          potentialSavings: Math.round(bill.amount * 0.15 * 100) / 100, // Estimate 15% potential savings
-          negotiationStrategy: generateNegotiationStrategy(bill),
+          potentialSavings: Math.round(bill.amount_due * 0.15 * 100) / 100, // Estimate 15% potential savings
+          negotiationStrategy: generateNegotiationStrategy({ billers: { category: categoryName, name: bill.vendor }})
         }
-      })
-    )
+    })
 
-    return opportunities.filter((bill) => !bill.hasRecentPayment)
+    return opportunities
   } catch (error) {
     console.error("Error in getBillNegotiationOpportunities:", error)
     throw new Error("Failed to fetch bill negotiation opportunities")
@@ -772,23 +510,26 @@ export async function getUpcomingBills() {
     }
 
     const supabase = await createServerSupabaseClient()
+    if (!supabase) {
+        throw new Error("Failed to initialize Supabase client")
+    }
 
-    // Get bills due in the next 30 days
     const thirtyDaysFromNow = new Date()
     thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30)
 
     const { data: bills, error } = await supabase
-      .from("user_bills")
-      .select(`
+      .from("bills")
+      .select(
+        `
         *,
-        billers (name, category),
-        payment_schedule (status, scheduled_date)
-      `)
+        category:category_id (name)
+      `
+      )
       .eq("user_id", user.id)
-      .eq("is_active", true)
-      .gte("next_payment_date", new Date().toISOString().split('T')[0])
-      .lte("next_payment_date", thirtyDaysFromNow.toISOString().split('T')[0])
-      .order("next_payment_date", { ascending: true })
+      .eq("status", "unpaid")
+      .gte("next_due_date", new Date().toISOString().split('T')[0])
+      .lte("next_due_date", thirtyDaysFromNow.toISOString().split('T')[0])
+      .order("next_due_date", { ascending: true })
 
     if (error) {
       console.error("Error fetching upcoming bills:", error)
@@ -800,72 +541,4 @@ export async function getUpcomingBills() {
     console.error("Error in getUpcomingBills:", error)
     throw new Error("Failed to fetch upcoming bills")
   }
-}
-
-// Helper function to calculate next due date based on recurrence pattern
-function calculateNextDueDate(currentDueDate: string, recurrencePattern: string): string {
-  const date = new Date(currentDueDate)
-
-  switch (recurrencePattern) {
-    case "once":
-      // For one-time bills, don't change the date
-      break
-    case "weekly":
-      date.setDate(date.getDate() + 7)
-      break
-    case "biweekly":
-    case "bi_weekly":
-      date.setDate(date.getDate() + 14)
-      break
-    case "monthly":
-      date.setMonth(date.getMonth() + 1)
-      break
-    case "quarterly":
-      date.setMonth(date.getMonth() + 3)
-      break
-    case "semi-annually":
-    case "semiannually":
-    case "semi_annual":
-      date.setMonth(date.getMonth() + 6)
-      break
-    case "annually":
-    case "annual":
-      date.setFullYear(date.getFullYear() + 1)
-      break
-    default:
-      date.setMonth(date.getMonth() + 1) // Default to monthly
-  }
-
-  return date.toISOString().split("T")[0]
-}
-
-// Helper function to generate negotiation strategy based on bill type
-function generateNegotiationStrategy(bill: any): string {
-  const strategies = [
-    "Call customer service and mention competitor offers",
-    "Ask about loyalty discounts for long-term customers",
-    "Request a review of your account for available promotions",
-    "Inquire about bundling services for a discount",
-    "Mention financial hardship and request temporary rate reduction",
-  ]
-
-  // Use category to determine best strategy if available
-  if (bill.billers?.category) {
-    const category = bill.billers.category.toLowerCase()
-
-    if (category.includes("internet") || category.includes("phone") || category.includes("cable")) {
-      return "Research competitor rates and call to request a price match. Mention you're considering switching providers."
-    }
-
-    if (category.includes("insurance")) {
-      return "Ask about bundling policies, safe driver discounts, or loyalty programs. Consider increasing deductibles to lower monthly premiums."
-    }
-
-    if (category.includes("subscription") || category.includes("streaming")) {
-      return "Check for annual payment options which often come with discounts. Consider family or group plans if applicable."
-    }
-  }
-
-  // Return a random strategy if no specific category match
-  return strategies[Math.floor(Math.random() * strategies.length)]
 }

@@ -23,8 +23,7 @@ import { cn } from "@/lib/utils"
 import { CalendarIcon, CheckCircle2, AlertCircle, Clock, Plus } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
-import { BillCategorySelector } from "./bill-category-selector"
-import { AddCategoryDialog } from "./add-category-dialog"
+import { BillCategorySelector } from "./bill-category-selector";
 
 interface Bill {
   id: string
@@ -65,8 +64,7 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
   const [error, setError] = useState<string | null>(null)
   const [dueDate, setDueDate] = useState<Date | undefined>(undefined)
   const [status, setStatus] = useState<string>("unpaid")
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("")
-  const [showAddCategoryDialog, setShowAddCategoryDialog] = useState(false)
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
 
   useEffect(() => {
     if (bill) {
@@ -140,63 +138,57 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
   }, [bill, open])
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    setLoading(true)
-    setError(null)
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+
+    const formData = new FormData(e.currentTarget);
+
+    if (!dueDate) {
+      setError("Due date is required.");
+      setLoading(false);
+      return;
+    }
+    
+    const formattedDate = format(dueDate, "yyyy-MM-dd");
+    // Use 'due_date' as expected by the server action
+    formData.set("due_date", formattedDate);
+    formData.delete("next_payment_date"); // Clean up old incorrect field
+
+    // Use 'frequency' as expected by the server action
+    if (isRecurring) {
+      let frequency = (formData.get("recurrence_pattern") as string) || "monthly";
+      if (frequency === "biweekly") {
+        frequency = "bi_weekly"; // Map to DB enum value
+      }
+      formData.set("frequency", frequency);
+    } else {
+      formData.set("frequency", "once");
+    }
+    formData.delete("recurrence_pattern"); // Clean up old incorrect field
+
+    // Use 'is_automatic' as expected by the server action
+    formData.set("is_automatic", isAutoPay ? "on" : "off");
+    formData.delete("auto_pay"); // Clean up old incorrect field
+    
+    formData.delete("is_recurring");
 
     try {
-      const formData = new FormData(e.currentTarget)
-      
-      // Add the date in the correct format
-      if (!dueDate) {
-        throw new Error("Due date is required")
-      }
-      
-      // Format date as YYYY-MM-DD
-      const formattedDate = format(dueDate, "yyyy-MM-dd")
-      formData.set("next_payment_date", formattedDate)
-      
-      // Add recurring and billing frequency
-      formData.set("is_recurring", isRecurring ? "true" : "false")
-      
-      // If it's a recurring bill, ensure we have a recurrence pattern
-      if (isRecurring) {
-        const recurrencePattern = formData.get("recurrence_pattern") as string || "monthly"
-        formData.set("recurrence_pattern", recurrencePattern)
-      } else {
-        formData.set("recurrence_pattern", "once")
-      }
-      
-      // Add auto-pay setting
-      formData.set("auto_pay", isAutoPay ? "true" : "false")
-      
-      // Determine the initial status based on the due date
-      // For new bills, we'll let the server determine if it's overdue or unpaid
-      // For existing bills, we'll respect the status that was set in the dialog
-      if (!bill) {
-        // For new bills, don't set a status and let the server determine it
-        // This ensures consistent handling for both recurring and non-recurring bills
-        formData.delete("status")
-      } else {
-        // For existing bills, use the status from the dialog
-        formData.set("status", status)
-      }
-
       if (bill) {
-        await updateBill(bill.id, formData)
+        await updateBill(bill.id, formData);
       } else {
-        await createBill(formData)
+        await createBill(formData);
       }
 
-      onSave()
-      onOpenChange(false)
+      onSave();
+      onOpenChange(false);
     } catch (err) {
-      console.error("Error saving bill:", err)
-      setError(err instanceof Error ? err.message : "Failed to save bill. Please try again.")
+      console.error("Error saving bill:", err);
+      setError(err instanceof Error ? err.message : "Failed to save bill. Please try again.");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   // Status option renderer with icons and colors
   const statusOptions = [
@@ -227,12 +219,12 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
             </div>
 
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="amount" className="text-right">
+              <Label htmlFor="amount_due" className="text-right">
                 Amount
               </Label>
               <Input
-                id="amount"
-                name="amount"
+                id="amount_due"
+                name="amount_due"
                 defaultValue={bill?.amount_due !== undefined ? bill.amount_due : (bill?.amount !== undefined ? bill.amount : "")}
                 className="col-span-3"
                 type="number"
@@ -323,25 +315,13 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
               <Label htmlFor="category_id" className="text-right">
                 Category
               </Label>
-              <div className="col-span-3 flex gap-2">
-                <div className="flex-1">
-                  <BillCategorySelector
-                    value={selectedCategoryId}
-                    onChange={setSelectedCategoryId}
-                    placeholder="Select bill category"
-                    includeCustomOption={true}
-                    onAddCustom={() => setShowAddCategoryDialog(true)}
-                  />
-                  <input type="hidden" name="category_id" value={selectedCategoryId} />
-                </div>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="icon" 
-                  onClick={() => setShowAddCategoryDialog(true)}
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
+                            <div className="col-span-3">
+                <BillCategorySelector
+                  value={selectedCategoryId}
+                  onChange={setSelectedCategoryId}
+                  placeholder="Select bill category"
+                />
+                <input type="hidden" name="category_id" value={selectedCategoryId} />
               </div>
             </div>
 
@@ -353,6 +333,12 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
             </div>
           </div>
 
+          {error && (
+            <div className="my-4 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+              <p className="font-bold">An error occurred:</p>
+              <p>{error}</p>
+            </div>
+          )}
           <DialogFooter>
             <Button type="submit" disabled={loading}>
               {loading ? "Saving..." : bill ? "Update Bill" : "Add Bill"}
@@ -361,16 +347,7 @@ export function BillDialog({ open, onOpenChange, bill, onSave }: BillDialogProps
         </form>
       </DialogContent>
 
-      {/* Add Category Dialog */}
-      <AddCategoryDialog 
-        open={showAddCategoryDialog} 
-        onOpenChange={setShowAddCategoryDialog} 
-        onCategoryAdded={(category) => {
-          if (category?.id) {
-            setSelectedCategoryId(category.id)
-          }
-        }}
-      />
+      
     </Dialog>
   )
 }

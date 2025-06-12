@@ -34,6 +34,15 @@ export async function getBillCategories() {
 }
 
 export async function createBillCategory(formData: FormData) {
+  return {
+    error: {
+      message: "Users are not allowed to create new categories."
+    }
+  }
+}
+
+// DANGEROUS: This will delete all user-created categories and reset to a default list.
+export async function resetBillCategories() {
   try {
     const user = await getCurrentUser()
     if (!user) {
@@ -45,32 +54,52 @@ export async function createBillCategory(formData: FormData) {
       throw new Error("Failed to initialize Supabase client")
     }
 
-    const name = formData.get("name") as string
-    if (!name) {
-      throw new Error("Category name is required")
-    }
-
-    const description = formData.get("description") as string || ""
-    const icon = formData.get("icon") as string || null
-
-    const { data: category, error } = await supabase
+    // First, delete all existing categories to ensure a clean slate.
+    const { error: deleteError } = await supabase
       .from("bill_categories")
-      .insert({
-        name,
-        description,
-        icon
-      })
-      .select()
-      .single()
+      .delete()
+      .neq("id", "0") // Placeholder to delete all, adjust if needed
 
-    if (error) {
-      console.error("Error creating bill category:", error)
-      throw new Error("Failed to create bill category")
+    if (deleteError) {
+      console.error("Error deleting bill categories:", deleteError)
+      throw new Error("Failed to delete bill categories")
     }
 
-    return { category }
+    // Next, insert the list of default categories.
+    const defaultCategories = [
+      { name: "Rent", description: "Monthly rent payment", icon: "home" },
+      { name: "Mortgage", description: "Monthly mortgage payment", icon: "home-loan" },
+      { name: "Utilities", description: "Electricity, water, gas, etc.", icon: "lightbulb" },
+      { name: "Internet", description: "Monthly internet bill", icon: "wifi" },
+      { name: "Phone", description: "Mobile or landline phone bill", icon: "phone" },
+      { name: "Insurance", description: "Health, auto, or home insurance", icon: "shield" },
+      { name: "Loan Payment", description: "Car loan, personal loan, etc.", icon: "car" },
+      { name: "Credit Card", description: "Monthly credit card payment", icon: "credit-card" },
+      { name: "Groceries", description: "Regular grocery shopping", icon: "shopping-cart" },
+      { name: "Dining Out", description: "Restaurants, cafes, and take-out", icon: "utensils" },
+      { name: "Transportation", description: "Gas, public transit, ride-sharing", icon: "bus" },
+      { name: "Entertainment", description: "Movies, concerts, subscriptions", icon: "ticket" },
+      { name: "Healthcare", description: "Doctor visits, prescriptions", icon: "medical" },
+      { name: "Education", description: "Tuition, books, supplies", icon: "book" },
+      { name: "Childcare", description: "Daycare, babysitting services", icon: "child" },
+      { name: "Other", description: "Miscellaneous expenses", icon: "ellipsis-h" },
+    ]
+
+    const { data: categories, error: insertError } = await supabase
+      .from("bill_categories")
+      .insert(defaultCategories)
+      .select()
+
+    if (insertError) {
+      console.error("Error creating default bill categories:", insertError)
+      throw new Error("Failed to create default bill categories")
+    }
+
+    return { success: true, categories }
   } catch (error) {
-    console.error("Error in createBillCategory:", error)
-    throw new Error("Failed to create bill category")
+    console.error("Error in resetBillCategories:", error)
+    return { success: false, error: (error as Error).message }
   }
+
+  
 }
