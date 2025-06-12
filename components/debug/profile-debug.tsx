@@ -14,14 +14,13 @@ export function ProfileDebug() {
   const supabase = createClientComponentClient()
   
   useEffect(() => {
-    const fetchUser = async () => {
-      const { data } = await supabase.auth.getUser()
-      if (data?.user) {
-        setUser(data.user)
-      }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
+
+    return () => {
+      subscription.unsubscribe()
     }
-    
-    fetchUser()
   }, [supabase.auth])
   
   const handleRefresh = async () => {
