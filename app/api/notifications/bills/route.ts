@@ -36,7 +36,7 @@ export async function POST() {
     const { data: relevantBills, error: billsError } = await supabaseAdmin
       .from("bills")
       .select("id, user_id, name, amount_due, next_due_date")
-      .eq("status", "unpaid")
+      .not('status','eq','paid')
       .gte("next_due_date", startWindow.toISOString().split('T')[0])
       .lte("next_due_date", endWindow.toISOString().split('T')[0])
 
@@ -82,12 +82,12 @@ export async function POST() {
 
     // Continue with notification logic as before
     let notificationsCreated = 0
-    const notificationsToInsert: Omit<Notification, 'id' | 'created_at' | 'is_read' | 'notification_type'>[] = []
-    const logsToInsert: { user_id: string; bill_id: string; sent_at: string }[] = []
+    const notificationsToInsert: any[] = []
+    const billLogData: { user_id: string; bill_id: string; sent_at: string }[] = []
 
     // 4. Get all user preferences for bill alerts
     const { data: preferences, error: prefError } = await supabaseAdmin
-      .from("user_notification_preferences")
+      .from("notification_preferences")
       .select("user_id, bill_alerts")
       .eq("bill_alerts", true)
 
@@ -126,11 +126,11 @@ export async function POST() {
           user_id: bill.user_id,
           message: message,
           link: `/bills`,
-          notification_type_id: billNotificationTypeId,
+          notification_type: billNotificationTypeId,
           updated_at: new Date().toISOString(),
         })
 
-        logsToInsert.push({
+        billLogData.push({
           user_id: bill.user_id,
           bill_id: bill.id,
           sent_at: bill.next_due_date,
@@ -142,11 +142,22 @@ export async function POST() {
 
     // 6. Batch insert notifications and logs if there are any to add
     if (notificationsToInsert.length > 0) {
-      const { error: insertError } = await supabaseAdmin.from("user_notifications").insert(notificationsToInsert)
+      const { data: inserted, error: insertError } = await supabaseAdmin
+        .from("user_notifications")
+        .insert(notificationsToInsert)
+        .select("notification_id")
       if (insertError) {
         console.error("Error inserting bill notifications:", insertError)
         return NextResponse.json({ error: "Failed to create bill notifications." }, { status: 500 })
       }
+
+      // Build logs with notification_id
+      const logsToInsert = inserted!.map((n, idx) => ({
+        user_id: billLogData[idx].user_id,
+        bill_id: billLogData[idx].bill_id,
+        notification_id: n.notification_id,
+        sent_at: billLogData[idx].sent_at,
+      }))
 
       const { error: logInsertError } = await supabaseAdmin.from("bill_alert_notifications").insert(logsToInsert)
       if (logInsertError) {
