@@ -50,7 +50,7 @@ CREATE TABLE notification_preferences (
   push_notifications BOOLEAN DEFAULT TRUE,
   watchlist_alerts BOOLEAN DEFAULT TRUE,
   budget_alerts BOOLEAN DEFAULT TRUE,
-  expense_reminders BOOLEAN DEFAULT TRUE,
+  goal_alerts BOOLEAN DEFAULT TRUE,
   bill_reminders BOOLEAN DEFAULT TRUE,
   investment_updates BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),

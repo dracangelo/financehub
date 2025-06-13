@@ -12,6 +12,7 @@ interface CreateNotificationParams {
   userId: string
   notificationTypeId: string
   message: string
+  link?: string
 }
 
 interface SendEmailParams {
@@ -50,63 +51,76 @@ export async function getNotificationTypes() {
 }
 
 // Get user's notifications
-export async function getNotifications() {
-  // First refresh the auth session to prevent JWT expiration errors
+export async function getNotifications(): Promise<{ notifications: Notification[]; error: string | null }> {
   await refreshSession();
   try {
-    // First, ensure the database structure is set up
-    try {
-      await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ""}/api/database/notifications-setup`)
-    } catch (setupError) {
-      console.error("Error setting up notification database structure:", setupError)
+    const supabase = await createServerSupabaseClient();
+    if (!supabase) {
+      console.error("Failed to create Supabase client");
+      return { notifications: [], error: "Database connection error" };
     }
 
-    const supabase = await createServerSupabaseClient()
-    
-    if (!supabase) {
-      console.error("Failed to create Supabase client")
-      return { notifications: [], error: "Database connection error" }
-    }
-    
-    // Get current user
-    const { data, error: userError } = await supabase.auth.getUser()
-    const user = data?.user
-    
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) {
-      console.error("Error getting user:", userError)
-      return { notifications: [], error: "User not authenticated" }
+      console.error("Error getting user:", userError);
+      return { notifications: [], error: "User not authenticated" };
     }
-    
-    // Get notifications with type information
-    const { data: notifications, error } = await supabase
-      .from("user_notifications")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
+
+    type NotificationWithTypeName = {
+      notification_id: string;
+      user_id: string;
+      message: string;
+      link: string | null;
+      is_read: boolean;
+      created_at: string;
+      updated_at: string;
+      notification_type: string;
+      notification_types: { name: string } | null;
+    };
+
+    const { data: notificationsData, error } = await supabase
+      .from('user_notifications')
+      .select(`
+        notification_id,
+        user_id,
+        message,
+        link,
+        is_read,
+        created_at,
+        updated_at,
+        notification_type,
+        notification_types ( name )
+      `)
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
       .limit(50)
-    
+      .returns<NotificationWithTypeName[]>();
+
     if (error) {
-      console.error("Error fetching notifications:", error)
-      return { notifications: [], error: error.message }
+      console.error("Error fetching notifications:", error);
+      return { notifications: [], error: error.message };
     }
-    
-    // Map the results to match our frontend expectations
-    const mappedNotifications = notifications.map(notification => ({
-      id: notification.notification_id,
-      user_id: user.id,
-      notification_type_id: notification.notification_type,
-      notification_type: notification.notification_type,
-      message: notification.message,
-      link: notification.link,
-      is_read: notification.is_read,
-      created_at: notification.created_at,
-      updated_at: notification.updated_at
+
+    if (!notificationsData) {
+      return { notifications: [], error: null };
+    }
+
+    const mappedNotifications: Notification[] = notificationsData.map(n => ({
+      id: n.notification_id,
+      user_id: n.user_id,
+      message: n.message,
+      link: n.link,
+      is_read: n.is_read,
+      created_at: n.created_at,
+      updated_at: n.updated_at,
+      notification_type_id: n.notification_type,
+      notification_type: n.notification_types?.name ?? 'General',
     }));
-    
-    return { notifications: mappedNotifications as Notification[], error: null }
+
+    return { notifications: mappedNotifications, error: null };
   } catch (error) {
-    console.error("Unexpected error in getNotifications:", error)
-    return { notifications: [], error: "An unexpected error occurred" }
+    console.error("Unexpected error in getNotifications:", error);
+    return { notifications: [], error: "An unexpected error occurred" };
   }
 }
 
@@ -180,12 +194,7 @@ export async function createNotification(params: CreateNotificationParams) {
       return { success: false, error: "Could not create notification" }
     }
 
-    // First, ensure the database structure is set up
-    try {
-      await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ""}/api/database/notifications-setup`)
-    } catch (setupError) {
-      console.error("Error setting up notification database structure:", setupError)
-    }
+
 
     // Create notification using admin client
     const { data, error } = await adminClient
@@ -194,6 +203,7 @@ export async function createNotification(params: CreateNotificationParams) {
         user_id: params.userId,
         notification_type: params.notificationTypeId,
         message: params.message,
+        link: params.link,
         is_read: false
       })
       .select()
@@ -383,7 +393,7 @@ export async function getNotificationPreferences() {
           push_notifications: true,
           watchlist_alerts: true,
           budget_alerts: true,
-          expense_reminders: true,
+          goal_alerts: true,
           bill_reminders: true,
           investment_updates: true
         }

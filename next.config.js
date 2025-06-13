@@ -6,6 +6,18 @@ module.exports = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'hfsfcu.org',
+      },
+      {
+        protocol: 'https',
+        hostname: 'cdn.pixabay.com',
+      },
+    ],
+  },
 
   // Explicitly handle the problematic pages
   rewrites: async () => {

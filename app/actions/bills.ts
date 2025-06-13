@@ -159,6 +159,24 @@ export async function getBillById(id: string) {
   }
 }
 
+// Helper function to normalize frequency values
+function normalizeFrequency(frequency: string): string {
+  const lowerCaseFrequency = frequency.toLowerCase().trim();
+  switch (lowerCaseFrequency) {
+    case "annually":
+      return "annual";
+    case "bi-weekly":
+    case "bi_weekly":
+      return "biweekly";
+    case "semi-annually":
+    case "semiannually":
+    case "semi_annual":
+      return "semi_annually";
+    default:
+      return lowerCaseFrequency;
+  }
+}
+
 export async function createBill(formData: FormData) {
   try {
     const user = await getCurrentUser();
@@ -207,7 +225,7 @@ export async function createBill(formData: FormData) {
       name: rawFormData.name,
       amount_due: rawFormData.amount_due,
       next_due_date: formattedDate,
-      frequency: rawFormData.frequency,
+      frequency: normalizeFrequency(rawFormData.frequency),
       is_automatic: rawFormData.is_automatic,
       description: rawFormData.description,
       category_id: rawFormData.category_id,
@@ -296,7 +314,7 @@ export async function updateBill(id: string, formData: FormData) {
       name: rawFormData.name,
       amount_due: rawFormData.amount_due,
       next_due_date: formattedDate,
-      frequency: rawFormData.frequency,
+      frequency: normalizeFrequency(rawFormData.frequency),
       is_automatic: rawFormData.is_automatic,
       description: rawFormData.description,
       category_id: rawFormData.category_id,
@@ -521,7 +539,20 @@ export async function getUpcomingBills() {
       .from("bills")
       .select(
         `
-        *,
+        id,
+        name,
+        amount_due,
+        next_due_date,
+        frequency,
+        is_automatic,
+        description,
+        vendor,
+        reminder_days,
+        status,
+        currency,
+        created_at,
+        updated_at,
+        category_id,
         category:category_id (name)
       `
       )

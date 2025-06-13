@@ -4,6 +4,29 @@ import { createServerClient } from "@/lib/supabase/server"
 import { getCurrentUser } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
 
+// Helper: create a notification for a goal event
+async function createGoalNotification({ userId, message, link }: { userId: string; message: string; link?: string }) {
+  const supabase = await createServerClient();
+  if (!supabase) return;
+  // Find the notification_type_id for "Goal" (cache or fetch)
+  let goalTypeId: string | null = null;
+  const { data: typeRow } = await supabase
+    .from("notification_types")
+    .select("id")
+    .eq("name", "Goal")
+    .single();
+  if (typeRow) goalTypeId = typeRow.id;
+  if (!goalTypeId) return;
+  await supabase.from("user_notifications").insert({
+    user_id: userId,
+    message,
+    link: link || null,
+    notification_type_id: goalTypeId,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+}
+
 // Types for our goal planning system based on goals.sql schema
 export type GoalStatus = 'active' | 'paused' | 'achieved' | 'cancelled'
 export type RoundupType = 'nearest_dollar' | 'fixed_amount' | 'percentage'
@@ -871,6 +894,31 @@ export async function addGoalContribution(goalId: string, formData: FormData) {
 
     // The trigger defined in goals.sql will automatically update the goal's current_amount
     // We don't need to manually update it here
+
+    // --- Notification logic for progress milestones ---
+    // Re-fetch the updated goal to get the new progress
+    const { data: updatedGoal } = await supabase
+      .from("financial_goals")
+      .select("current_amount, target_amount, name")
+      .eq("id", goalId)
+      .single();
+    if (updatedGoal) {
+      const progress = updatedGoal.current_amount / updatedGoal.target_amount;
+      const thresholds = [0.25, 0.5, 0.75];
+      // Fetch previous progress to avoid duplicate notifications
+      const prevProgress = goal.current_amount / goal.target_amount;
+      for (const threshold of thresholds) {
+        if (prevProgress < threshold && progress >= threshold) {
+          // Create notification
+          await createGoalNotification({
+            userId: user.id,
+            message: `Congratulations! Your goal "${updatedGoal.name}" has reached ${(threshold * 100).toFixed(0)}% progress!`,
+            link: `/goals/${goalId}`
+          });
+        }
+      }
+    }
+    // --- End notification logic ---
 
     revalidatePath(`/goals/${goalId}`)
     revalidatePath("/goals")

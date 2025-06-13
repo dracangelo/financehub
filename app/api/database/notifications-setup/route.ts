@@ -80,7 +80,7 @@ export async function GET() {
               push_notifications BOOLEAN DEFAULT TRUE,
               watchlist_alerts BOOLEAN DEFAULT TRUE,
               budget_alerts BOOLEAN DEFAULT TRUE,
-              expense_reminders BOOLEAN DEFAULT TRUE,
+              goal_alerts BOOLEAN DEFAULT TRUE,
               bill_reminders BOOLEAN DEFAULT TRUE,
               investment_updates BOOLEAN DEFAULT TRUE,
               created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -106,7 +106,7 @@ export async function GET() {
               ('General Alert', 'General system alerts and notifications'),
               ('Watchlist Alert', 'Alerts related to watchlist items'),
               ('Budget Alert', 'Alerts related to budget limits'),
-              ('Expense Reminder', 'Reminders about upcoming or overdue expenses'),
+              ('Goal Alert', 'Reminders about progress and milestones for your goals'),
               ('Bill Reminder', 'Reminders about upcoming or due bills'),
               ('Investment Update', 'Updates about investment performance'),
               ('System Update', 'System updates and maintenance notifications')

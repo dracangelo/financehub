@@ -102,7 +102,8 @@ export async function GET() {
 }
 
 // Helper function to calculate ROI for a subscription
-function calculateROI(subscription: Subscription): ROIData {
+function calculateROI(subscription: Subscription & { amount_due?: number }): ROIData {
+  const amount = subscription.amount_due ?? subscription.amount;
   // Calculate total cost based on subscription duration
   const startDate = new Date(subscription.start_date)
   const endDate = subscription.end_date ? new Date(subscription.end_date) : null
@@ -153,7 +154,7 @@ function calculateROI(subscription: Subscription): ROIData {
       monthlyMultiplier = 1
   }
   
-  const monthlyCost = subscription.amount * monthlyMultiplier
+  const monthlyCost = amount * monthlyMultiplier
   const annualCost = monthlyCost * 12
   const totalCost = monthlyCost * durationMonths
   

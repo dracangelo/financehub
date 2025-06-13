@@ -31,11 +31,29 @@ export async function GET() {
     // First, ensure the database structure is set up
     await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ""}/api/database/notifications-setup`);
 
+    // Fetch notification types to map names to IDs
+    const { data: notificationTypes, error: typesError } = await adminClient
+      .from('notification_types')
+      .select('id, name');
+
+    if (typesError) {
+      console.error("Error fetching notification types:", typesError);
+      return NextResponse.json(
+        { error: "Failed to fetch notification types" },
+        { status: 500 }
+      );
+    }
+
+    const typeMap = notificationTypes.reduce((acc, type) => {
+      acc[type.name] = type.id;
+      return acc;
+    }, {} as Record<string, string>);
+
     // Sample notifications
     const sampleNotifications = [
       {
         user_id: user.id,
-        notification_type: "General Alert",
+        notification_type: typeMap["General Alert"],
         message: "Welcome to Dripcheck! Your financial dashboard is ready.",
         link: "/dashboard",
         is_read: false,
@@ -43,7 +61,7 @@ export async function GET() {
       },
       {
         user_id: user.id,
-        notification_type: "Watchlist Alert",
+        notification_type: typeMap["Watchlist Alert"],
         message: "AAPL has reached your target price of $180.",
         link: "/watchlist",
         is_read: false,
@@ -51,7 +69,7 @@ export async function GET() {
       },
       {
         user_id: user.id,
-        notification_type: "Budget Alert",
+        notification_type: typeMap["Budget Alert"],
         message: "You've reached 80% of your Entertainment budget for this month.",
         link: "/budgets",
         is_read: false,
@@ -59,7 +77,7 @@ export async function GET() {
       },
       {
         user_id: user.id,
-        notification_type: "Expense Reminder",
+        notification_type: typeMap["Expense Reminder"],
         message: "Don't forget to record your recent expenses.",
         link: "/expenses",
         is_read: true,
@@ -67,7 +85,7 @@ export async function GET() {
       },
       {
         user_id: user.id,
-        notification_type: "Bill Reminder",
+        notification_type: typeMap["Bill Reminder"],
         message: "Your electricity bill is due in 3 days.",
         link: "/bills",
         is_read: true,
@@ -75,7 +93,7 @@ export async function GET() {
       },
       {
         user_id: user.id,
-        notification_type: "Investment Update",
+        notification_type: typeMap["Investment Update"],
         message: "Your portfolio has increased by 2.5% this week.",
         link: "/investments",
         is_read: true,
@@ -83,7 +101,7 @@ export async function GET() {
       },
       {
         user_id: user.id,
-        notification_type: "System Update",
+        notification_type: typeMap["System Update"],
         message: "New feature: You can now set up recurring expenses.",
         link: "/settings",
         is_read: true,
@@ -145,7 +163,7 @@ export async function GET() {
           push_notifications: true,
           watchlist_alerts: true,
           budget_alerts: true,
-          expense_reminders: true,
+          goal_alerts: true,
           bill_reminders: true,
           investment_updates: true
         }, { onConflict: 'user_id' });

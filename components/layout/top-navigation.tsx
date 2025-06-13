@@ -21,6 +21,7 @@ import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { NotificationBell } from "@/components/notifications/notification-bell"
 
 interface TopNavigationProps {
   onMenuToggle: () => void;
@@ -109,40 +110,7 @@ export function TopNavigation({
           </div>
           
           {/* Notifications */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="relative h-8 w-8 rounded-full hover:bg-primary/10" aria-label="Notifications">
-                <Bell className="h-5 w-5" />
-                <Badge className="absolute -top-1 -right-1 h-4 w-4 p-0 flex items-center justify-center text-[10px]" variant="destructive">
-                  3
-                </Badge>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-80">
-              <DropdownMenuLabel>Notifications</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <div className="max-h-[300px] overflow-y-auto">
-                <DropdownMenuItem className="flex flex-col items-start py-2">
-                  <div className="font-medium">Budget Alert</div>
-                  <div className="text-xs text-muted-foreground">Dining category exceeded by $45</div>
-                  <div className="text-xs text-muted-foreground mt-1">2 hours ago</div>
-                </DropdownMenuItem>
-                <DropdownMenuItem className="flex flex-col items-start py-2">
-                  <div className="font-medium">New Feature</div>
-                  <div className="text-xs text-muted-foreground mt-1">Yesterday</div>
-                </DropdownMenuItem>
-                <DropdownMenuItem className="flex flex-col items-start py-2">
-                  <div className="font-medium">Price Alert</div>
-                  <div className="text-xs text-muted-foreground">AAPL reached your target price of $198</div>
-                  <div className="text-xs text-muted-foreground mt-1">2 days ago</div>
-                </DropdownMenuItem>
-              </div>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className="justify-center text-sm">
-                View all notifications
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <NotificationBell />
           
           {/* User menu */}
           <DropdownMenu>

@@ -181,27 +181,35 @@ export function NotificationPreferencesForm() {
           
           <div className="space-y-4">
             <h3 className="text-sm font-medium">Notification Types</h3>
-            
+
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label htmlFor="watchlist_alerts" className="text-base">Watchlist Alerts</Label>
-                <p className="text-sm text-muted-foreground">
-                  Price targets reached, stock updates
-                </p>
+                <Label htmlFor="goal_alerts" className="text-base">Goal Alerts</Label>
+                <p className="text-sm text-muted-foreground">Milestones, progress updates, and reminders</p>
               </div>
               <Switch
-                id="watchlist_alerts"
-                checked={preferences?.watchlist_alerts ?? false}
-                onCheckedChange={(checked) => handlePreferenceChange('watchlist_alerts', checked)}
+                id="goal_alerts"
+                checked={preferences?.goal_alerts ?? false}
+                onCheckedChange={(checked) => handlePreferenceChange('goal_alerts', checked)}
               />
             </div>
-            
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="bill_alerts" className="text-base">Bill Alerts</Label>
+                <p className="text-sm text-muted-foreground">Get reminders for upcoming bill due dates.</p>
+              </div>
+              <Switch
+                id="bill_alerts"
+                checked={preferences?.bill_alerts ?? false}
+                onCheckedChange={(checked) => handlePreferenceChange('bill_alerts', checked)}
+              />
+            </div>
+
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label htmlFor="budget_alerts" className="text-base">Budget Alerts</Label>
-                <p className="text-sm text-muted-foreground">
-                  Over budget warnings, approaching limits
-                </p>
+                <p className="text-sm text-muted-foreground">Over budget warnings, approaching limits</p>
               </div>
               <Switch
                 id="budget_alerts"
@@ -209,41 +217,23 @@ export function NotificationPreferencesForm() {
                 onCheckedChange={(checked) => handlePreferenceChange('budget_alerts', checked)}
               />
             </div>
-            
+
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label htmlFor="expense_reminders" className="text-base">Expense Reminders</Label>
-                <p className="text-sm text-muted-foreground">
-                  Upcoming and overdue expenses
-                </p>
+                <Label htmlFor="watchlist_alerts" className="text-base">Watchlist Alerts</Label>
+                <p className="text-sm text-muted-foreground">Price targets reached, stock updates</p>
               </div>
               <Switch
-                id="expense_reminders"
-                checked={preferences?.expense_reminders ?? false}
-                onCheckedChange={(checked) => handlePreferenceChange('expense_reminders', checked)}
+                id="watchlist_alerts"
+                checked={preferences?.watchlist_alerts ?? false}
+                onCheckedChange={(checked) => handlePreferenceChange('watchlist_alerts', checked)}
               />
             </div>
-            
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="bill_reminders" className="text-base">Bill Reminders</Label>
-                <p className="text-sm text-muted-foreground">
-                  Upcoming and due bills
-                </p>
-              </div>
-              <Switch
-                id="bill_reminders"
-                checked={preferences?.bill_reminders ?? false}
-                onCheckedChange={(checked) => handlePreferenceChange('bill_reminders', checked)}
-              />
-            </div>
-            
+
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label htmlFor="investment_updates" className="text-base">Investment Updates</Label>
-                <p className="text-sm text-muted-foreground">
-                  Portfolio performance, dividend payments
-                </p>
+                <p className="text-sm text-muted-foreground">Portfolio performance, news</p>
               </div>
               <Switch
                 id="investment_updates"
