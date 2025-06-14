@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "netlify-build": "npm run prebuild && next build",
+    "netlify-build": "rimraf .next && npm run prebuild && next build",
     "prebuild": "node scripts/fix-missing-pages.js",
     "start": "next start",
     "lint": "next lint",
@@ -107,6 +107,7 @@
     "postcss": "^8",
     "tailwind-scrollbar": "^3.0.0",
     "tailwindcss": "^3.4.17",
-    "typescript": "^5"
+    "typescript": "^5",
+    "rimraf": "^5.0.7"
   }
 }
