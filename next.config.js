@@ -6,9 +6,6 @@ module.exports = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  images: {
-    domains: ['hfsfcu.org', 'cdn.pixabay.com'],
-  },
 
   // Explicitly handle the problematic pages
   rewrites: async () => {
