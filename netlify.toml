@@ -34,34 +34,4 @@
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
-# Rewrites from next.config.js
-[[redirects]]
-  from = "/budgeting/ai-generator"
-  to = "/"
-  status = 200
-
-[[redirects]]
-  from = "/api/finnhub/profile"
-  to = "/api/placeholder"
-  status = 200
-
-[[redirects]]
-  from = "/api/recurring-patterns"
-  to = "/api/placeholder"
-  status = 200
-
-[[redirects]]
-  from = "/access-denied"
-  to = "/"
-  status = 200
-
-[[redirects]]
-  from = "/forgot-password"
-  to = "/"
-  status = 200
-
-[[redirects]]
-  from = "/accounts/:id"
-  to = "/"
-  status = 200
 
