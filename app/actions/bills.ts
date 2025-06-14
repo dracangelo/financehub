@@ -165,9 +165,10 @@ function normalizeFrequency(frequency: string): string {
   switch (lowerCaseFrequency) {
     case "annually":
       return "annual";
+    case "biweekly":
     case "bi-weekly":
     case "bi_weekly":
-      return "biweekly";
+      return "bi_weekly";
     case "semi-annually":
     case "semiannually":
     case "semi_annual":

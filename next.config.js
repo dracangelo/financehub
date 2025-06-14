@@ -7,20 +7,7 @@ module.exports = {
     ignoreBuildErrors: true,
   },
   images: {
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: 'hfsfcu.org',
-        port: '',
-        pathname: '/wp-content/uploads/**',
-      },
-      {
-        protocol: 'https',
-        hostname: 'cdn.pixabay.com',
-        port: '',
-        pathname: '/photo/**',
-      },
-    ],
+    domains: ['hfsfcu.org', 'cdn.pixabay.com'],
   },
 
   // Explicitly handle the problematic pages

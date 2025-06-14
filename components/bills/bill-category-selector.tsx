@@ -82,7 +82,7 @@ export function BillCategorySelector({
               {categories.map((category) => (
                 <CommandItem
                   key={category.id}
-                  value={category.id}
+                  value={category.name}
                   onSelect={() => {
                     onChange(category.id === value ? "" : category.id)
                     setOpen(false)
