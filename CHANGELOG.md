@@ -230,6 +230,15 @@
 - Updated README with new authentication approach and billing feature highlights.
 - Minor UI tweaks for status badges (colors, icons).
 
+### Debt Management System
+- **Total Balance Fix**: Corrected the total debt calculation to ensure it accurately reflects the sum of all individual debt balances from the database.
+- **Live Data Integration**: Refactored the `DebtOverview` component to use live data from the `useDebtContext`, replacing hardcoded simulated data.
+- **Debt Deletion Security**: Fixed a critical bug in the debt deletion API to enforce strict authentication, ensuring users can only delete their own debts.
+- **Milestone Date Input**: Enhanced the goal milestone form to allow for manual date entry, providing more flexibility.
+
+### Configuration
+- **Image Domains**: Added `hfsfcu.org` and `cdn.pixabay.com` to the list of allowed image domains in `next.config.js` to resolve image loading errors.
+
 This document tracks the progress of the Ultimate Personal Finance Tracker project, documenting both implemented features and those that are still pending implementation.
 
 ## Implemented Features

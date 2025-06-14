@@ -11,10 +11,14 @@ module.exports = {
       {
         protocol: 'https',
         hostname: 'hfsfcu.org',
+        port: '',
+        pathname: '/wp-content/uploads/**',
       },
       {
         protocol: 'https',
         hostname: 'cdn.pixabay.com',
+        port: '',
+        pathname: '/photo/**',
       },
     ],
   },

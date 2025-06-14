@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useDebtContext } from "@/lib/debt/debt-context";
+import { Debt } from "@/types/debt";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { formatCurrency } from "@/lib/utils"
@@ -20,6 +22,7 @@ interface DebtSummary {
 }
 
 export function DebtOverview() {
+  const { debts, loading, error } = useDebtContext()
   const [summary, setSummary] = useState<DebtSummary>({
     totalDebt: 0,
     debtByType: [],
@@ -27,37 +30,51 @@ export function DebtOverview() {
     debtToIncomeRatio: 0,
     monthlyPayments: 0,
   })
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    // In a real app, this would fetch from your API
-    const fetchDebtSummary = async () => {
-      try {
-        // Simulated data
-        const data = {
-          totalDebt: 45750,
-          debtByType: [
-            { name: "Credit Card", value: 5750, color: "#FF8042" },
-            { name: "Auto Loan", value: 18500, color: "#0088FE" },
-            { name: "Student Loan", value: 21500, color: "#00C49F" },
-          ],
-          interestPaid: 3250,
-          debtToIncomeRatio: 0.32,
-          monthlyPayments: 1250,
+    if (debts.length > 0) {
+      const totalDebt = debts.reduce((acc: number, debt: Debt) => acc + (debt.current_balance || 0), 0);
+      const monthlyPayments = debts.reduce((acc: number, debt: Debt) => acc + (debt.minimum_payment || 0), 0);
+
+      const debtByType = debts.reduce((acc: { name: string; value: number; color: string }[], debt: Debt) => {
+        const debtType = debt.type || "Other";
+        const existingType = acc.find((d: { name: string }) => d.name === debtType);
+        if (existingType) {
+          existingType.value += debt.current_balance || 0
+        } else {
+          acc.push({ 
+            name: debtType, 
+            value: debt.current_balance || 0, 
+            color: getRandomColor(debtType) 
+          })
         }
+        return acc
+      }, [] as { name: string; value: number; color: string }[])
 
-        setSummary(data)
-      } catch (err) {
-        setError("Error fetching debt summary")
-        console.error(err)
-      } finally {
-        setLoading(false)
-      }
+      setSummary({
+        totalDebt,
+        debtByType,
+        monthlyPayments,
+        // These are placeholders, as the data isn't available in the context
+        interestPaid: 0,
+        debtToIncomeRatio: 0,
+      })
     }
+  }, [debts])
 
-    fetchDebtSummary()
-  }, [])
+  const colorMapping: { [key: string]: string } = {
+    'credit-card': '#FF8042',
+    'student-loan': '#00C49F',
+    'auto-loan': '#0088FE',
+    'mortgage': '#FFBB28',
+    'personal-loan': '#8884d8',
+    'medical': '#82ca9d',
+    'other': '#d3d3d3',
+  }
+
+  const getRandomColor = (type: string) => {
+    return colorMapping[type.toLowerCase().replace(' ', '-')] || colorMapping['other']
+  }
 
   if (loading) {
     return <Skeleton className="h-[200px] w-full" />

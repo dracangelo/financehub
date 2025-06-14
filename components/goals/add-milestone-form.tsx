@@ -7,11 +7,7 @@ import { createMilestone } from "@/app/actions/goals"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { CalendarIcon } from "lucide-react"
-import { format } from "date-fns"
-import { Calendar } from "@/components/ui/calendar"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { cn } from "@/lib/utils"
+import { format } from "date-fns";
 
 interface AddMilestoneFormProps {
   goalId: string
@@ -20,7 +16,7 @@ interface AddMilestoneFormProps {
 
 export function AddMilestoneForm({ goalId, onComplete }: AddMilestoneFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [date, setDate] = useState<Date | undefined>(undefined)
+  const [date, setDate] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null)
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -31,31 +27,8 @@ export function AddMilestoneForm({ goalId, onComplete }: AddMilestoneFormProps) 
     try {
       const formData = new FormData(event.currentTarget)
       
-      // Validate that we have a date
-      if (!date) {
-        setError("Please select a target date")
-        setIsSubmitting(false)
-        return
-      }
-
-      // Get the description
-      const description = formData.get("description") as string || "";
-      
-      // Format the date safely
-      let formattedDate = "";
-      try {
-        formattedDate = format(date, "yyyy-MM-dd");
-        
-        // Store the date in the description as a workaround
-        const enhancedDescription = description + 
-          (description ? "\n\n" : "") + 
-          `Target Date: ${format(date, "MMMM d, yyyy")}`;
-        
-        formData.set("description", enhancedDescription);
-      } catch (e) {
-        setError("Invalid date format. Please select a valid date.")
-        setIsSubmitting(false)
-        return
+      if (date) {
+        formData.set("target_date", format(date, "yyyy-MM-dd"));
       }
 
       const result = await createMilestone(goalId, formData)
@@ -86,20 +59,23 @@ export function AddMilestoneForm({ goalId, onComplete }: AddMilestoneFormProps) 
             <Input name="target_amount" type="number" step="0.01" min="0" placeholder="Target amount ($)" />
           </div>
           <div>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {date ? format(date, "PPP") : <span>Target date</span>}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
-              </PopoverContent>
-            </Popover>
+            <Input
+              type="date"
+              name="target_date"
+              value={date ? format(date, "yyyy-MM-dd") : ""}
+              onChange={(e) => {
+                if (e.target.value) {
+                  // Adding T00:00:00 ensures the date is parsed in the local timezone
+                  const newDate = new Date(`${e.target.value}T00:00:00`);
+                  if (!isNaN(newDate.getTime())) {
+                    setDate(newDate);
+                  }
+                } else {
+                  setDate(null);
+                }
+              }}
+              placeholder="Target date"
+            />
           </div>
         </div>
         {error && (

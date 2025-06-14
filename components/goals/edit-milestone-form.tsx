@@ -1,17 +1,13 @@
 "use client"
 
-import type React from "react"
-import { useState } from "react"
-import { format } from "date-fns"
-import { CalendarIcon } from "lucide-react"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
-import { Calendar } from "@/components/ui/calendar"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { cn } from "@/lib/utils"
-import { updateMilestone } from "@/app/actions/goals"
-import { toast } from "@/components/ui/use-toast"
+import type React from "react";
+import { useState } from "react";
+import { format } from "date-fns";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { updateMilestone } from "@/app/actions/goals";
+import { toast } from "@/components/ui/use-toast";
 
 interface EditMilestoneFormProps {
   milestone: {
@@ -29,21 +25,19 @@ export function EditMilestoneForm({ milestone, onComplete, onCancel }: EditMiles
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Add validation for the date to prevent "Invalid time value" errors
-  const getValidDate = (dateString: string | null | undefined) => {
+  const getValidDate = (dateString: string | null | undefined): Date | null => {
     if (!dateString || dateString === "null" || dateString === "undefined") {
-      return new Date()
+      return null;
     }
-    
     try {
-      const date = new Date(dateString)
-      // Check if date is valid
-      return isNaN(date.getTime()) ? new Date() : date
+      const date = new Date(dateString);
+      return isNaN(date.getTime()) ? null : date;
     } catch (e) {
-      return new Date()
+      return null;
     }
-  }
-  
-  const [date, setDate] = useState<Date>(getValidDate(milestone.target_date))
+  };
+
+  const [date, setDate] = useState<Date | null>(getValidDate(milestone.target_date));
   const [name, setName] = useState(milestone.name)
   const [description, setDescription] = useState(milestone.description || "")
   const [targetAmount, setTargetAmount] = useState(milestone.target_amount?.toString() || "")
@@ -56,7 +50,7 @@ export function EditMilestoneForm({ milestone, onComplete, onCancel }: EditMiles
       const formData = new FormData()
       formData.set("name", name)
       formData.set("description", description)
-      formData.set("target_date", format(date, "yyyy-MM-dd"))
+      formData.set("target_date", date ? format(date, "yyyy-MM-dd") : "");
       if (targetAmount) {
         formData.set("target_amount", targetAmount)
       }
@@ -118,20 +112,21 @@ export function EditMilestoneForm({ milestone, onComplete, onCancel }: EditMiles
           />
         </div>
         <div>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                className={cn("w-full justify-start text-left font-normal")}
-              >
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                {date ? format(date, "PPP") : <span>Target date</span>}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0">
-              <Calendar mode="single" selected={date} onSelect={(date) => date && setDate(date)} initialFocus />
-            </PopoverContent>
-          </Popover>
+          <Input
+            type="date"
+            value={date ? format(date, "yyyy-MM-dd") : ""}
+            onChange={(e) => {
+              if (e.target.value) {
+                const newDate = new Date(`${e.target.value}T00:00:00`);
+                if (!isNaN(newDate.getTime())) {
+                  setDate(newDate);
+                }
+              } else {
+                setDate(null);
+              }
+            }}
+            placeholder="Target date"
+          />
         </div>
       </div>
       <div className="flex justify-end space-x-2">

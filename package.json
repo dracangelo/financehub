@@ -15,6 +15,7 @@
   "dependencies": {
     "@emotion/is-prop-valid": "latest",
     "@hookform/resolvers": "latest",
+    "@netlify/plugin-nextjs": "^5.11.2",
     "@nivo/bar": "^0.88.0",
     "@nivo/colors": "^0.88.0",
     "@nivo/core": "^0.88.0",

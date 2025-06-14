@@ -67,6 +67,11 @@ Dripcheck is a comprehensive personal finance management application designed to
 - Tax burden comparison and visualization
 - Comprehensive tax analytics dashboard
 
+#### Debt Management 💸
+- Comprehensive debt tracking and management.
+- Dynamic calculation of total debt balance and payoff progress.
+- Secure endpoints for adding, updating, and deleting debts.
+
 ## 🛠️ Technology Stack
 
 ### Frontend
@@ -225,6 +230,11 @@ See [CHANGELOG.md](CHANGELOG.md) for a detailed history of changes and updates.
 - Implemented database setup system to ensure all required columns exist
 - Enhanced user ID retrieval logic with clear priority order
 - Fixed field name mismatches in the codebase
+
+#### Debt Management Fixes
+- Corrected total debt balance calculation for accuracy.
+- Secured the debt deletion API to prevent unauthorized access.
+- Replaced hardcoded data with live data in the debt overview.
 
 ## 🤝 Contributing
 
