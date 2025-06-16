@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -40,8 +41,16 @@ async function applyMigrations() {
       '20250531_add_missing_expense_columns.sql'
     );
     
+    const taxPredictionsFixPath = join(
+      __dirname,
+      '..',
+      'supabase',
+      'migrations',
+      '20250616_fix_tax_predictions_table.sql'
+    );
+
     // Read and apply all migrations
-    const migrations = [schemaFixPath, missingColumnsPath];
+    const migrations = [schemaFixPath, missingColumnsPath, taxPredictionsFixPath];
     
     for (const migrationPath of migrations) {
       console.log(`\nApplying migration: ${migrationPath}`);
@@ -56,8 +65,16 @@ async function applyMigrations() {
         console.error('Error applying migration:', error);
         process.exit(1);
       }
-      
-      console.log('Migration applied successfully!');
+
+      console.log('Migration applied successfully! Refreshing schema cache...');
+      const { error: refreshError } = await supabase.rpc('refresh_postgrest_schema');
+
+      if (refreshError) {
+        console.error('Error refreshing schema cache:', refreshError);
+        console.warn('Could not refresh schema cache. You may need to restart the service for changes to take effect.');
+      } else {
+        console.log('Schema cache refreshed successfully!');
+      }
     }
     
     console.log('All migrations applied successfully!');

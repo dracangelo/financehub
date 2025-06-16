@@ -6,16 +6,14 @@ import { getCurrentUser } from "@/lib/auth"
 
 // Schema for tax impact predictions
 const taxImpactPredictionSchema = z.object({
-  // Support both naming conventions
-  decision_type: z.string().min(1),
-  scenario: z.string().min(1).optional(),
+  scenario: z.string().min(1),
   description: z.string().optional(),
   estimated_tax_impact: z.number().optional(),
   difference: z.number().optional(),
   current_tax_burden: z.number().optional(),
   predicted_tax_burden: z.number().optional(),
   notes: z.string().optional(),
-})
+});
 
 // GET /api/tax/predictions - Get tax impact predictions
 export async function GET() {
@@ -41,7 +39,30 @@ export async function GET() {
       return NextResponse.json({ error: "Failed to fetch tax impact predictions" }, { status: 500 })
     }
 
-    return NextResponse.json(data)
+    // Enhance each record with metadata from the notes JSON so the UI retains the values after refresh
+    const enhancedData = (data || []).map((record: any) => {
+      let current_tax_burden = 0;
+      let predicted_tax_burden = 0;
+
+      if (record.notes && typeof record.notes === 'string' && record.notes.startsWith('{')) {
+        try {
+          const meta = JSON.parse(record.notes);
+          current_tax_burden = meta.current_tax_burden ?? current_tax_burden;
+          predicted_tax_burden = meta.predicted_tax_burden ?? predicted_tax_burden;
+        } catch (e) {
+          // Ignore JSON parse errors – keep defaults
+        }
+      }
+
+      return {
+        ...record,
+        current_tax_burden,
+        predicted_tax_burden,
+        difference: record.estimated_tax_impact // keep same naming convention used elsewhere
+      };
+    });
+
+    return NextResponse.json(enhancedData)
   } catch (error) {
     console.error("Error in GET /api/tax/predictions:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
@@ -98,15 +119,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid request data", details: result.error.format() }, { status: 400 })
     }
 
-    // Prepare data for insertion
+    // Prepare data for insertion, storing detailed numbers in a structured 'notes' field
+    const { data: validatedData } = result;
+
+    const metadata: Record<string, any> = {
+      current_tax_burden: validatedData.current_tax_burden || 0,
+      predicted_tax_burden: validatedData.predicted_tax_burden || 0,
+    };
+
+    // If there are user-provided notes, add them to the metadata object
+    if (validatedData.notes && validatedData.notes.trim() !== '') {
+        metadata.user_notes = validatedData.notes;
+    }
+
     const insertData = {
       user_id: user.id,
-      decision_type: result.data.decision_type || result.data.scenario || "Tax Scenario",
-      description: result.data.description,
-      estimated_tax_impact: result.data.estimated_tax_impact || result.data.difference,
-      notes: result.data.notes,
-      scenario: result.data.scenario
-    }
+      financial_decision: validatedData.scenario,
+      description: validatedData.description,
+      notes: JSON.stringify(metadata), // Store the metadata object as a JSON string
+      estimated_tax_impact: validatedData.estimated_tax_impact ?? validatedData.difference,
+      prediction_date: new Date().toISOString()
+    };
 
     // Insert the new prediction
     const { data, error } = await supabase
@@ -172,10 +205,10 @@ export async function PUT(request: Request) {
 
     // Prepare update data
     const updateData = {
-      decision_type: result.data.decision_type || result.data.scenario,
+      financial_decision: result.data.scenario,
       description: result.data.description,
-      estimated_tax_impact: result.data.estimated_tax_impact || result.data.difference,
       notes: result.data.notes,
+      estimated_tax_impact: result.data.estimated_tax_impact || result.data.difference,
       updated_at: new Date()
     }
 

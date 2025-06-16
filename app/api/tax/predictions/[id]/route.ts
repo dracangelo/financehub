@@ -3,11 +3,10 @@ import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { getCurrentUser } from "@/lib/auth"
 import * as z from "zod"
 
-// Schema for tax impact predictions
+// Schema for tax impact predictions (frontend sends 'scenario' which maps to DB column 'financial_decision')
 const taxImpactPredictionSchema = z.object({
   id: z.string().optional(),
-  decision_type: z.string().min(1),
-  scenario: z.string().min(1).optional(),
+  scenario: z.string().min(1),
   description: z.string().optional(),
   estimated_tax_impact: z.number().optional(),
   difference: z.number().optional(),
@@ -97,15 +96,8 @@ export async function PUT(
     console.log('Received update body:', JSON.stringify(body))
 
     // Use a more flexible approach for validation
-    // Make decision_type optional if scenario is provided
-    const updatedSchema = taxImpactPredictionSchema.extend({
-      decision_type: z.string().min(1).optional(),
-    }).refine(data => data.decision_type || data.scenario, {
-      message: "Either decision_type or scenario must be provided"
-    })
-
     // Validate request body
-    const result = updatedSchema.safeParse(body)
+    const result = taxImpactPredictionSchema.safeParse(body)
     if (!result.success) {
       console.error('Validation error:', result.error.format())
       return NextResponse.json({ error: "Invalid request data", details: result.error.format() }, { status: 400 })
@@ -133,41 +125,24 @@ export async function PUT(
 
     // Prepare update data with only the columns that exist in the database
     // Based on the error message, we need to avoid current_tax_burden, predicted_tax_burden, and updated_at
-    const updateData = {
-      decision_type: result.data.decision_type || result.data.scenario || "",
-      description: result.data.description,
-      estimated_tax_impact: result.data.estimated_tax_impact !== undefined ? result.data.estimated_tax_impact : 
-                           result.data.difference !== undefined ? result.data.difference : null,
-      notes: result.data.notes
-      // removed updated_at as it doesn't exist in the schema
-    }
-    
-    // Always store tax burden values in metadata JSON field
-    // Create a metadata object to store additional fields
+    const { data: validatedData } = result;
+
     const metadata: Record<string, any> = {
-      current_tax_burden: result.data.current_tax_burden || 0,
-      predicted_tax_burden: result.data.predicted_tax_burden || 0
+      current_tax_burden: validatedData.current_tax_burden || 0,
+      predicted_tax_burden: validatedData.predicted_tax_burden || 0,
+    };
+
+    if (validatedData.notes && validatedData.notes.trim() !== '') {
+        metadata.user_notes = validatedData.notes;
     }
-    
-    // If there are existing notes, preserve them and add metadata
-    if (updateData.notes && updateData.notes.trim() !== '') {
-      // Try to parse existing notes as JSON first
-      try {
-        const existingMetadata = JSON.parse(updateData.notes);
-        // Merge existing metadata with new metadata
-        const mergedMetadata = { ...existingMetadata, ...metadata };
-        updateData.notes = JSON.stringify(mergedMetadata);
-      } catch (e) {
-        // If notes aren't JSON, store them in a separate field in the metadata
-        metadata.user_notes = updateData.notes;
-        updateData.notes = JSON.stringify(metadata);
-      }
-    } else {
-      // Just use the metadata as notes
-      updateData.notes = JSON.stringify(metadata);
-    }
-    
-    console.log('Metadata being stored:', JSON.stringify(metadata))
+
+    const updateData = {
+      financial_decision: validatedData.scenario,
+      description: validatedData.description,
+      estimated_tax_impact: validatedData.estimated_tax_impact ?? validatedData.difference,
+      notes: JSON.stringify(metadata),
+    };
+
     
     // Log the update data for debugging
     console.log('Update data being sent to database:', JSON.stringify(updateData))
@@ -209,7 +184,7 @@ export async function PUT(
       const insertData = {
         id: originalId, // Use the same ID
         user_id: user.id,
-        decision_type: updateData.decision_type,
+        financial_decision: updateData.financial_decision,
         description: updateData.description,
         estimated_tax_impact: updateData.estimated_tax_impact,
         notes: updateData.notes
