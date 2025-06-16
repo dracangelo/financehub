@@ -118,6 +118,7 @@ export function TaxPredictionList() {
 
       // Create data object for API
       const data = {
+        id: editingPrediction?.id,
         scenario: formData.scenario,
         description: formData.description || undefined,
         current_tax_burden: currentTaxBurden,

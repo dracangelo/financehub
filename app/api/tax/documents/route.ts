@@ -65,10 +65,9 @@ export async function POST(request: Request) {
     let due_date = ''
     let notes: string | null = null
     let file: File | null = null
+    let status: string | null = null
     
     // Handle different request types
-    let status = 'received' // Default status
-    
     if (contentType.includes('multipart/form-data')) {
       // Handle multipart form data for file uploads
       const formData = await request.formData()
@@ -78,8 +77,8 @@ export async function POST(request: Request) {
       type = formData.get("type") as string
       due_date = formData.get("due_date") as string
       notes = formData.get("notes") as string | null
-      status = formData.get("status") as string || 'received' // Get status from form data
       file = formData.get("file") as File | null
+      status = formData.get("status") as string | null
     } else {
       // Handle JSON request
       const body = await request.json()
@@ -87,7 +86,7 @@ export async function POST(request: Request) {
       type = body.type
       due_date = body.due_date
       notes = body.notes || null
-      status = body.status || 'received' // Get status from JSON
+      status = body.status || null
       // No file in JSON request
     }
     
@@ -129,145 +128,67 @@ export async function POST(request: Request) {
     try {
       // Check if bucket exists
       const { data: buckets, error: bucketsError } = await supabaseAdmin.storage.listBuckets()
-      
+
       if (bucketsError) {
         console.error('Error listing buckets:', bucketsError)
       } else {
-        const documentsBucket = buckets.find((bucket: { name: string }) => bucket.name === 'documents')
+        const documentsBucket = buckets.find((bucket: { name: string }) => bucket.name === 'tax-documents')
         
         if (!documentsBucket) {
-          console.log('documents bucket doesn\'t exist, creating it...')
+          console.log('tax-documents bucket doesn\'t exist, creating it...')
           // Create the bucket
-          const { error: createError } = await supabaseAdmin.storage.createBucket('documents', {
-            public: false,
-            fileSizeLimit: MAX_FILE_SIZE,
-            allowedMimeTypes: ACCEPTED_FILE_TYPES
-          })
-          
+          const { data: createResult, error: createError } = await supabaseAdmin.storage.createBucket(
+            'tax-documents',
+            {
+              public: true, // Set to true for public access
+            }
+          )
           if (createError) {
             console.error('Error creating bucket:', createError)
           } else {
-            console.log('Documents bucket created successfully')
+            console.log('Tax documents bucket created successfully')
           }
         } else {
-          console.log('Documents bucket already exists')
+          console.log('Tax documents bucket already exists')
         }
       }
     } catch (bucketError) {
       console.error('Error managing documents bucket:', bucketError)
-      // Continue despite errors - the upload will fail gracefully later
     }
-    
-    // If a file was uploaded, process it
+
     if (file) {
-      try {
-        // Validate file size
-        if (file.size > MAX_FILE_SIZE) {
-          return NextResponse.json({ error: `File size exceeds the ${MAX_FILE_SIZE / (1024 * 1024)}MB limit` }, { status: 400 })
-        }
-        
-        // Validate file type
-        if (!ACCEPTED_FILE_TYPES.includes(file.type)) {
-          return NextResponse.json({ error: "File type not accepted" }, { status: 400 })
-        }
-        
-        // Try to upload file directly using the admin client to bypass RLS
-        try {
-          // Generate a unique filename
-          const fileExt = file.name.split('.').pop()
-          const uniqueFilename = `${Date.now()}-${Math.random().toString(36).substring(2, 10)}.${fileExt}`
-          
-          // Use user ID in the path to avoid RLS issues
-          const storagePath = `${user.id}/${uniqueFilename}`
-          
-          console.log(`Uploading file to documents/${storagePath}`)
-          
-          // Upload using the admin client to bypass RLS
-          const { data: uploadData, error: uploadError } = await supabaseAdmin
-            .storage
-            .from('documents')
-            .upload(storagePath, file, {
-              cacheControl: '3600',
-              upsert: true
-            })
-          
-          if (uploadError) {
-            throw uploadError
-          }
-          
-          // Get the public URL
-          const { data: { publicUrl } } = supabaseAdmin
-            .storage
-            .from('documents')
-            .getPublicUrl(storagePath)
-          
-          fileUrl = publicUrl
-          
-          // Create file metadata
-          fileMetadata = {
-            id: `file-${Date.now()}`,
-            filename: uniqueFilename,
-            originalFilename: file.name,
-            mimeType: file.type,
-            fileSize: file.size,
-            storagePath: storagePath,
-            publicUrl: fileUrl,
-            isPublic: true,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          }
-        } catch (uploadError) {
-          console.error("Error uploading file:", uploadError)
-          // Create a mock file metadata object
-          const fileExt = file.name.split('.').pop()
-          const uniqueFilename = `${user.id}-${Date.now()}.${fileExt}`
-          fileUrl = `https://example.com/files/${uniqueFilename}`
-          fileMetadata = {
-            id: `temp-${Date.now()}`,
-            filename: uniqueFilename,
-            originalFilename: file.name,
-            mimeType: file.type,
-            fileSize: file.size,
-            storagePath: `documents/${uniqueFilename}`,
-            publicUrl: fileUrl,
-            isPublic: true,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          }
-        }
-      } catch (error) {
-        console.error("Error handling file upload:", error)
-        // Create a fallback URL if upload fails
-        fileUrl = `https://example.com/files/${name.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}.pdf`
-        // Create a basic file metadata object
-        fileMetadata = {
-          id: `temp-${Date.now()}`,
-          filename: `${name.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}.pdf`,
-          originalFilename: file.name || "unknown.pdf",
-          mimeType: file.type || "application/pdf",
-          fileSize: file.size || 0,
-          storagePath: "documents/fallback.pdf",
-          publicUrl: fileUrl,
-          isPublic: true,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        }
+      // Validate file type and size
+      if (!ACCEPTED_FILE_TYPES.includes(file.type)) {
+        return NextResponse.json({ error: "Invalid file type" }, { status: 400 })
       }
-    } else {
-      // Create a placeholder URL if no file was uploaded
-      fileUrl = `https://example.com/files/${name.replace(/\s+/g, '-').toLowerCase()}.pdf`
-      // Create a basic file metadata object for the placeholder
+      if (file.size > MAX_FILE_SIZE) {
+        return NextResponse.json({ error: "File size exceeds the limit" }, { status: 400 })
+      }
+      
+      const filePath = `${user.id}/${Date.now()}-${file.name}`
+      
+      // Upload file to Supabase Storage
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from("tax-documents")
+        .upload(filePath, file)
+
+      if (uploadError) {
+        console.error("Error uploading file:", uploadError)
+        return NextResponse.json({ error: "Failed to upload file" }, { status: 500 })
+      }
+      
+      // Get public URL
+      const { data: urlData } = supabaseAdmin.storage
+        .from("tax-documents")
+        .getPublicUrl(filePath)
+      
+      fileUrl = urlData.publicUrl
+      
+      // Set file metadata
       fileMetadata = {
-        id: `temp-${Date.now()}`,
-        filename: `${name.replace(/\s+/g, '-').toLowerCase()}.pdf`,
-        originalFilename: "placeholder.pdf",
-        mimeType: "application/pdf",
-        fileSize: 0,
-        storagePath: "documents/placeholder.pdf",
-        publicUrl: fileUrl,
-        isPublic: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        size: file.size,
+        type: file.type,
+        lastModified: file.lastModified
       }
     }
 
@@ -325,7 +246,7 @@ export async function POST(request: Request) {
             file_metadata: fileMetadata ? JSON.stringify(fileMetadata) : null,
             due_date: new Date(due_date), // Convert string date to Date object for TIMESTAMPTZ
             notes: notes || "",
-            status: status, // Use the status from form data
+            status: status || 'pending_review', // Use the status from form data, with a fallback
             is_uploaded: true,
             uploaded_at: new Date()
           })

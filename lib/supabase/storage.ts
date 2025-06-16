@@ -33,7 +33,7 @@ export async function uploadDocumentFile(
     
     // Upload the file with the secure path
     const { data, error } = await supabaseClient.storage
-      .from('documents')
+      .from('tax_documents')
       .upload(securePath, file, {
         contentType: options?.contentType,
         upsert: options?.upsert ?? false,
@@ -58,7 +58,7 @@ export async function uploadDocumentFile(
 }
 
 /**
- * Downloads a file from the documents bucket
+ * Downloads a file from the tax_documents bucket
  */
 export async function getDocumentFile(path: string) {
   try {
@@ -75,18 +75,31 @@ export async function getDocumentFile(path: string) {
     
     // Get the file
     const { data, error } = await supabaseClient.storage
-      .from('documents')
+      .from('tax_documents')
       .download(securePath);
     
     if (error) {
+      // Add more specific error handling for common storage issues
+      if (error.message.includes('Bucket not found')) {
+        console.error('Storage bucket not found:', error.message);
+        throw new Error('The tax documents storage bucket is misconfigured. Please contact support.');
+      }
+      if (error.message.toLowerCase().includes('not found')) {
+        console.error(`File not found at path: ${securePath}`, error.message);
+        throw new Error('The requested document could not be found. It may have been moved or deleted.');
+      }
       console.error('Error downloading file:', error);
       throw error;
     }
     
     return data;
   } catch (error) {
+    // Catch and re-throw with a more generic message if it's not one of our custom errors
+    if (error instanceof Error && (error.message.includes('misconfigured') || error.message.includes('could not be found'))) {
+      throw error;
+    }
     console.error('Error in getDocumentFile:', error);
-    throw error;
+    throw new Error('An unexpected error occurred while trying to download the document.');
   }
 }
 
@@ -108,7 +121,7 @@ export async function listDocumentFiles(folder: string = '') {
     
     // List files in the user's folder
     const { data, error } = await supabaseClient.storage
-      .from('documents')
+      .from('tax_documents')
       .list(securePath);
     
     if (error) {
@@ -141,7 +154,7 @@ export async function deleteDocumentFile(path: string) {
     
     // Delete the file
     const { data, error } = await supabaseClient.storage
-      .from('documents')
+      .from('tax_documents')
       .remove([securePath]);
     
     if (error) {

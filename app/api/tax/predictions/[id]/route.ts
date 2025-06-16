@@ -5,7 +5,7 @@ import * as z from "zod"
 
 // Schema for tax impact predictions
 const taxImpactPredictionSchema = z.object({
-  // Support both naming conventions
+  id: z.string().optional(),
   decision_type: z.string().min(1),
   scenario: z.string().min(1).optional(),
   description: z.string().optional(),
@@ -22,7 +22,6 @@ export async function GET(
   context: { params: { id: string } }
 ) {
   try {
-    // Access id directly from context.params to avoid the Next.js warning
     const id = context.params.id
     
     const user = await getCurrentUser()
@@ -81,7 +80,6 @@ export async function PUT(
   context: { params: { id: string } }
 ) {
   try {
-    // Access id directly from context.params to avoid the Next.js warning
     const id = context.params.id
     
     const user = await getCurrentUser()
@@ -124,6 +122,12 @@ export async function PUT(
       .single()
 
     if (fetchError || !existingPrediction) {
+      console.error("Failed to find tax prediction for update.", {
+        userId: user.id,
+        predictionIdFromUrl: id,
+        predictionIdFrombody: body.id,
+        error: fetchError,
+      })
       return NextResponse.json({ error: "Tax prediction not found" }, { status: 404 })
     }
 
@@ -269,7 +273,6 @@ export async function DELETE(
   context: { params: { id: string } }
 ) {
   try {
-    // Access id directly from context.params to avoid the Next.js warning
     const id = context.params.id
     
     const user = await getCurrentUser()

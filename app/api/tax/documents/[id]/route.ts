@@ -12,42 +12,71 @@ const documentUpdateSchema = z.object({
   notes: z.string().optional(),
 })
 
-// GET /api/tax/documents/:id - Get a specific tax document
+// GET /api/tax/documents/:id - Get or download a specific tax document
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get ID from params safely
-    const id = params?.id
+    const id = params?.id;
     if (!id) {
-      return NextResponse.json({ error: "Document ID is required" }, { status: 400 })
+      return NextResponse.json({ error: "Document ID is required" }, { status: 400 });
     }
 
-    const supabase = await createServerSupabaseClient()
+    const supabase = await createServerSupabaseClient();
+    const { searchParams } = new URL(request.url);
+    const download = searchParams.get('download');
 
-    // Get the document
-    const { data, error } = await supabase
+    // First, get the document metadata
+    const { data: document, error: docError } = await supabase
       .from("tax_documents")
-      .select("*")
+      .select("file_name, storage_path, mime_type")
       .eq("id", id)
       .eq("user_id", user.id)
-      .single()
+      .single();
 
-    if (error) {
-      console.error("Error fetching tax document:", error)
-      return NextResponse.json({ error: "Failed to fetch tax document" }, { status: 500 })
+    if (docError) {
+      console.error("Error fetching tax document metadata:", docError);
+      return NextResponse.json({ error: "Tax document not found or you do not have permission to view it." }, { status: 404 });
     }
 
-    return NextResponse.json(data)
+    if (!document || !document.storage_path) {
+      return NextResponse.json({ error: "Document metadata is incomplete. Cannot download file." }, { status: 404 });
+    }
+
+    // If 'download' param is present, download the file from storage
+    if (download === 'true') {
+      const { data: fileData, error: downloadError } = await supabase.storage
+        .from('tax_documents') // Correct bucket name
+        .download(document.storage_path);
+
+      if (downloadError) {
+        console.error("Error downloading file from storage:", downloadError);
+        if (downloadError.message.includes('Bucket not found')) {
+            return NextResponse.json({ error: "Storage bucket not found. Please contact support." }, { status: 500 });
+        }
+        return NextResponse.json({ error: "Failed to download file." }, { status: 500 });
+      }
+
+      // Return the file as a response
+      return new NextResponse(fileData, {
+        headers: {
+          'Content-Type': document.mime_type || 'application/octet-stream',
+          'Content-Disposition': `attachment; filename="${document.file_name}"`,
+        },
+      });
+    }
+
+    // Otherwise, return the document metadata as JSON
+    return NextResponse.json(document);
   } catch (error) {
-    console.error("Error in GET /api/tax/documents/:id:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error("Error in GET /api/tax/documents/:id:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
@@ -69,7 +98,7 @@ export async function PUT(
     }
 
     // Parse the request body
-    let body
+    let body: { [key: string]: any } = {};
     try {
       // Try to get the content type
       const contentType = request.headers.get('content-type') || ''
@@ -82,12 +111,9 @@ export async function PUT(
         // Only parse if there's content
         if (text && text.trim()) {
           body = JSON.parse(text)
-        } else {
-          body = {}
         }
       } else {
         // Handle form data or other formats
-        body = {}
         const formData = await request.formData()
         for (const [key, value] of formData.entries()) {
           body[key] = value

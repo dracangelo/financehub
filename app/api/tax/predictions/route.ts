@@ -98,30 +98,31 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid request data", details: result.error.format() }, { status: 400 })
     }
 
-    // Create a mock response for development
-    // This is a temporary solution until the database table is properly set up
-    const mockResponse = {
-      id: crypto.randomUUID(),
+    // Prepare data for insertion
+    const insertData = {
       user_id: user.id,
       decision_type: result.data.decision_type || result.data.scenario || "Tax Scenario",
-      description: result.data.description || "",
-      estimated_tax_impact: result.data.estimated_tax_impact || result.data.difference || 0,
-      notes: JSON.stringify({
-        current_tax_burden: result.data.current_tax_burden || 0,
-        predicted_tax_burden: result.data.predicted_tax_burden || 0,
-        user_notes: result.data.notes || ""
-      }),
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      description: result.data.description,
+      estimated_tax_impact: result.data.estimated_tax_impact || result.data.difference,
+      notes: result.data.notes,
+      scenario: result.data.scenario
     }
 
-    // Log the mock response for debugging
-    console.log("Created mock tax prediction:", mockResponse)
+    // Insert the new prediction
+    const { data, error } = await supabase
+      .from("tax_impact_predictions")
+      .insert(insertData)
+      .select()
+      .single()
 
-    // Return the mock response
-    return NextResponse.json(mockResponse)
+    if (error) {
+      console.error("Error creating tax impact prediction:", error)
+      return NextResponse.json({ error: "Failed to create tax impact prediction" }, { status: 500 })
+    }
+
+    return NextResponse.json(data)
   } catch (error: any) {
-    console.error("Error in POST /api/tax/predictions:", error)
+    console.error("Error in POST /api/tax/predictions:", error.message)
     // Provide more detailed error information
     return NextResponse.json({ 
       error: "Internal server error", 
