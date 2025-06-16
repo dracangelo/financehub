@@ -2,14 +2,13 @@
   command = "npm run netlify-build"
 
 
-  functions = "netlify/functions"
+
 
 [build.environment]
   NEXT_USE_NETLIFY_EDGE = "true"
   NODE_VERSION = "18"
 
-[functions]
-  node_bundler = "esbuild"
+
 
 
 
